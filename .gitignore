@@ -9,6 +9,9 @@ backend/data/*.db-shm
 .DS_Store
 Thumbs.db
 
+# Built EXE
+BuildProPOS.exe
+
 # Environment files
 .env
 .env.local

@@ -71,7 +71,50 @@ A professional, full-featured **Point-of-Sale** system designed specifically for
 
 ---
 
-## Getting Started
+## Distribution as EXE
+
+Ship a single `.exe` to your client — no Node.js, no setup required.
+
+### Build the EXE
+
+```bash
+cd backend
+npm run build:exe
+```
+
+This produces **`backend/BuildProPOS.exe`** (~50 MB) containing the server, frontend, and database engine in one file.
+
+### Client Setup
+
+1. Place `BuildProPOS.exe` anywhere on the computer
+2. (Optional) Create a `.env` file next to it to set `API_TOKEN` or `PORT`
+3. Double-click the `.exe` — the database is automatically created in a `data/` folder next to the `.exe`
+4. Open `http://localhost:3001` in the browser
+
+The server starts, creates the SQLite database on first run, and serves the POS interface on port 3001.
+
+### Database Location
+
+By default the database is stored in `./data/construction_pos.db` (relative to where you run the `.exe`). Override with the `DB_PATH` environment variable:
+
+```bash
+set DB_PATH=C:\MyStore\data\pos.db
+BuildProPOS.exe
+```
+
+### Configuration
+
+Set any of these via `.env` file or environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3001` | Server port |
+| `API_TOKEN` | *(empty)* | Set to enable API authentication |
+| `DB_PATH` | `./data/construction_pos.db` | Database file location |
+
+---
+
+## Development Setup
 
 ### Prerequisites
 - Node.js 18+
@@ -125,7 +168,7 @@ cd ../backend
 NODE_ENV=production npm start
 ```
 
-The production server serves the frontend from `frontend/dist/` automatically.
+The production server serves the frontend automatically.
 
 ---
 

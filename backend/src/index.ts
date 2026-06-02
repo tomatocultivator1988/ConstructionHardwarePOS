@@ -74,7 +74,7 @@ app.get('/api/health', (_req, res) => {
 
 // In production, serve the built frontend
 if (NODE_ENV === 'production') {
-  const frontendDist = path.join(__dirname, '..', '..', 'frontend', 'dist');
+  const frontendDist = path.join(__dirname, 'frontend-dist');
   app.use(express.static(frontendDist));
   app.get('*', (_req, res) => {
     res.sendFile(path.join(frontendDist, 'index.html'));
