@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "BuildPro POS System — Construction Supply Point-of-Sale",
   "main": "dist/index.js",
+  "bin": "dist/index.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/index.ts",
     "build": "tsc",
@@ -21,7 +22,7 @@
     "express-rate-limit": "^8.5.2",
     "helmet": "^8.2.0",
     "morgan": "^1.10.1",
-    "uuid": "^14.0.0"
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
@@ -41,6 +42,8 @@
       "node_modules/better-sqlite3/**/*.node",
       "node_modules/better-sqlite3/build/**/*"
     ],
-    "targets": ["node20-win-x64"]
+    "targets": [
+      "node18-win-x64"
+    ]
   }
 }

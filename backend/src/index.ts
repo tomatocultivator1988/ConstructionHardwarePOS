@@ -15,7 +15,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const API_TOKEN = process.env.API_TOKEN || '';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
-const NODE_ENV = process.env.NODE_ENV || 'development';
+const NODE_ENV = process.env.NODE_ENV || ((process as any).pkg ? 'production' : 'development');
 
 // Request logging
 app.use(morgan(NODE_ENV === 'production' ? 'combined' : 'dev'));
@@ -76,7 +76,7 @@ app.get('/api/health', (_req, res) => {
 if (NODE_ENV === 'production') {
   const frontendDist = path.join(__dirname, 'frontend-dist');
   app.use(express.static(frontendDist));
-  app.get('*', (_req, res) => {
+  app.get('/{*path}', (_req, res) => {
     res.sendFile(path.join(frontendDist, 'index.html'));
   });
 } else {
