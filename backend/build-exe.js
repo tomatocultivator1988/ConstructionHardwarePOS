@@ -35,8 +35,29 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.writeFileSync(path.join(DATA_DIR, '.gitkeep'), '');
 }
 
-// Step 5: Package with pkg
+// Step 5: Remove old EXE if exists (avoid EPERM)
+const oldExe = path.join(BACKEND, 'BuildProPOS.exe');
+if (fs.existsSync(oldExe)) {
+  fs.unlinkSync(oldExe);
+  console.log('Removed old BuildProPOS.exe');
+}
+
+// Step 6: Package with pkg
 console.log('\n=== Packaging with pkg ===');
 run('npx pkg . --output BuildProPOS.exe', BACKEND);
 
-console.log('\n=== Done! BuildProPOS.exe created in backend/ ===');
+// Step 7: Create VBS launcher (hides terminal window)
+console.log('\n=== Creating launcher ===');
+const vbsPath = path.join(BACKEND, 'Start-BuildPro.vbs');
+const vbsLines = [
+  'Set WshShell = CreateObject("WScript.Shell")',
+  'Set fso = CreateObject("Scripting.FileSystemObject")',
+  'dir = fso.GetParentFolderName(WScript.ScriptFullName)',
+  'WshShell.Run Chr(34) & dir & "\\BuildProPOS.exe" & Chr(34), 0, False',
+  'Set fso = Nothing',
+  'Set WshShell = Nothing',
+];
+fs.writeFileSync(vbsPath, vbsLines.join('\r\n'));
+console.log(`Created ${vbsPath}`);
+
+console.log('\n=== Done! BuildProPOS.exe + Start-BuildPro.vbs in backend/ ===');
