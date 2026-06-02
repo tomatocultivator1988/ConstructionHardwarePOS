@@ -7,11 +7,16 @@ let db: Database.Database;
 
 export function getDb(): Database.Database {
   if (!db) {
-    db = new Database(dbPath);
-    db.pragma('journal_mode = WAL');
-    db.pragma('foreign_keys = ON');
-    initTables();
-    migrateSchema();
+    try {
+      db = new Database(dbPath);
+      db.pragma('journal_mode = WAL');
+      db.pragma('foreign_keys = ON');
+      initTables();
+      migrateSchema();
+    } catch (err) {
+      console.error('Failed to open database:', err);
+      throw new Error('Database unavailable');
+    }
   }
   return db;
 }
@@ -115,4 +120,28 @@ function migrateSchema() {
   if (!invoiceCols.includes('tax_amount')) {
     db.exec("ALTER TABLE invoices ADD COLUMN tax_amount REAL DEFAULT 0");
   }
+
+  // Add indexes for foreign key columns
+  const existingIndexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('idx_invoice_items_invoice_id', 'idx_payments_invoice_id')").all() as any[];
+  const indexNames = existingIndexes.map((r: any) => r.name);
+
+  if (!indexNames.includes('idx_invoice_items_invoice_id')) {
+    db.exec("CREATE INDEX idx_invoice_items_invoice_id ON invoice_items(invoice_id)");
+  }
+  if (!indexNames.includes('idx_payments_invoice_id')) {
+    db.exec("CREATE INDEX idx_payments_invoice_id ON payments(invoice_id)");
+  }
+
+  // Create profit margin view for analytics
+  db.exec(`DROP VIEW IF EXISTS v_invoice_profit_margin`);
+  db.exec(`
+    CREATE VIEW IF NOT EXISTS v_invoice_profit_margin AS
+    SELECT ii.invoice_id,
+      CASE WHEN SUM(ii.total) > 0
+        THEN 1 - (SUM(ii.quantity * COALESCE(m.cost_price, 0)) / SUM(ii.total))
+        ELSE 0 END AS profit_ratio
+    FROM invoice_items ii
+    LEFT JOIN materials m ON m.id = ii.material_id
+    GROUP BY ii.invoice_id
+  `);
 }

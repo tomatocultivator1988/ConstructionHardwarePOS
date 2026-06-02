@@ -7,6 +7,15 @@ interface ChartDataset {
   borderRadius?: number;
   borderSkipped?: boolean;
   hoverOffset?: number;
+  type?: string;
+  fill?: boolean;
+  pointBackgroundColor?: string;
+  pointBorderColor?: string;
+  pointBorderWidth?: number;
+  pointRadius?: number;
+  pointHoverRadius?: number;
+  tension?: number;
+  order?: number;
 }
 
 interface ChartOptions {
@@ -14,14 +23,16 @@ interface ChartOptions {
   maintainAspectRatio?: boolean;
   indexAxis?: 'x' | 'y';
   cutout?: string;
+  interaction?: { intersect?: boolean; mode?: string };
   plugins?: {
     legend?: {
       display?: boolean;
       position?: 'top' | 'bottom' | 'left' | 'right';
+      align?: 'start' | 'center' | 'end';
       labels?: {
         color?: string;
         padding?: number;
-        font?: { size?: number };
+        font?: { size?: number; weight?: string };
         usePointStyle?: boolean;
         pointStyle?: string;
       };
@@ -31,12 +42,13 @@ interface ChartOptions {
     x?: {
       beginAtZero?: boolean;
       grid?: { color?: string; display?: boolean };
-      ticks?: { color?: string; font?: { size?: number } };
+      ticks?: { color?: string; font?: { size?: number }; callback?: (v: any) => string };
+      max?: number;
     };
     y?: {
       beginAtZero?: boolean;
       grid?: { color?: string; display?: boolean };
-      ticks?: { color?: string; font?: { size?: number } };
+      ticks?: { color?: string; font?: { size?: number }; callback?: (v: any) => string };
     };
   };
 }
@@ -75,10 +87,12 @@ interface Window {
   showInvoiceDetail: (id: string) => void;
   recordPayment: (invoiceId: string) => void;
   delInvoice: (id: string) => void;
+  printReceipt: (id: string) => void;
   saveSettings: () => void;
   __customerNames: Record<string, string>;
   __materialNames: Record<string, string>;
   __invCustomers: any[];
   __invMaterials: any[];
   __invDefaultTax: string;
+  __API_TOKEN: string;
 }

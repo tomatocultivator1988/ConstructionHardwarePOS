@@ -32,11 +32,15 @@ function validateMaterial(body: any, existing?: any) {
   if (body.stock !== undefined) {
     if (isNaN(body.stock) || body.stock < 0) {
       errors.push('Stock cannot be negative');
+    } else if (!Number.isInteger(Number(body.stock))) {
+      errors.push('Stock must be a whole number');
     }
   }
   if (body.reorder_point !== undefined) {
     if (isNaN(body.reorder_point) || body.reorder_point < 0) {
       errors.push('Reorder point cannot be negative');
+    } else if (!Number.isInteger(Number(body.reorder_point))) {
+      errors.push('Reorder point must be a whole number');
     }
   }
   return { name, unit, stock, cost_price, price_per_unit, reorder_point, errors };

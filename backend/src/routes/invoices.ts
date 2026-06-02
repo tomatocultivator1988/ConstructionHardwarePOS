@@ -98,18 +98,18 @@ router.post('/', (req: Request, res: Response) => {
 
     let subtotal = 0;
     for (const item of items) {
-      const lineTotal = Math.round(item.quantity * item.unit_price * 100) / 100;
+      const lineTotal = item.quantity * item.unit_price;
       subtotal += lineTotal;
-      insertItem.run(uuidv4(), invoiceId, item.material_id || null, item.description.trim(), item.quantity, item.unit_price, lineTotal);
+      insertItem.run(uuidv4(), invoiceId, item.material_id || null, item.description.trim(), item.quantity, item.unit_price, Math.round(lineTotal * 100) / 100);
     }
-    subtotal = Math.round(subtotal * 100) / 100;
 
     const appliedTaxRate = tax_rate ?? Number((db.prepare("SELECT value FROM settings WHERE key = 'default_tax_rate'").get() as any)?.value ?? 0);
-    const taxAmount = Math.round(subtotal * Number(appliedTaxRate) * 100) / 100;
-    const total = Math.round((subtotal + taxAmount) * 100) / 100;
+    const roundedSubtotal = Math.round(subtotal * 100) / 100;
+    const taxAmount = Math.round(roundedSubtotal * Number(appliedTaxRate) * 100) / 100;
+    const total = Math.round((roundedSubtotal + taxAmount) * 100) / 100;
 
     db.prepare('UPDATE invoices SET subtotal = ?, tax_rate = ?, tax_amount = ?, total = ? WHERE id = ?')
-      .run(subtotal, appliedTaxRate, taxAmount, total, invoiceId);
+      .run(roundedSubtotal, appliedTaxRate, taxAmount, total, invoiceId);
 
     for (const materialId of usedMaterialIds) {
       const qtyNeeded = items
@@ -145,25 +145,47 @@ router.post('/:id/pay', (req: Request, res: Response) => {
     res.status(400).json({ error: 'Payment method is required' });
     return;
   }
-  const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
-  if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+
+  const insertPayment = db.prepare(
+    'INSERT INTO payments (id, invoice_id, amount, method, notes) VALUES (?, ?, ?, ?, ?)'
+  );
+  const getTotalPaid = db.prepare(
+    'SELECT COALESCE(SUM(amount), 0) as paid FROM payments WHERE invoice_id = ?'
+  );
+  const updateStatusPaid = db.prepare(
+    "UPDATE invoices SET status = 'paid', paid_date = datetime('now') WHERE id = ?"
+  );
+  const updateStatusPartial = db.prepare(
+    "UPDATE invoices SET status = 'partial' WHERE id = ?"
+  );
+  const getInvoice = db.prepare('SELECT * FROM invoices WHERE id = ?');
 
   const paymentId = uuidv4();
-  db.prepare(
-    'INSERT INTO payments (id, invoice_id, amount, method, notes) VALUES (?, ?, ?, ?, ?)'
-  ).run(paymentId, req.params.id, amount, method, notes || null);
 
-  const totalPaid = (db.prepare(
-    'SELECT COALESCE(SUM(amount), 0) as paid FROM payments WHERE invoice_id = ?'
-  ).get(req.params.id) as any).paid;
+  try {
+    const txn = db.transaction(() => {
+      const invoice = getInvoice.get(req.params.id) as any;
+      if (!invoice) throw new Error('Invoice not found');
 
-  const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as any;
-  if (totalPaid >= inv.total) {
-    db.prepare("UPDATE invoices SET status = 'paid', paid_date = datetime('now') WHERE id = ?")
-      .run(req.params.id);
-  } else if (totalPaid > 0) {
-    db.prepare("UPDATE invoices SET status = 'partial' WHERE id = ?")
-      .run(req.params.id);
+      const existingPaid = (getTotalPaid.get(req.params.id) as any).paid;
+      const remainingBalance = invoice.total - existingPaid;
+      if (amount > remainingBalance) {
+        throw new Error(`Payment of ${amount} exceeds remaining balance of ${remainingBalance}`);
+      }
+
+      insertPayment.run(paymentId, req.params.id, amount, method, notes || null);
+      const totalPaid = existingPaid + amount;
+
+      if (totalPaid >= invoice.total) {
+        updateStatusPaid.run(req.params.id);
+      } else if (totalPaid > 0) {
+        updateStatusPartial.run(req.params.id);
+      }
+    });
+    txn();
+  } catch (e: any) {
+    res.status(400).json({ error: e.message });
+    return;
   }
 
   res.status(201).json(db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId));

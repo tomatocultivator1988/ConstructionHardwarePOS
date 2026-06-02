@@ -49,6 +49,10 @@ router.put('/:id', (req: Request, res: Response) => {
     res.status(404).json({ error: 'Customer not found' });
     return;
   }
+  if (name !== undefined && (!name || !name.trim())) {
+    res.status(400).json({ error: 'Name is required' });
+    return;
+  }
   if (email && !EMAIL_RE.test(email)) {
     res.status(400).json({ error: 'Invalid email format' });
     return;
@@ -56,7 +60,7 @@ router.put('/:id', (req: Request, res: Response) => {
   db.prepare(
     `UPDATE customers SET name = ?, phone = ?, email = ?, address = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(
-    name ?? (existing as any).name,
+    (name !== undefined ? name.trim() : (existing as any).name),
     phone ?? (existing as any).phone,
     email ?? (existing as any).email,
     address ?? (existing as any).address,

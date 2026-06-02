@@ -8,3 +8,9 @@ backend/data/*.db-wal
 backend/data/*.db-shm
 .DS_Store
 Thumbs.db
+
+# Environment files
+.env
+.env.local
+backend/.env
+backend/.env.local

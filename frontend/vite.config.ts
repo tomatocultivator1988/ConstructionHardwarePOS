@@ -7,6 +7,15 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            Object.keys(req.headers).forEach(key => {
+              if (key.toLowerCase() !== 'host') {
+                proxyReq.setHeader(key, req.headers[key]!);
+              }
+            });
+          });
+        },
       },
     },
   },
