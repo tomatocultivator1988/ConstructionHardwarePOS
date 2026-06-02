@@ -1,22 +1,26 @@
-import Database from 'better-sqlite3';
 import path from 'path';
+import { Database, initDatabase } from './database';
 
 const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'data', 'construction_pos.db');
 
-let db: Database.Database;
+let db: Database;
 
-export function getDb(): Database.Database {
+export async function initDb(): Promise<void> {
+  if (db) return;
+  try {
+    await initDatabase();
+    db = new Database(dbPath);
+    initTables();
+    migrateSchema();
+  } catch (err) {
+    console.error('Failed to open database:', err);
+    throw new Error('Database unavailable');
+  }
+}
+
+export function getDb(): Database {
   if (!db) {
-    try {
-      db = new Database(dbPath);
-      db.pragma('journal_mode = WAL');
-      db.pragma('foreign_keys = ON');
-      initTables();
-      migrateSchema();
-    } catch (err) {
-      console.error('Failed to open database:', err);
-      throw new Error('Database unavailable');
-    }
+    throw new Error('Database not initialized. Call initDb() first.');
   }
   return db;
 }
@@ -121,7 +125,6 @@ function migrateSchema() {
     db.exec("ALTER TABLE invoices ADD COLUMN tax_amount REAL DEFAULT 0");
   }
 
-  // Add indexes for foreign key columns
   const existingIndexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('idx_invoice_items_invoice_id', 'idx_payments_invoice_id')").all() as any[];
   const indexNames = existingIndexes.map((r: any) => r.name);
 
@@ -132,8 +135,7 @@ function migrateSchema() {
     db.exec("CREATE INDEX idx_payments_invoice_id ON payments(invoice_id)");
   }
 
-  // Create profit margin view for analytics
-  db.exec(`DROP VIEW IF EXISTS v_invoice_profit_margin`);
+  db.exec('DROP VIEW IF EXISTS v_invoice_profit_margin');
   db.exec(`
     CREATE VIEW IF NOT EXISTS v_invoice_profit_margin AS
     SELECT ii.invoice_id,

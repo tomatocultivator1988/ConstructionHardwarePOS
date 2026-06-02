@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'path';
+import { initDb } from './db/setup';
 import customerRoutes from './routes/customers';
 import materialRoutes from './routes/materials';
 import invoiceRoutes from './routes/invoices';
@@ -92,9 +93,17 @@ app.use((err: any, _req: express.Request, res: express.Response, _next: express.
   res.status(500).json({ error: 'Internal server error' });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT} [${NODE_ENV}]`);
-});
-
-process.on('SIGTERM', () => server.close(() => process.exit(0)));
-process.on('SIGINT', () => server.close(() => process.exit(0)));
+async function start() {
+  try {
+    await initDb();
+    const server = app.listen(PORT, () => {
+      console.log(`Server running on http://localhost:${PORT} [${NODE_ENV}]`);
+    });
+    process.on('SIGTERM', () => server.close(() => process.exit(0)));
+    process.on('SIGINT', () => server.close(() => process.exit(0)));
+  } catch (err) {
+    console.error('Failed to start:', err);
+    process.exit(1);
+  }
+}
+start();
