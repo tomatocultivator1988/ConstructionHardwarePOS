@@ -1,4 +1,6 @@
 import { Database, initDatabase } from './database';
+import { v4 as uuidv4 } from 'uuid';
+import bcrypt from 'bcryptjs';
 
 let db: Database;
 
@@ -273,9 +275,12 @@ async function migrateSchema() {
   // Create default admin if no users exist
   const userCount = (await db.prepare('SELECT COUNT(*) as cnt FROM users').get()) as any;
   if (userCount.cnt === 0) {
-    const bcrypt = require('bcryptjs');
-    const hash = bcrypt.hashSync('0000', 10);
-    await db.prepare('INSERT INTO users (id, username, pin_hash, role) VALUES (?, ?, ?, ?)').run(require('uuid').v4(), 'admin', hash, 'admin');
-    console.log('Default admin user created (username: admin, PIN: 0000)');
+    try {
+      const hash = bcrypt.hashSync('0000', 10);
+      await db.prepare('INSERT INTO users (id, username, pin_hash, role) VALUES (?, ?, ?, ?)').run(uuidv4(), 'admin', hash, 'admin');
+      console.log('Default admin user created (username: admin, PIN: 0000)');
+    } catch (e: any) {
+      console.error('Failed to create admin user:', e.message);
+    }
   }
 }
