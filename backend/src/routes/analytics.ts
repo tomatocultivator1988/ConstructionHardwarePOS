@@ -6,7 +6,20 @@ const router = Router();
 router.get('/dashboard', async (_req: Request, res: Response) => {
   const db = getDb();
 
-  // Top 5 selling materials by quantity
+  // Ensure view exists (may have been missed if migrateSchema crashed earlier)
+  await db.exec('DROP VIEW IF EXISTS v_invoice_profit_margin');
+  await db.exec(`
+    CREATE VIEW IF NOT EXISTS v_invoice_profit_margin AS
+    SELECT ii.invoice_id,
+      CASE WHEN SUM(ii.total) > 0
+        THEN 1 - (SUM(ii.quantity * COALESCE(m.cost_price, 0)) / SUM(ii.total))
+        ELSE 0 END AS profit_ratio
+    FROM invoice_items ii
+    LEFT JOIN materials m ON m.id = ii.material_id
+    GROUP BY ii.invoice_id
+  `);
+
+  try {
   const topMaterials = await db.prepare(`
     SELECT ii.material_id, m.name, m.unit, m.cost_price,
       SUM(ii.quantity) AS total_qty,
@@ -170,6 +183,20 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
     monthlyTrend,
     topCustomers,
   });
+  } catch (e: any) {
+    console.error('Analytics error:', e.message);
+    res.json({
+      topMaterials: [], profitTrend: [],
+      stockValue: { total_cost: 0, total_retail: 0, material_count: 0 },
+      materialMargins: [], todayProfit: 0, weekRevenue: 0,
+      monthRevenue: { revenue: 0, profit: 0 },
+      lastMonthRevenue: { revenue: 0, profit: 0 },
+      yearRevenue: { revenue: 0, profit: 0 },
+      overallRevenue: { revenue: 0, profit: 0 },
+      monthlyTrend: [], topCustomers: [],
+      error: e.message
+    });
+  }
 });
 
 export default router;
