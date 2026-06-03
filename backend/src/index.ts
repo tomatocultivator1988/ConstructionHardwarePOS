@@ -26,6 +26,9 @@ const PORT = process.env.PORT || 3001;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
 const NODE_ENV = process.env.NODE_ENV || ((process as any).pkg ? 'production' : 'development');
 
+// Trust Vercel's proxy headers (X-Forwarded-For, etc)
+app.set('trust proxy', 1);
+
 let dbInitialized = false;
 
 // Lazy init DB on first request (needed for Vercel serverless)
@@ -65,6 +68,7 @@ app.use('/api', rateLimit({
   legacyHeaders: false,
   skip: (req) => req.path === '/health',
   message: { error: 'Too many requests, please try again later' },
+  validate: { xForwardedForHeader: false, forwardedHeader: false },
 }));
 
 // JWT authentication
