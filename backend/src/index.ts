@@ -92,8 +92,14 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/audit-log', auditRoutes);
 
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', environment: NODE_ENV });
+app.get('/api/health', async (_req, res) => {
+  try {
+    const db = getDb();
+    const userCount = (await db.prepare('SELECT COUNT(*) as cnt FROM users').get()) as any;
+    res.json({ status: 'ok', environment: NODE_ENV, db: 'connected', users: userCount?.cnt ?? 0 });
+  } catch (e: any) {
+    res.json({ status: 'ok', environment: NODE_ENV, db: 'error', error: e.message });
+  }
 });
 
 // In production, serve the built frontend

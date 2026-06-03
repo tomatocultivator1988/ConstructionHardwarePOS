@@ -15,11 +15,13 @@ router.post('/login', async (req: Request, res: Response) => {
   const db = getDb();
   const user = await db.prepare('SELECT * FROM users WHERE username = ?').get(username) as any;
   if (!user) {
+    console.log('Login failed: user not found:', username);
     res.status(401).json({ error: 'Invalid credentials' });
     return;
   }
 
   if (!bcrypt.compareSync(pin, user.pin_hash)) {
+    console.log('Login failed: wrong PIN for user:', username);
     res.status(401).json({ error: 'Invalid credentials' });
     return;
   }
