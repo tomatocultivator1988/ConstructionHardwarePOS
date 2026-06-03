@@ -19,6 +19,7 @@ import reportRoutes from './routes/reports';
 import authRoutes from './routes/auth';
 import userRoutes from './routes/users';
 import auditRoutes from './routes/audit';
+import seedRoutes from './routes/seed';
 import { authMiddleware } from './lib/auth';
 
 const app = express();
@@ -91,6 +92,7 @@ app.use('/api/stock-movements', stockMovementRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/audit-log', auditRoutes);
+app.use('/api/seed', seedRoutes);
 
 app.get('/api/health', async (_req, res) => {
   try {
