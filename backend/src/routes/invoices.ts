@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db/setup';
+import { requireAdmin } from '../lib/auth';
+import { logAudit } from '../lib/audit';
 
 const router = Router();
 
@@ -72,12 +74,16 @@ router.post('/', (req: Request, res: Response) => {
   const checkStock = db.prepare('SELECT id, name, stock, unit FROM materials WHERE id = ?');
   const getSeq = db.prepare('SELECT next_number FROM invoice_sequence WHERE id = 1');
   const updateSeq = db.prepare('UPDATE invoice_sequence SET next_number = next_number + 1 WHERE id = 1');
+  let invoice_number = '';
+  const insertMovement = db.prepare(
+    'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  );
 
   const txn = db.transaction(() => {
     const seq = getSeq.get() as any;
     const num = seq.next_number;
     updateSeq.run();
-    const invoice_number = `INV-${String(num).padStart(4, '0')}`;
+    invoice_number = `INV-${String(num).padStart(4, '0')}`;
 
     for (const materialId of usedMaterialIds) {
       const mat = checkStock.get(materialId) as any;
@@ -93,8 +99,8 @@ router.post('/', (req: Request, res: Response) => {
     }
 
     db.prepare(
-      'INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(invoiceId, customer_id || null, invoice_number, 0, tax_rate ?? 0, 0, due_date || null);
+      'INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(invoiceId, customer_id || null, invoice_number, 0, tax_rate ?? 0, 0, due_date || null, (req as any).user?.id || null);
 
     let subtotal = 0;
     for (const item of items) {
@@ -116,11 +122,13 @@ router.post('/', (req: Request, res: Response) => {
         .filter((it: any) => it.material_id === materialId)
         .reduce((s: number, it: any) => s + it.quantity, 0);
       deductStock.run(qtyNeeded, materialId);
+      insertMovement.run(uuidv4(), materialId, 'sale', -qtyNeeded, invoiceId, 'invoice', `Sold in ${invoice_number}`);
     }
   });
 
   try {
     txn();
+    logAudit((req as any).user?.id || null, 'create', 'invoice', invoiceId, `Created ${invoice_number}`);
   } catch (e: any) {
     res.status(400).json({ error: e.message });
     return;
@@ -183,6 +191,7 @@ router.post('/:id/pay', (req: Request, res: Response) => {
       }
     });
     txn();
+    logAudit((req as any).user?.id || null, 'update', 'invoice', req.params.id as string, `Payment of ${amount} via ${method}`);
   } catch (e: any) {
     res.status(400).json({ error: e.message });
     return;
@@ -191,16 +200,78 @@ router.post('/:id/pay', (req: Request, res: Response) => {
   res.status(201).json(db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId));
 });
 
-router.delete('/:id', (req: Request, res: Response) => {
+router.post('/:id/return', (req: Request, res: Response) => {
   const db = getDb();
-  const existing = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
+  const { items } = req.body;
+  if (!items || !items.length) {
+    res.status(400).json({ error: 'At least one return item is required' });
+    return;
+  }
+
+  const invoiceId = req.params.id as string;
+  const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId) as any;
+  if (!inv) { res.status(404).json({ error: 'Invoice not found' }); return; }
+  if (inv.status === 'pending') {
+    res.status(400).json({ error: 'Cannot return items on an unpaid invoice — delete it instead' });
+    return;
+  }
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (!item.material_id) { res.status(400).json({ error: `Return item ${i + 1}: material is required` }); return; }
+    if (!item.quantity || item.quantity <= 0) { res.status(400).json({ error: `Return item ${i + 1}: quantity must be > 0` }); return; }
+
+    const lineItem = db.prepare(
+      'SELECT * FROM invoice_items WHERE invoice_id = ? AND material_id = ?'
+    ).get(invoiceId, item.material_id) as any;
+    if (!lineItem) { res.status(400).json({ error: `Material not found on this invoice` }); return; }
+    if (item.quantity > lineItem.quantity) {
+      res.status(400).json({ error: `Cannot return more than purchased (${lineItem.quantity})` });
+      return;
+    }
+  }
+
+  const restoreStock = db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?');
+  const insertMovement = db.prepare(
+    'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  );
+
+  const txn = db.transaction(() => {
+    for (const item of items) {
+      restoreStock.run(item.quantity, item.material_id);
+      insertMovement.run(uuidv4(), item.material_id, 'return', item.quantity, invoiceId, 'invoice', `Returned from ${inv.invoice_number}`);
+    }
+
+    // Recalculate invoice balance
+    const totalPaid = (db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE invoice_id = ?').get(invoiceId) as any).total;
+    const remainingBalance = inv.total - totalPaid;
+
+    if (remainingBalance > 0) {
+      db.prepare("UPDATE invoices SET status = 'partial' WHERE id = ?").run(invoiceId);
+    } else if (remainingBalance <= 0) {
+      db.prepare("UPDATE invoices SET status = 'paid', paid_date = datetime('now') WHERE id = ?").run(invoiceId);
+    }
+  });
+
+  txn();
+  res.json(db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId));
+});
+
+router.delete('/:id', requireAdmin, (req: Request, res: Response) => {
+  const db = getDb();
+  const existing = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as any;
   if (!existing) { res.status(404).json({ error: 'Invoice not found' }); return; }
+
+  const insertMovement = db.prepare(
+    'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  );
 
   const txn = db.transaction(() => {
     const items = db.prepare('SELECT material_id, quantity FROM invoice_items WHERE invoice_id = ?').all(req.params.id) as any[];
     for (const item of items) {
       if (item.material_id) {
         db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?').run(item.quantity, item.material_id);
+        insertMovement.run(uuidv4(), item.material_id, 'sale', item.quantity, req.params.id, 'invoice', `Restored from deleted invoice ${existing.invoice_number}`);
       }
     }
     db.prepare('DELETE FROM payments WHERE invoice_id = ?').run(req.params.id);
@@ -208,6 +279,7 @@ router.delete('/:id', (req: Request, res: Response) => {
     db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
   });
   txn();
+  logAudit((req as any).user?.id || null, 'delete', 'invoice', req.params.id as string, `Deleted ${existing.invoice_number}`);
   res.status(204).end();
 });
 

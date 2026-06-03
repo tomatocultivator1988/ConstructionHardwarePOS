@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getDb } from '../db/setup';
+import { requireAdmin } from '../lib/auth';
 
 const router = Router();
 
@@ -13,7 +14,7 @@ router.get('/:key', (req: Request, res: Response) => {
   res.json({ key: req.params.key, value: row.value });
 });
 
-router.put('/:key', (req: Request, res: Response) => {
+router.put('/:key', requireAdmin, (req: Request, res: Response) => {
   const db = getDb();
   const { value } = req.body;
   if (value === undefined) {

@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db/setup';
+import { logAudit } from '../lib/audit';
+import { requireAdmin } from '../lib/auth';
 
 const router = Router();
 
@@ -22,9 +24,48 @@ router.get('/:id', (req: Request, res: Response) => {
   res.json(customer);
 });
 
+// Customer Statement of Account
+router.get('/:id/statement', (req: Request, res: Response) => {
+  const db = getDb();
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id) as any;
+  if (!customer) { res.status(404).json({ error: 'Customer not found' }); return; }
+
+  const from = (req.query.from as string) || '';
+  const to = (req.query.to as string) || '';
+
+  let query = `
+    SELECT i.id, i.invoice_number, i.total, i.status, i.issued_date, i.due_date,
+      COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) AS paid
+    FROM invoices i
+    WHERE i.customer_id = ?
+  `;
+  const params: any[] = [req.params.id];
+
+  if (from) { query += ' AND date(i.issued_date) >= ?'; params.push(from); }
+  if (to) { query += ' AND date(i.issued_date) <= ?'; params.push(to); }
+  query += ' ORDER BY i.issued_date ASC';
+
+  const invoices = db.prepare(query).all(...params) as any[];
+
+  let balance = 0;
+  const statements = invoices.map(inv => {
+    balance += inv.total - inv.paid;
+    return {
+      ...inv,
+      total: Math.round(inv.total * 100) / 100,
+      paid: Math.round(inv.paid * 100) / 100,
+      balance: Math.round(balance * 100) / 100,
+    };
+  });
+
+  const totalOwed = Math.round(invoices.reduce((s, i) => s + i.total - i.paid, 0) * 100) / 100;
+
+  res.json({ customer: { name: customer.name, address: customer.address, phone: customer.phone }, statements, total_owed: totalOwed, from, to });
+});
+
 router.post('/', (req: Request, res: Response) => {
   const db = getDb();
-  const { name, phone, email, address } = req.body;
+  const { name, phone, email, address, is_wholesale } = req.body;
   if (!name || !name.trim()) {
     res.status(400).json({ error: 'Name is required' });
     return;
@@ -35,16 +76,17 @@ router.post('/', (req: Request, res: Response) => {
   }
   const id = uuidv4();
   db.prepare(
-    'INSERT INTO customers (id, name, phone, email, address) VALUES (?, ?, ?, ?, ?)'
-  ).run(id, name.trim(), phone || null, email || null, address || null);
+    'INSERT INTO customers (id, name, phone, email, address, is_wholesale) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(id, name.trim(), phone || null, email || null, address || null, is_wholesale ? 1 : 0);
   const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
+  logAudit((req as any).user?.id || null, 'create', 'customer', id, name.trim());
   res.status(201).json(customer);
 });
 
 router.put('/:id', (req: Request, res: Response) => {
   const db = getDb();
-  const { name, phone, email, address } = req.body;
-  const existing = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+  const { name, phone, email, address, is_wholesale } = req.body;
+  const existing = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id) as any;
   if (!existing) {
     res.status(404).json({ error: 'Customer not found' });
     return;
@@ -57,20 +99,23 @@ router.put('/:id', (req: Request, res: Response) => {
     res.status(400).json({ error: 'Invalid email format' });
     return;
   }
+  const customerId = req.params.id as string;
   db.prepare(
-    `UPDATE customers SET name = ?, phone = ?, email = ?, address = ?, updated_at = datetime('now') WHERE id = ?`
+    `UPDATE customers SET name = ?, phone = ?, email = ?, address = ?, is_wholesale = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(
-    (name !== undefined ? name.trim() : (existing as any).name),
-    phone ?? (existing as any).phone,
-    email ?? (existing as any).email,
-    address ?? (existing as any).address,
-    req.params.id
+    (name !== undefined ? name.trim() : existing.name),
+    phone ?? existing.phone,
+    email ?? existing.email,
+    address ?? existing.address,
+    is_wholesale !== undefined ? (is_wholesale ? 1 : 0) : existing.is_wholesale,
+    customerId
   );
-  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
+  logAudit((req as any).user?.id || null, 'update', 'customer', customerId);
   res.json(customer);
 });
 
-router.delete('/:id', (req: Request, res: Response) => {
+router.delete('/:id', requireAdmin, (req: Request, res: Response) => {
   const db = getDb();
   const existing = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
   if (!existing) {
@@ -82,7 +127,9 @@ router.delete('/:id', (req: Request, res: Response) => {
     res.status(409).json({ error: 'Cannot delete customer with existing invoices' });
     return;
   }
-  db.prepare('DELETE FROM customers WHERE id = ?').run(req.params.id);
+  const custId = req.params.id as string;
+  db.prepare('DELETE FROM customers WHERE id = ?').run(custId);
+  logAudit((req as any).user?.id || null, 'delete', 'customer', custId);
   res.status(204).send();
 });
 

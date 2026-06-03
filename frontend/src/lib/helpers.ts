@@ -123,3 +123,9 @@ export function showConfirmModal(html: string): Promise<boolean> {
     });
   });
 }
+
+export function isAdmin(): boolean {
+  const u = localStorage.getItem('buildpro_user');
+  if (!u) return false;
+  try { return JSON.parse(u).role === 'admin'; } catch { return false; }
+}

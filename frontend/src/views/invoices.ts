@@ -259,8 +259,23 @@ export async function showInvoiceDetail(id: string) {
     <div class="field-error" id="pay-err"></div>
     ` : '<p style="color:var(--c-success);font-weight:600;margin-top:1rem">✓ Paid in Full</p>'}
 
+    ${inv.status !== 'pending' ? `
+    <h4 style="margin-top:var(--space-5)">Return Items</h4>
+    <div id="return-items">
+      ${inv.items.map((item: any) => `
+        <div class="line-item" style="margin-bottom:var(--space-2)">
+          <span style="flex:2;font-size:var(--fs-sm)">${esc(item.description)}</span>
+          <span style="flex:1;font-size:var(--fs-sm);color:var(--c-text-muted)">Sold: ${item.quantity}</span>
+          <input id="ret-qty-${item.material_id || item.id}" type="number" min="0" max="${item.quantity}" value="0" style="flex:1;min-height:32px;font-size:var(--fs-sm);width:60px" />
+        </div>
+      `).join('')}
+    </div>
+    <button class="btn btn-warning" id="ret-btn" onclick="returnItems('${inv.id}')" style="margin-top:var(--space-2)">Process Returns</button>
+    <div class="field-error" id="ret-err"></div>
+    ` : ''}
+
     <div class="modal-actions">
-      <button class="btn btn-primary" onclick="printReceipt('${inv.id}')">🖨 Print Receipt</button>
+      <button class="btn btn-primary" onclick="printReceipt('${inv.id}')">Print Receipt</button>
       <button class="btn" onclick="closeModal();loadView('invoices')">Close</button>
     </div>
   </div>`;
@@ -297,4 +312,27 @@ export async function delInvoice(id: string) {
   if (!ok) return;
   try { await apiDel(`/invoices/${id}`); loadView('invoices'); }
   catch (e: any) { showToast(e.message); }
+}
+
+export async function returnItems(invoiceId: string) {
+  disableBtn('ret-btn', true);
+  try {
+    const inv = await apiGet<any>(`/invoices/${invoiceId}`);
+    const retItems: { material_id: string; quantity: number }[] = [];
+    for (const item of inv.items) {
+      if (!item.material_id) continue;
+      const qty = parseInt((document.getElementById(`ret-qty-${item.material_id}`) as HTMLInputElement)?.value || '0');
+      if (qty > 0 && qty <= item.quantity) {
+        retItems.push({ material_id: item.material_id, quantity: qty });
+      }
+    }
+    if (!retItems.length) { showToast('Enter return quantities'); return; }
+    const ok = await showConfirmModal(`<h3>Confirm Returns</h3><p style="color:var(--c-text-secondary)">Return ${retItems.length} item(s) and restore stock?</p>`);
+    if (!ok) return;
+    await apiPost(`/invoices/${invoiceId}/return`, { items: retItems });
+    showToast('Returns processed — stock restored', 'success');
+    closeModal();
+    loadView('invoices');
+  } catch (e: any) { showToast(e.message); }
+  finally { disableBtn('ret-btn', false); }
 }

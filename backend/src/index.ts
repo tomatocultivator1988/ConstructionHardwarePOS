@@ -11,10 +11,18 @@ import invoiceRoutes from './routes/invoices';
 import settingsRoutes from './routes/settings';
 import paymentRoutes from './routes/payments';
 import analyticsRoutes from './routes/analytics';
+import expenseRoutes from './routes/expenses';
+import supplierRoutes from './routes/suppliers';
+import purchaseOrderRoutes from './routes/purchase-orders';
+import stockMovementRoutes from './routes/stock-movements';
+import reportRoutes from './routes/reports';
+import authRoutes from './routes/auth';
+import userRoutes from './routes/users';
+import auditRoutes from './routes/audit';
+import { authMiddleware } from './lib/auth';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const API_TOKEN = process.env.API_TOKEN || '';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
 const NODE_ENV = process.env.NODE_ENV || ((process as any).pkg ? 'production' : 'development');
 
@@ -31,7 +39,7 @@ app.use(helmet({
 app.use(cors({
   origin: CORS_ORIGIN,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'X-API-Token'],
+  allowedHeaders: ['Content-Type', 'X-API-Token', 'Authorization'],
 }));
 
 // Body parsing with size limit
@@ -48,18 +56,11 @@ app.use('/api', rateLimit({
   message: { error: 'Too many requests, please try again later' },
 }));
 
-// API token authentication
-app.use('/api', (req, res, next) => {
-  if (!API_TOKEN) {
-    console.warn('WARNING: API_TOKEN is not set. Authentication is DISABLED. Set API_TOKEN in your .env file.');
-  }
-  if (req.path === '/health') return next();
-  if (API_TOKEN && req.headers['x-api-token'] !== API_TOKEN) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return;
-  }
-  next();
-});
+// JWT authentication
+app.use('/api', authMiddleware);
+
+// Public routes (no auth)
+app.use('/api/auth', authRoutes);
 
 // API routes
 app.use('/api/customers', customerRoutes);
@@ -68,6 +69,13 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/expenses', expenseRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/purchase-orders', purchaseOrderRoutes);
+app.use('/api/stock-movements', stockMovementRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/audit-log', auditRoutes);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', environment: NODE_ENV });

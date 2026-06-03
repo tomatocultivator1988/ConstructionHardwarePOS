@@ -1,38 +1,79 @@
 const API = '/api';
-const API_TOKEN = (window as any).__API_TOKEN || '';
+const CACHE_TTL = 30000;
+
+const cache = new Map<string, { data: any; ts: number }>();
+
+function invalidatePattern(pattern: string) {
+  for (const key of cache.keys()) {
+    if (key.startsWith(pattern)) cache.delete(key);
+  }
+}
 
 function apiHeaders(headers: Record<string, string> = {}): Record<string, string> {
-  if (API_TOKEN) headers['X-API-Token'] = API_TOKEN;
+  const token = localStorage.getItem('buildpro_token');
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   return headers;
 }
 
+async function handleResponse(res: Response) {
+  if (res.status === 401) {
+    localStorage.removeItem('buildpro_token');
+    localStorage.removeItem('buildpro_user');
+    (window as any).showLogin?.();
+    throw new Error('Session expired. Please login again.');
+  }
+  if (res.status === 403) {
+    throw new Error('Access denied. Admin only.');
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: 'Request failed' }));
+    throw new Error(body.error || 'Request failed');
+  }
+  return res;
+}
+
 export async function apiGet<T = any>(path: string): Promise<T> {
+  const cached = cache.get(path);
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data;
   const res = await fetch(API + path, { headers: apiHeaders() });
-  if (!res.ok) throw new Error((await res.json()).error || await res.text());
-  return res.json();
+  await handleResponse(res);
+  const data = await res.json();
+  cache.set(path, { data, ts: Date.now() });
+  return data;
+}
+
+async function mutate(method: string, path: string, body?: any): Promise<any> {
+  const res = await fetch(API + path, {
+    method,
+    headers: apiHeaders(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  await handleResponse(res);
+  invalidatePattern(path.split('/')[1]);
+  return res.status !== 204 ? res.json() : undefined;
 }
 
 export async function apiPost<T = any>(path: string, body: any): Promise<T> {
-  const res = await fetch(API + path, {
-    method: 'POST',
-    headers: apiHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error((await res.json()).error || await res.text());
-  return res.json();
+  return mutate('POST', path, body);
 }
 
 export async function apiPut<T = any>(path: string, body: any): Promise<T> {
-  const res = await fetch(API + path, {
-    method: 'PUT',
-    headers: apiHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error((await res.json()).error || await res.text());
-  return res.json();
+  return mutate('PUT', path, body);
 }
 
 export async function apiDel(path: string): Promise<void> {
-  const res = await fetch(API + path, { method: 'DELETE', headers: apiHeaders() });
-  if (!res.ok) throw new Error((await res.json()).error || await res.text());
+  await mutate('DELETE', path);
+}
+
+export function isLoggedIn(): boolean {
+  return !!localStorage.getItem('buildpro_token');
+}
+
+export function getCurrentUser(): { id: string; username: string; role: string } | null {
+  const u = localStorage.getItem('buildpro_user');
+  return u ? JSON.parse(u) : null;
+}
+
+export function isAdmin(): boolean {
+  return getCurrentUser()?.role === 'admin';
 }

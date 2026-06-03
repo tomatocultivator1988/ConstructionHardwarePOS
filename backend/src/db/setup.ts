@@ -96,7 +96,88 @@ function initTables() {
       next_number INTEGER NOT NULL DEFAULT 1
     );
 
+    CREATE TABLE IF NOT EXISTS expenses (
+      id TEXT PRIMARY KEY,
+      category TEXT NOT NULL,
+      amount REAL NOT NULL,
+      description TEXT,
+      vendor TEXT,
+      expense_date TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS suppliers (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      contact_person TEXT,
+      phone TEXT,
+      email TEXT,
+      address TEXT,
+      tin TEXT,
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS purchase_orders (
+      id TEXT PRIMARY KEY,
+      supplier_id TEXT NOT NULL,
+      po_number TEXT NOT NULL UNIQUE,
+      status TEXT DEFAULT 'pending',
+      total REAL NOT NULL,
+      order_date TEXT NOT NULL,
+      received_date TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS po_items (
+      id TEXT PRIMARY KEY,
+      po_id TEXT NOT NULL,
+      material_id TEXT,
+      description TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      unit_cost REAL NOT NULL,
+      total REAL NOT NULL,
+      FOREIGN KEY (po_id) REFERENCES purchase_orders(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS po_sequence (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      next_number INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS stock_movements (
+      id TEXT PRIMARY KEY,
+      material_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      reference_id TEXT,
+      reference_type TEXT,
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (material_id) REFERENCES materials(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      pin_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'staff',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      action TEXT NOT NULL,
+      entity TEXT NOT NULL,
+      entity_id TEXT,
+      details TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     INSERT OR IGNORE INTO invoice_sequence (id, next_number) VALUES (1, 1);
+    INSERT OR IGNORE INTO po_sequence (id, next_number) VALUES (1, 1);
   `);
 }
 
@@ -112,6 +193,19 @@ function migrateSchema() {
     db.exec("ALTER TABLE materials ADD COLUMN cost_price REAL DEFAULT 0");
   }
 
+  if (!materialCols.includes('category')) {
+    db.exec("ALTER TABLE materials ADD COLUMN category TEXT DEFAULT ''");
+  }
+  if (!materialCols.includes('wholesale_price')) {
+    db.exec("ALTER TABLE materials ADD COLUMN wholesale_price REAL DEFAULT 0");
+  }
+
+  const custInfo = db.prepare("PRAGMA table_info('customers')").all() as any[];
+  const custCols = custInfo.map(r => r.name);
+  if (!custCols.includes('is_wholesale')) {
+    db.exec("ALTER TABLE customers ADD COLUMN is_wholesale INTEGER DEFAULT 0");
+  }
+
   const invoiceInfo = db.prepare("PRAGMA table_info('invoices')").all() as any[];
   const invoiceCols = invoiceInfo.map(r => r.name);
 
@@ -124,8 +218,11 @@ function migrateSchema() {
   if (!invoiceCols.includes('tax_amount')) {
     db.exec("ALTER TABLE invoices ADD COLUMN tax_amount REAL DEFAULT 0");
   }
+  if (!invoiceCols.includes('user_id')) {
+    db.exec("ALTER TABLE invoices ADD COLUMN user_id TEXT");
+  }
 
-  const existingIndexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('idx_invoice_items_invoice_id', 'idx_payments_invoice_id')").all() as any[];
+  const existingIndexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all() as any[];
   const indexNames = existingIndexes.map((r: any) => r.name);
 
   if (!indexNames.includes('idx_invoice_items_invoice_id')) {
@@ -133,6 +230,43 @@ function migrateSchema() {
   }
   if (!indexNames.includes('idx_payments_invoice_id')) {
     db.exec("CREATE INDEX idx_payments_invoice_id ON payments(invoice_id)");
+  }
+  if (!indexNames.includes('idx_expenses_date')) {
+    db.exec("CREATE INDEX idx_expenses_date ON expenses(expense_date)");
+  }
+  if (!indexNames.includes('idx_expenses_category')) {
+    db.exec("CREATE INDEX idx_expenses_category ON expenses(category)");
+  }
+  if (!indexNames.includes('idx_po_supplier')) {
+    db.exec("CREATE INDEX idx_po_supplier ON purchase_orders(supplier_id)");
+  }
+  if (!indexNames.includes('idx_po_status')) {
+    db.exec("CREATE INDEX idx_po_status ON purchase_orders(status)");
+  }
+  if (!indexNames.includes('idx_po_items_po')) {
+    db.exec("CREATE INDEX idx_po_items_po ON po_items(po_id)");
+  }
+  if (!indexNames.includes('idx_stock_mov_material')) {
+    db.exec("CREATE INDEX idx_stock_mov_material ON stock_movements(material_id)");
+  }
+  if (!indexNames.includes('idx_stock_mov_type')) {
+    db.exec("CREATE INDEX idx_stock_mov_type ON stock_movements(type)");
+  }
+  if (!indexNames.includes('idx_audit_entity')) {
+    db.exec("CREATE INDEX idx_audit_entity ON audit_log(entity)");
+  }
+  if (!indexNames.includes('idx_audit_date')) {
+    db.exec("CREATE INDEX idx_audit_date ON audit_log(created_at)");
+  }
+
+  // Create default admin if no users exist
+  const userCount = (db.prepare('SELECT COUNT(*) as cnt FROM users').get() as any).cnt;
+  if (userCount === 0) {
+    const bcrypt = require('bcryptjs');
+    const adminId = require('uuid').v4();
+    const hash = bcrypt.hashSync('0000', 10);
+    db.prepare('INSERT INTO users (id, username, pin_hash, role) VALUES (?, ?, ?, ?)').run(adminId, 'admin', hash, 'admin');
+    console.log('Default admin user created (username: admin, PIN: 0000)');
   }
 
   db.exec('DROP VIEW IF EXISTS v_invoice_profit_margin');

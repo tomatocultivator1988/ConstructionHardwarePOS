@@ -1,4 +1,4 @@
-import initSqlJs, { SqlJsStatic, Database as SqlJsDatabase } from 'sql.js';
+import initSqlJs, { SqlJsStatic, SqlJsDatabase } from 'sql.js';
 import fs from 'fs';
 import path from 'path';
 

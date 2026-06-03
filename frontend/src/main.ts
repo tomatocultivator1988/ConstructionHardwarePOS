@@ -1,27 +1,34 @@
 import { loadView } from './lib/router';
-import { closeModal } from './lib/helpers';
+import { closeModal, isAdmin } from './lib/helpers';
+import { isLoggedIn, apiGet, getCurrentUser } from './lib/api';
 import * as customers from './views/customers';
 import * as materials from './views/materials';
 import * as invoices from './views/invoices';
+import * as expenses from './views/expenses';
+import * as suppliers from './views/suppliers';
+import * as purchaseOrders from './views/purchase-orders';
+import * as reports from './views/reports';
+import * as login from './views/login';
+import * as settings from './views/settings';
 import { printReceipt } from './views/receipt';
-import { saveSettings } from './views/settings';
-
-// ─────────── EXPOSE ALL VIEW FUNCTIONS TO WINDOW ───────────
-// Required for backward compatibility with HTML onclick attributes.
-// Will be migrated to event delegation in a future phase.
 
 Object.assign(window, {
   closeModal,
+  logout: login.logout,
+  doLogin: login.doLogin,
   showCustomerModal: customers.showCustomerModal,
   saveCustomer: customers.saveCustomer,
   updateCustomer: customers.updateCustomer,
   editCustomer: customers.editCustomer,
   delCustomer: customers.delCustomer,
+  showCustomerStatement: customers.showCustomerStatement,
   showMaterialModal: materials.showMaterialModal,
   createMaterial: materials.createMaterial,
   updateMaterial: materials.updateMaterial,
   editMaterial: materials.editMaterial,
   delMaterial: materials.delMaterial,
+  filterMaterials: materials.filterMaterials,
+  showStockHistory: materials.showStockHistory,
   showInvoiceModal: invoices.showInvoiceModal,
   toggleWalkin: invoices.toggleWalkin,
   addLineItem: invoices.addLineItem,
@@ -29,11 +36,41 @@ Object.assign(window, {
   showInvoiceDetail: invoices.showInvoiceDetail,
   recordPayment: invoices.recordPayment,
   delInvoice: invoices.delInvoice,
+  returnItems: invoices.returnItems,
+  showExpenseModal: expenses.showExpenseModal,
+  createExpense: expenses.createExpense,
+  updateExpense: expenses.updateExpense,
+  editExpense: expenses.editExpense,
+  delExpense: expenses.delExpense,
+  showSupplierModal: suppliers.showSupplierModal,
+  createSupplier: suppliers.createSupplier,
+  updateSupplier: suppliers.updateSupplier,
+  editSupplier: suppliers.editSupplier,
+  delSupplier: suppliers.delSupplier,
+  showPOModal: purchaseOrders.showPOModal,
+  addPOLineItem: purchaseOrders.addPOLineItem,
+  poMaterialChanged: purchaseOrders.poMaterialChanged,
+  removePOLineItem: purchaseOrders.removePOLineItem,
+  createPO: purchaseOrders.createPO,
+  showPODetail: purchaseOrders.showPODetail,
+  receivePO: purchaseOrders.receivePO,
+  cancelPO: purchaseOrders.cancelPO,
+  delPO: purchaseOrders.delPO,
+  switchReportTab: reports.switchReportTab,
+  reloadDaily: reports.reloadDaily,
+  reloadMonthly: reports.reloadMonthly,
+  reloadTax: reports.reloadTax,
+  loadRangeReport: reports.loadRangeReport,
+  printReport: reports.printReport,
+  switchSettingsTab: settings.switchSettingsTab,
+  saveSettings: settings.saveSettings,
+  showUserModal: settings.showUserModal,
+  createUser: settings.createUser,
+  updateUser: settings.updateUser,
+  delUser: settings.delUser,
   printReceipt,
-  saveSettings,
+  checkLowStock: () => checkLowStock(),
 });
-
-export { loadView };
 
 // Navigation
 document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -41,8 +78,54 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     loadView((btn as HTMLElement).dataset.view!);
+    if ((btn as HTMLElement).dataset.view === 'dashboard') checkLowStock();
   });
 });
 
-// ─────────── INIT ───────────
-loadView('dashboard');
+export function applyRoleUI() {
+  const admin = isAdmin();
+  document.body.classList.toggle('staff-user', !admin);
+  const adminTabs = ['reports', 'settings'];
+  adminTabs.forEach(view => {
+    const btn = document.querySelector(`[data-view="${view}"]`) as HTMLElement;
+    if (btn) btn.style.display = admin ? '' : 'none';
+  });
+}
+
+// Init
+if (isLoggedIn()) {
+  applyRoleUI();
+  loadView('dashboard');
+  checkLowStock();
+  showUserHeader();
+} else {
+  login.showLogin();
+}
+
+function showUserHeader() {
+  const user = getCurrentUser();
+  if (!user) return;
+  const el = document.getElementById('header-user');
+  const nameEl = document.getElementById('user-name-display');
+  if (el) el.style.display = 'flex';
+  if (nameEl) nameEl.textContent = user.username + (user.role === 'admin' ? ' (admin)' : '');
+}
+
+async function checkLowStock() {
+  try {
+    const materials = await apiGet<any[]>('/materials');
+    const low = materials.filter((m: any) => m.stock <= m.reorder_point);
+    const badge = document.querySelector('[data-view="materials"]');
+    if (badge) {
+      const existing = badge.querySelector('.nav-badge');
+      if (existing) existing.remove();
+      if (low.length > 0) {
+        const b = document.createElement('span');
+        b.className = 'nav-badge';
+        b.textContent = String(low.length);
+        badge.appendChild(b);
+        showToast(`${low.length} item(s) need restocking`, 'error');
+      }
+    }
+  } catch {}
+}

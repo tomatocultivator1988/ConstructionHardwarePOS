@@ -4,6 +4,7 @@ export interface Customer {
   phone: string | null;
   email: string | null;
   address: string | null;
+  is_wholesale: number;
   created_at: string;
   updated_at: string;
 }
@@ -15,7 +16,9 @@ export interface Material {
   stock: number;
   cost_price: number;
   price_per_unit: number;
+  wholesale_price: number;
   reorder_point: number;
+  category: string;
   created_at: string;
   updated_at: string;
 }
@@ -75,4 +78,64 @@ export interface Analytics {
 export interface PaySummary {
   daily: { date: string; total: number }[];
   todayTotal: number;
+}
+
+export interface Expense {
+  id: string;
+  category: string;
+  amount: number;
+  description: string | null;
+  vendor: string | null;
+  expense_date: string;
+  created_at: string;
+}
+
+export interface Supplier {
+  id: string;
+  name: string;
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  tin: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  supplier_id: string;
+  supplier_name: string;
+  po_number: string;
+  status: 'pending' | 'received' | 'cancelled';
+  total: number;
+  order_date: string;
+  received_date: string | null;
+  created_at: string;
+  items: PoItem[];
+}
+
+export interface PoItem {
+  id: string;
+  po_id: string;
+  material_id: string | null;
+  material_name: string;
+  unit: string | null;
+  description: string;
+  quantity: number;
+  unit_cost: number;
+  total: number;
+}
+
+export interface StockMovement {
+  id: string;
+  material_id: string;
+  material_name: string;
+  unit: string;
+  type: string;
+  quantity: number;
+  reference_id: string | null;
+  reference_type: string | null;
+  notes: string | null;
+  created_at: string;
 }
