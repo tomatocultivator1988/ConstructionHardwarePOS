@@ -4,11 +4,5 @@
   "installCommand": "cd backend && npm install && cd ../frontend && npm install",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api" }
-  ],
-  "functions": {
-    "api/index.js": {
-      "memory": 512,
-      "maxDuration": 10
-    }
-  }
+  ]
 }
