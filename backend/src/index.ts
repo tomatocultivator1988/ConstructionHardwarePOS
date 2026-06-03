@@ -4,7 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import path from 'path';
-import { initDb } from './db/setup';
+import { initDb, getDb } from './db/setup';
 import customerRoutes from './routes/customers';
 import materialRoutes from './routes/materials';
 import invoiceRoutes from './routes/invoices';
