@@ -7,7 +7,7 @@
   ],
   "functions": {
     "api/index.ts": {
-      "runtime": "@vercel/node@5"
+      "runtime": "@vercel/node"
     }
   }
 }
