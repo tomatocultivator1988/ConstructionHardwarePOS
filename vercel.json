@@ -4,5 +4,10 @@
   "installCommand": "cd backend && npm install && cd ../frontend && npm install",
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api" }
-  ]
+  ],
+  "functions": {
+    "api/index.ts": {
+      "runtime": "@vercel/node@5"
+    }
+  }
 }
