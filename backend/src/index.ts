@@ -95,7 +95,14 @@ app.use('/api/audit-log', auditRoutes);
 app.get('/api/health', async (_req, res) => {
   try {
     const db = getDb();
-    const userCount = (await db.prepare('SELECT COUNT(*) as cnt FROM users').get()) as any;
+    let userCount = (await db.prepare('SELECT COUNT(*) as cnt FROM users').get()) as any;
+    if (userCount.cnt === 0) {
+      const bcrypt = require('bcryptjs');
+      const { v4: uuidv4 } = require('uuid');
+      const hash = bcrypt.hashSync('0000', 10);
+      await db.prepare('INSERT INTO users (id, username, pin_hash, role) VALUES (?, ?, ?, ?)').run(uuidv4(), 'admin', hash, 'admin');
+      userCount = (await db.prepare('SELECT COUNT(*) as cnt FROM users').get()) as any;
+    }
     res.json({ status: 'ok', environment: NODE_ENV, db: 'connected', users: userCount?.cnt ?? 0 });
   } catch (e: any) {
     res.json({ status: 'ok', environment: NODE_ENV, db: 'error', error: e.message });
