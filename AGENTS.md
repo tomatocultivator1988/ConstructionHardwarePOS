@@ -193,16 +193,16 @@ This requires `@vercel/node` which auto-wraps Express apps.
 Create these in Vercel dashboard or `.env`:
 
 ```
-TURSO_URL=libsql://buildpro-XXXX.turso.io
-TURSO_TOKEN=eyJhbGciOiJFZE...
-JWT_SECRET=random-string-here
+TURSO_URL=libsql://turso-db-create-buildpro-tomatocultivator1988.aws-ap-northeast-1.turso.io
+TURSO_TOKEN=eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODA1MDg5MDYsImlkIjoiMDE5ZThlOTktNzEwMS03MmU1LWI5YzYtMWZiYTAzM2EyMWFkIiwicmlkIjoiZThhYjVhNDItOTdjNS00MjI1LWJjMWEtYmQ5NWMyNTE5NWY1In0.MsHnkOPtqPeAHx7khZdF7M3m6Z9sEwOobyBpfhvTOYGb1DXxhD1RsnPEbsfromEyxDkju16hd4UNyjeC3ngYBw
+JWT_SECRET=buildpro-jwt-secret-change-in-prod
 ```
 
 For local dev, add to `backend/.env`:
 ```
-TURSO_URL=libsql://buildpro-XXXX.turso.io
-TURSO_TOKEN=eyJ...
-JWT_SECRET=dev-secret
+TURSO_URL=libsql://turso-db-create-buildpro-tomatocultivator1988.aws-ap-northeast-1.turso.io
+TURSO_TOKEN=eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3ODA1MDg5MDYsImlkIjoiMDE5ZThlOTktNzEwMS03MmU1LWI5YzYtMWZiYTAzM2EyMWFkIiwicmlkIjoiZThhYjVhNDItOTdjNS00MjI1LWJjMWEtYmQ5NWMyNTE5NWY1In0.MsHnkOPtqPeAHx7khZdF7M3m6Z9sEwOobyBpfhvTOYGb1DXxhD1RsnPEbsfromEyxDkju16hd4UNyjeC3ngYBw
+JWT_SECRET=buildpro-jwt-secret-change-in-prod
 CORS_ORIGIN=http://localhost:5173
 ```
 
@@ -210,11 +210,10 @@ CORS_ORIGIN=http://localhost:5173
 
 ## Implementation Order
 
-### Step 1: Turso Setup (5 min)
-1. Create free account at turso.tech
-2. Create database: `turso db create buildpro`
-3. Get URL + token: `turso db show buildpro` / `turso db tokens create buildpro`
-4. Set env vars
+### Step 1: Turso Setup (already done)
+- Database: `buildpro` @ `aws-ap-northeast-1`
+- URL + token: saved above under Environment Variables
+- Ensure env vars are set in `backend/.env`
 
 ### Step 2: Database Layer (30 min)
 1. `npm install @libsql/client` (and remove `sql.js`)
