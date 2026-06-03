@@ -31,7 +31,7 @@ function validateExpense(body: any, existing?: any) {
   return { category, amount, description, vendor, expense_date, errors };
 }
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   const db = getDb();
   let query = 'SELECT * FROM expenses';
   const params: any[] = [];
@@ -55,11 +55,11 @@ router.get('/', (req: Request, res: Response) => {
   }
   query += ' ORDER BY expense_date DESC, created_at DESC';
 
-  const expenses = db.prepare(query).all(...params);
+  const expenses = await db.prepare(query).all(...params);
   res.json(expenses);
 });
 
-router.get('/summary', (req: Request, res: Response) => {
+router.get('/summary', async (req: Request, res: Response) => {
   const db = getDb();
   let query = "SELECT category, SUM(amount) AS total FROM expenses";
   const params: any[] = [];
@@ -79,17 +79,17 @@ router.get('/summary', (req: Request, res: Response) => {
   }
   query += ' GROUP BY category ORDER BY total DESC';
 
-  res.json(db.prepare(query).all(...params));
+  res.json(await db.prepare(query).all(...params));
 });
 
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   const db = getDb();
-  const expense = db.prepare('SELECT * FROM expenses WHERE id = ?').get(req.params.id);
+  const expense = await db.prepare('SELECT * FROM expenses WHERE id = ?').get(req.params.id);
   if (!expense) { res.status(404).json({ error: 'Expense not found' }); return; }
   res.json(expense);
 });
 
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const db = getDb();
   const validation = validateExpense(req.body);
   if (validation.errors.length) {
@@ -97,38 +97,38 @@ router.post('/', (req: Request, res: Response) => {
     return;
   }
   const id = uuidv4();
-  db.prepare(
+  await db.prepare(
     'INSERT INTO expenses (id, category, amount, description, vendor, expense_date) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(id, validation.category, validation.amount, validation.description || null, validation.vendor || null, validation.expense_date);
-  const expense = db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
-  logAudit((req as any).user?.id || null, 'create', 'expense', id, `${validation.category} — ${validation.amount}`);
+  const expense = await db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
+  await logAudit((req as any).user?.id || null, 'create', 'expense', id, `${validation.category} — ${validation.amount}`);
   res.status(201).json(expense);
 });
 
-router.put('/:id', (req: Request, res: Response) => {
+router.put('/:id', async (req: Request, res: Response) => {
   const db = getDb();
-  const existing = db.prepare('SELECT * FROM expenses WHERE id = ?').get(req.params.id) as any;
+  const existing = await db.prepare('SELECT * FROM expenses WHERE id = ?').get(req.params.id) as any;
   if (!existing) { res.status(404).json({ error: 'Expense not found' }); return; }
   const validation = validateExpense(req.body, existing);
   if (validation.errors.length) {
     res.status(400).json({ error: validation.errors.join('; ') });
     return;
   }
-  db.prepare(
+  await db.prepare(
     'UPDATE expenses SET category=?, amount=?, description=?, vendor=?, expense_date=? WHERE id=?'
   ).run(validation.category, validation.amount, validation.description || null, validation.vendor || null, validation.expense_date, req.params.id);
-  const updated = db.prepare('SELECT * FROM expenses WHERE id = ?').get(req.params.id);
-  logAudit((req as any).user?.id || null, 'update', 'expense', req.params.id as string);
+  const updated = await db.prepare('SELECT * FROM expenses WHERE id = ?').get(req.params.id);
+  await logAudit((req as any).user?.id || null, 'update', 'expense', req.params.id as string);
   res.json(updated);
 });
 
-router.delete('/:id', requireAdmin, (req: Request, res: Response) => {
+router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   const db = getDb();
-  const existing = db.prepare('SELECT * FROM expenses WHERE id = ?').get(req.params.id);
+  const existing = await db.prepare('SELECT * FROM expenses WHERE id = ?').get(req.params.id);
   if (!existing) { res.status(404).json({ error: 'Expense not found' }); return; }
   const name = (existing as any).category + ' ' + (existing as any).amount;
-  db.prepare('DELETE FROM expenses WHERE id = ?').run(req.params.id);
-  logAudit((req as any).user?.id || null, 'delete', 'expense', req.params.id as string, name);
+  await db.prepare('DELETE FROM expenses WHERE id = ?').run(req.params.id);
+  await logAudit((req as any).user?.id || null, 'delete', 'expense', req.params.id as string, name);
   res.status(204).send();
 });
 

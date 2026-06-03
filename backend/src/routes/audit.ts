@@ -4,9 +4,9 @@ import { requireAdmin } from '../lib/auth';
 
 const router = Router();
 
-router.get('/', requireAdmin, (_req: Request, res: Response) => {
+router.get('/', requireAdmin, async (_req: Request, res: Response) => {
   const db = getDb();
-  const logs = db.prepare(`
+  const logs = await db.prepare(`
     SELECT al.*, COALESCE(u.username, 'System') AS username
     FROM audit_log al
     LEFT JOIN users u ON u.id = al.user_id

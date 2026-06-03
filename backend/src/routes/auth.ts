@@ -5,7 +5,7 @@ import { signToken } from '../lib/auth';
 
 const router = Router();
 
-router.post('/login', (req: Request, res: Response) => {
+router.post('/login', async (req: Request, res: Response) => {
   const { username, pin } = req.body;
   if (!username || !pin) {
     res.status(400).json({ error: 'Username and PIN are required' });
@@ -13,7 +13,7 @@ router.post('/login', (req: Request, res: Response) => {
   }
 
   const db = getDb();
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username) as any;
+  const user = await db.prepare('SELECT * FROM users WHERE username = ?').get(username) as any;
   if (!user) {
     res.status(401).json({ error: 'Invalid credentials' });
     return;

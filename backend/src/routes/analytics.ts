@@ -3,11 +3,11 @@ import { getDb } from '../db/setup';
 
 const router = Router();
 
-router.get('/dashboard', (_req: Request, res: Response) => {
+router.get('/dashboard', async (_req: Request, res: Response) => {
   const db = getDb();
 
   // Top 5 selling materials by quantity
-  const topMaterials = db.prepare(`
+  const topMaterials = await db.prepare(`
     SELECT ii.material_id, m.name, m.unit, m.cost_price,
       SUM(ii.quantity) AS total_qty,
       SUM(ii.total) AS total_revenue,
@@ -21,7 +21,7 @@ router.get('/dashboard', (_req: Request, res: Response) => {
   `).all() as any[];
 
   // Profit trend for last 7 days (from payments)
-  const profitTrend = db.prepare(`
+  const profitTrend = await db.prepare(`
     WITH dates AS (
       SELECT date('now', '-' || (6 - t) || ' days') AS d
       FROM (SELECT 0 AS t UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6)
@@ -37,7 +37,7 @@ router.get('/dashboard', (_req: Request, res: Response) => {
   `).all() as any[];
 
   // Stock value
-  const stockValue = db.prepare(`
+  const stockValue = await db.prepare(`
     SELECT
       SUM(stock * COALESCE(cost_price, 0)) AS total_cost,
       SUM(stock * price_per_unit) AS total_retail,
@@ -46,7 +46,7 @@ router.get('/dashboard', (_req: Request, res: Response) => {
   `).get() as any;
 
   // Material margins
-  const materialMargins = db.prepare(`
+  const materialMargins = await db.prepare(`
     SELECT name, unit, cost_price, price_per_unit, stock,
       (price_per_unit - cost_price) AS profit_per_unit,
       CASE WHEN price_per_unit > 0
@@ -57,7 +57,7 @@ router.get('/dashboard', (_req: Request, res: Response) => {
   `).all() as any[];
 
   // Today's profit estimate
-  const todayProfit = db.prepare(`
+  const todayProfit = await db.prepare(`
     SELECT COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
     FROM payments p
     LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = p.invoice_id
@@ -65,14 +65,14 @@ router.get('/dashboard', (_req: Request, res: Response) => {
   `).get() as any;
 
   // Weekly revenue (last 7 days sum)
-  const weekRevenue = db.prepare(`
+  const weekRevenue = await db.prepare(`
     SELECT COALESCE(SUM(amount), 0) AS total
     FROM payments
     WHERE payment_date >= datetime('now', '-7 days')
   `).get() as any;
 
   // Monthly revenue & profit
-  const monthRevenue = db.prepare(`
+  const monthRevenue = await db.prepare(`
     SELECT COALESCE(SUM(p.amount), 0) AS revenue,
       COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
     FROM payments p
@@ -81,7 +81,7 @@ router.get('/dashboard', (_req: Request, res: Response) => {
   `).get() as any;
 
   // Last month revenue & profit (for comparison)
-  const lastMonthRevenue = db.prepare(`
+  const lastMonthRevenue = await db.prepare(`
     SELECT COALESCE(SUM(p.amount), 0) AS revenue,
       COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
     FROM payments p
@@ -90,7 +90,7 @@ router.get('/dashboard', (_req: Request, res: Response) => {
   `).get() as any;
 
   // Yearly revenue & profit
-  const yearRevenue = db.prepare(`
+  const yearRevenue = await db.prepare(`
     SELECT COALESCE(SUM(p.amount), 0) AS revenue,
       COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
     FROM payments p
@@ -99,7 +99,7 @@ router.get('/dashboard', (_req: Request, res: Response) => {
   `).get() as any;
 
   // Overall total revenue & profit
-  const overallRevenue = db.prepare(`
+  const overallRevenue = await db.prepare(`
     SELECT COALESCE(SUM(p.amount), 0) AS revenue,
       COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
     FROM payments p
@@ -107,7 +107,7 @@ router.get('/dashboard', (_req: Request, res: Response) => {
   `).get() as any;
 
   // Monthly trend (last 6 months)
-  const monthlyTrend = db.prepare(`
+  const monthlyTrend = await db.prepare(`
     WITH months AS (
       SELECT strftime('%Y-%m', 'now', '-' || (5 - t) || ' months') AS m
       FROM (SELECT 0 AS t UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5)
@@ -123,7 +123,7 @@ router.get('/dashboard', (_req: Request, res: Response) => {
   `).all() as any[];
 
   // Top customers by revenue
-  const topCustomers = db.prepare(`
+  const topCustomers = await db.prepare(`
     SELECT COALESCE(c.name, 'Walk-in') AS name,
       COUNT(DISTINCT i.id) AS invoice_count,
       SUM(p.amount) AS total_paid

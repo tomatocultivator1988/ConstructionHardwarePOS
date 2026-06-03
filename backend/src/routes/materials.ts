@@ -20,7 +20,7 @@ function validateMaterial(body: any, existing?: any) {
   return { name, unit, stock, cost_price, price_per_unit, reorder_point, category, wholesale_price, errors };
 }
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   const db = getDb();
   let query = 'SELECT * FROM materials';
   const params: any[] = [];
@@ -29,18 +29,18 @@ router.get('/', (req: Request, res: Response) => {
     params.push(req.query.category);
   }
   query += ' ORDER BY created_at DESC';
-  const materials = db.prepare(query).all(...params);
+  const materials = await db.prepare(query).all(...params);
   res.json(materials);
 });
 
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   const db = getDb();
-  const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id);
+  const material = await db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id);
   if (!material) { res.status(404).json({ error: 'Material not found' }); return; }
   res.json(material);
 });
 
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const db = getDb();
   const { name, unit, stock, cost_price, price_per_unit, reorder_point } = req.body;
   const validation = validateMaterial({ name, unit, stock, cost_price, price_per_unit, reorder_point, category: req.body.category });
@@ -49,17 +49,17 @@ router.post('/', (req: Request, res: Response) => {
     return;
   }
   const id = uuidv4();
-  db.prepare(
+  await db.prepare(
     'INSERT INTO materials (id, name, unit, stock, cost_price, price_per_unit, wholesale_price, reorder_point, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(id, validation.name.trim(), validation.unit, validation.stock ?? 0, validation.cost_price ?? 0, validation.price_per_unit, validation.wholesale_price, validation.reorder_point ?? 10, validation.category);
-  const material = db.prepare('SELECT * FROM materials WHERE id = ?').get(id);
-  logAudit((req as any).user?.id || null, 'create', 'material', id, validation.name.trim());
+  const material = await db.prepare('SELECT * FROM materials WHERE id = ?').get(id);
+  await logAudit((req as any).user?.id || null, 'create', 'material', id, validation.name.trim());
   res.status(201).json(material);
 });
 
-router.put('/:id', (req: Request, res: Response) => {
+router.put('/:id', async (req: Request, res: Response) => {
   const db = getDb();
-  const existing = db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id);
+  const existing = await db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id);
   if (!existing) { res.status(404).json({ error: 'Material not found' }); return; }
   const { name, unit, stock, cost_price, price_per_unit, reorder_point } = req.body;
   const validation = validateMaterial({ name, unit, stock, cost_price, price_per_unit, reorder_point, category: req.body.category }, existing);
@@ -67,7 +67,7 @@ router.put('/:id', (req: Request, res: Response) => {
     res.status(400).json({ error: validation.errors.join('; ') });
     return;
   }
-  db.prepare(
+  await db.prepare(
     `UPDATE materials SET name=?, unit=?, stock=?, cost_price=?, price_per_unit=?, wholesale_price=?, reorder_point=?, category=?, updated_at=datetime('now') WHERE id=?`
   ).run(
     validation.name,
@@ -80,23 +80,23 @@ router.put('/:id', (req: Request, res: Response) => {
     validation.category,
     req.params.id
   );
-  const updated = db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id);
-  logAudit((req as any).user?.id || null, 'update', 'material', req.params.id as string);
+  const updated = await db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id);
+  await logAudit((req as any).user?.id || null, 'update', 'material', req.params.id as string);
   res.json(updated);
 });
 
-router.delete('/:id', requireAdmin, (req: Request, res: Response) => {
+router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   const db = getDb();
-  const existing = db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id);
+  const existing = await db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id);
   if (!existing) { res.status(404).json({ error: 'Material not found' }); return; }
-  const used = db.prepare('SELECT COUNT(*) as cnt FROM invoice_items WHERE material_id = ?').get(req.params.id) as any;
+  const used = await db.prepare('SELECT COUNT(*) as cnt FROM invoice_items WHERE material_id = ?').get(req.params.id) as any;
   if (used.cnt > 0) {
     res.status(409).json({ error: 'Cannot delete material that appears in invoice items' });
     return;
   }
   const name = (existing as any).name;
-  db.prepare('DELETE FROM materials WHERE id = ?').run(req.params.id);
-  logAudit((req as any).user?.id || null, 'delete', 'material', req.params.id as string, name);
+  await db.prepare('DELETE FROM materials WHERE id = ?').run(req.params.id);
+  await logAudit((req as any).user?.id || null, 'delete', 'material', req.params.id as string, name);
   res.status(204).send();
 });
 

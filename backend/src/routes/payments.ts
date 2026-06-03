@@ -3,10 +3,10 @@ import { getDb } from '../db/setup';
 
 const router = Router();
 
-router.get('/summary', (_req: Request, res: Response) => {
+router.get('/summary', async (_req: Request, res: Response) => {
   const db = getDb();
 
-  const daily = db.prepare(`
+  const daily = await db.prepare(`
     SELECT date(payment_date) as date, COALESCE(SUM(amount), 0) as total
     FROM payments
     WHERE payment_date >= datetime('now', '-7 days')
@@ -14,7 +14,7 @@ router.get('/summary', (_req: Request, res: Response) => {
     ORDER BY date ASC
   `).all();
 
-  const today = db.prepare(`
+  const today = await db.prepare(`
     SELECT COALESCE(SUM(amount), 0) as total
     FROM payments
     WHERE date(payment_date) = date('now')

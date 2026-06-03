@@ -6,9 +6,9 @@ import { logAudit } from '../lib/audit';
 
 const router = Router();
 
-router.get('/', (_req: Request, res: Response) => {
+router.get('/', async (_req: Request, res: Response) => {
   const db = getDb();
-  const invoices = db.prepare(`
+  const invoices = await db.prepare(`
     SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name
     FROM invoices i
     LEFT JOIN customers c ON c.id = i.customer_id
@@ -17,21 +17,21 @@ router.get('/', (_req: Request, res: Response) => {
   res.json(invoices);
 });
 
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   const db = getDb();
-  const invoice = db.prepare(`
+  const invoice = await db.prepare(`
     SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name
     FROM invoices i
     LEFT JOIN customers c ON c.id = i.customer_id
     WHERE i.id = ?
   `).get(req.params.id);
   if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
-  const items = db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(req.params.id);
-  const payments = db.prepare('SELECT * FROM payments WHERE invoice_id = ?').all(req.params.id);
+  const items = await db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(req.params.id);
+  const payments = await db.prepare('SELECT * FROM payments WHERE invoice_id = ?').all(req.params.id);
   res.json({ ...invoice as any, items, payments });
 });
 
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const db = getDb();
   const { customer_id, items, due_date, tax_rate } = req.body;
 
@@ -61,7 +61,7 @@ router.post('/', (req: Request, res: Response) => {
   }
 
   if (customer_id) {
-    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customer_id);
+    const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(customer_id);
     if (!customer) { res.status(404).json({ error: 'Customer not found' }); return; }
   }
 
@@ -79,14 +79,14 @@ router.post('/', (req: Request, res: Response) => {
     'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );
 
-  const txn = db.transaction(() => {
-    const seq = getSeq.get() as any;
+  const txn = db.transaction(async () => {
+    const seq = await getSeq.get() as any;
     const num = seq.next_number;
-    updateSeq.run();
+    await updateSeq.run();
     invoice_number = `INV-${String(num).padStart(4, '0')}`;
 
     for (const materialId of usedMaterialIds) {
-      const mat = checkStock.get(materialId) as any;
+      const mat = await checkStock.get(materialId) as any;
       if (!mat) {
         throw new Error(`Material ${materialId} not found`);
       }
@@ -98,7 +98,7 @@ router.post('/', (req: Request, res: Response) => {
       }
     }
 
-    db.prepare(
+    await db.prepare(
       'INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(invoiceId, customer_id || null, invoice_number, 0, tax_rate ?? 0, 0, due_date || null, (req as any).user?.id || null);
 
@@ -106,43 +106,43 @@ router.post('/', (req: Request, res: Response) => {
     for (const item of items) {
       const lineTotal = item.quantity * item.unit_price;
       subtotal += lineTotal;
-      insertItem.run(uuidv4(), invoiceId, item.material_id || null, item.description.trim(), item.quantity, item.unit_price, Math.round(lineTotal * 100) / 100);
+      await insertItem.run(uuidv4(), invoiceId, item.material_id || null, item.description.trim(), item.quantity, item.unit_price, Math.round(lineTotal * 100) / 100);
     }
 
-    const appliedTaxRate = tax_rate ?? Number((db.prepare("SELECT value FROM settings WHERE key = 'default_tax_rate'").get() as any)?.value ?? 0);
+    const appliedTaxRate = tax_rate ?? Number((await db.prepare("SELECT value FROM settings WHERE key = 'default_tax_rate'").get() as any)?.value ?? 0);
     const roundedSubtotal = Math.round(subtotal * 100) / 100;
     const taxAmount = Math.round(roundedSubtotal * Number(appliedTaxRate) * 100) / 100;
     const total = Math.round((roundedSubtotal + taxAmount) * 100) / 100;
 
-    db.prepare('UPDATE invoices SET subtotal = ?, tax_rate = ?, tax_amount = ?, total = ? WHERE id = ?')
+    await db.prepare('UPDATE invoices SET subtotal = ?, tax_rate = ?, tax_amount = ?, total = ? WHERE id = ?')
       .run(roundedSubtotal, appliedTaxRate, taxAmount, total, invoiceId);
 
     for (const materialId of usedMaterialIds) {
       const qtyNeeded = items
         .filter((it: any) => it.material_id === materialId)
         .reduce((s: number, it: any) => s + it.quantity, 0);
-      deductStock.run(qtyNeeded, materialId);
-      insertMovement.run(uuidv4(), materialId, 'sale', -qtyNeeded, invoiceId, 'invoice', `Sold in ${invoice_number}`);
+      await deductStock.run(qtyNeeded, materialId);
+      await insertMovement.run(uuidv4(), materialId, 'sale', -qtyNeeded, invoiceId, 'invoice', `Sold in ${invoice_number}`);
     }
   });
 
   try {
-    txn();
-    logAudit((req as any).user?.id || null, 'create', 'invoice', invoiceId, `Created ${invoice_number}`);
+    await txn();
+    await logAudit((req as any).user?.id || null, 'create', 'invoice', invoiceId, `Created ${invoice_number}`);
   } catch (e: any) {
     res.status(400).json({ error: e.message });
     return;
   }
 
-  const invoice = db.prepare(`
+  const invoice = await db.prepare(`
     SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name
     FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id WHERE i.id = ?
   `).get(invoiceId);
-  const invoiceItems = db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(invoiceId);
+  const invoiceItems = await db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(invoiceId);
   res.status(201).json({ ...invoice as any, items: invoiceItems, payments: [] });
 });
 
-router.post('/:id/pay', (req: Request, res: Response) => {
+router.post('/:id/pay', async (req: Request, res: Response) => {
   const db = getDb();
   const { amount, method, notes } = req.body;
   if (!amount || amount <= 0) {
@@ -171,36 +171,36 @@ router.post('/:id/pay', (req: Request, res: Response) => {
   const paymentId = uuidv4();
 
   try {
-    const txn = db.transaction(() => {
-      const invoice = getInvoice.get(req.params.id) as any;
+    const txn = db.transaction(async () => {
+      const invoice = await getInvoice.get(req.params.id) as any;
       if (!invoice) throw new Error('Invoice not found');
 
-      const existingPaid = (getTotalPaid.get(req.params.id) as any).paid;
+      const existingPaid = (await getTotalPaid.get(req.params.id) as any).paid;
       const remainingBalance = invoice.total - existingPaid;
       if (amount > remainingBalance) {
         throw new Error(`Payment of ${amount} exceeds remaining balance of ${remainingBalance}`);
       }
 
-      insertPayment.run(paymentId, req.params.id, amount, method, notes || null);
+      await insertPayment.run(paymentId, req.params.id, amount, method, notes || null);
       const totalPaid = existingPaid + amount;
 
       if (totalPaid >= invoice.total) {
-        updateStatusPaid.run(req.params.id);
+        await updateStatusPaid.run(req.params.id);
       } else if (totalPaid > 0) {
-        updateStatusPartial.run(req.params.id);
+        await updateStatusPartial.run(req.params.id);
       }
     });
-    txn();
-    logAudit((req as any).user?.id || null, 'update', 'invoice', req.params.id as string, `Payment of ${amount} via ${method}`);
+    await txn();
+    await logAudit((req as any).user?.id || null, 'update', 'invoice', req.params.id as string, `Payment of ${amount} via ${method}`);
   } catch (e: any) {
     res.status(400).json({ error: e.message });
     return;
   }
 
-  res.status(201).json(db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId));
+  res.status(201).json(await db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId));
 });
 
-router.post('/:id/return', (req: Request, res: Response) => {
+router.post('/:id/return', async (req: Request, res: Response) => {
   const db = getDb();
   const { items } = req.body;
   if (!items || !items.length) {
@@ -209,7 +209,7 @@ router.post('/:id/return', (req: Request, res: Response) => {
   }
 
   const invoiceId = req.params.id as string;
-  const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId) as any;
+    const inv = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId) as any;
   if (!inv) { res.status(404).json({ error: 'Invoice not found' }); return; }
   if (inv.status === 'pending') {
     res.status(400).json({ error: 'Cannot return items on an unpaid invoice — delete it instead' });
@@ -221,9 +221,9 @@ router.post('/:id/return', (req: Request, res: Response) => {
     if (!item.material_id) { res.status(400).json({ error: `Return item ${i + 1}: material is required` }); return; }
     if (!item.quantity || item.quantity <= 0) { res.status(400).json({ error: `Return item ${i + 1}: quantity must be > 0` }); return; }
 
-    const lineItem = db.prepare(
-      'SELECT * FROM invoice_items WHERE invoice_id = ? AND material_id = ?'
-    ).get(invoiceId, item.material_id) as any;
+      const lineItem = await db.prepare(
+        'SELECT * FROM invoice_items WHERE invoice_id = ? AND material_id = ?'
+      ).get(invoiceId, item.material_id) as any;
     if (!lineItem) { res.status(400).json({ error: `Material not found on this invoice` }); return; }
     if (item.quantity > lineItem.quantity) {
       res.status(400).json({ error: `Cannot return more than purchased (${lineItem.quantity})` });
@@ -236,50 +236,50 @@ router.post('/:id/return', (req: Request, res: Response) => {
     'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );
 
-  const txn = db.transaction(() => {
+  const txn = db.transaction(async () => {
     for (const item of items) {
-      restoreStock.run(item.quantity, item.material_id);
-      insertMovement.run(uuidv4(), item.material_id, 'return', item.quantity, invoiceId, 'invoice', `Returned from ${inv.invoice_number}`);
+      await restoreStock.run(item.quantity, item.material_id);
+      await insertMovement.run(uuidv4(), item.material_id, 'return', item.quantity, invoiceId, 'invoice', `Returned from ${inv.invoice_number}`);
     }
 
     // Recalculate invoice balance
-    const totalPaid = (db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE invoice_id = ?').get(invoiceId) as any).total;
+    const totalPaid = (await db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE invoice_id = ?').get(invoiceId) as any).total;
     const remainingBalance = inv.total - totalPaid;
 
     if (remainingBalance > 0) {
-      db.prepare("UPDATE invoices SET status = 'partial' WHERE id = ?").run(invoiceId);
+      await db.prepare("UPDATE invoices SET status = 'partial' WHERE id = ?").run(invoiceId);
     } else if (remainingBalance <= 0) {
-      db.prepare("UPDATE invoices SET status = 'paid', paid_date = datetime('now') WHERE id = ?").run(invoiceId);
+      await db.prepare("UPDATE invoices SET status = 'paid', paid_date = datetime('now') WHERE id = ?").run(invoiceId);
     }
   });
 
-  txn();
-  res.json(db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId));
+  await txn();
+  res.json(await db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId));
 });
 
-router.delete('/:id', requireAdmin, (req: Request, res: Response) => {
+router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   const db = getDb();
-  const existing = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as any;
+  const existing = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as any;
   if (!existing) { res.status(404).json({ error: 'Invoice not found' }); return; }
 
   const insertMovement = db.prepare(
     'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );
 
-  const txn = db.transaction(() => {
-    const items = db.prepare('SELECT material_id, quantity FROM invoice_items WHERE invoice_id = ?').all(req.params.id) as any[];
+  const txn = db.transaction(async () => {
+    const items = await db.prepare('SELECT material_id, quantity FROM invoice_items WHERE invoice_id = ?').all(req.params.id) as any[];
     for (const item of items) {
       if (item.material_id) {
-        db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?').run(item.quantity, item.material_id);
-        insertMovement.run(uuidv4(), item.material_id, 'sale', item.quantity, req.params.id, 'invoice', `Restored from deleted invoice ${existing.invoice_number}`);
+        await db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?').run(item.quantity, item.material_id);
+        await insertMovement.run(uuidv4(), item.material_id, 'sale', item.quantity, req.params.id, 'invoice', `Restored from deleted invoice ${existing.invoice_number}`);
       }
     }
-    db.prepare('DELETE FROM payments WHERE invoice_id = ?').run(req.params.id);
-    db.prepare('DELETE FROM invoice_items WHERE invoice_id = ?').run(req.params.id);
-    db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
+    await db.prepare('DELETE FROM payments WHERE invoice_id = ?').run(req.params.id);
+    await db.prepare('DELETE FROM invoice_items WHERE invoice_id = ?').run(req.params.id);
+    await db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
   });
-  txn();
-  logAudit((req as any).user?.id || null, 'delete', 'invoice', req.params.id as string, `Deleted ${existing.invoice_number}`);
+  await txn();
+  await logAudit((req as any).user?.id || null, 'delete', 'invoice', req.params.id as string, `Deleted ${existing.invoice_number}`);
   res.status(204).end();
 });
 

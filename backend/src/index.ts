@@ -26,6 +26,17 @@ const PORT = process.env.PORT || 3001;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173';
 const NODE_ENV = process.env.NODE_ENV || ((process as any).pkg ? 'production' : 'development');
 
+let dbInitialized = false;
+
+// Lazy init DB on first request (needed for Vercel serverless)
+app.use(async (_req, _res, next) => {
+  if (!dbInitialized) {
+    await initDb();
+    dbInitialized = true;
+  }
+  next();
+});
+
 // Request logging
 app.use(morgan(NODE_ENV === 'production' ? 'combined' : 'dev'));
 

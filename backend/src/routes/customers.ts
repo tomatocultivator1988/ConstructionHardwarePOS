@@ -8,15 +8,15 @@ const router = Router();
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-router.get('/', (_req: Request, res: Response) => {
+router.get('/', async (_req: Request, res: Response) => {
   const db = getDb();
-  const customers = db.prepare('SELECT * FROM customers ORDER BY created_at DESC').all();
+  const customers = await db.prepare('SELECT * FROM customers ORDER BY created_at DESC').all();
   res.json(customers);
 });
 
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', async (req: Request, res: Response) => {
   const db = getDb();
-  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+  const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
   if (!customer) {
     res.status(404).json({ error: 'Customer not found' });
     return;
@@ -25,9 +25,9 @@ router.get('/:id', (req: Request, res: Response) => {
 });
 
 // Customer Statement of Account
-router.get('/:id/statement', (req: Request, res: Response) => {
+router.get('/:id/statement', async (req: Request, res: Response) => {
   const db = getDb();
-  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id) as any;
+  const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id) as any;
   if (!customer) { res.status(404).json({ error: 'Customer not found' }); return; }
 
   const from = (req.query.from as string) || '';
@@ -45,7 +45,7 @@ router.get('/:id/statement', (req: Request, res: Response) => {
   if (to) { query += ' AND date(i.issued_date) <= ?'; params.push(to); }
   query += ' ORDER BY i.issued_date ASC';
 
-  const invoices = db.prepare(query).all(...params) as any[];
+  const invoices = await db.prepare(query).all(...params) as any[];
 
   let balance = 0;
   const statements = invoices.map(inv => {
@@ -63,7 +63,7 @@ router.get('/:id/statement', (req: Request, res: Response) => {
   res.json({ customer: { name: customer.name, address: customer.address, phone: customer.phone }, statements, total_owed: totalOwed, from, to });
 });
 
-router.post('/', (req: Request, res: Response) => {
+router.post('/', async (req: Request, res: Response) => {
   const db = getDb();
   const { name, phone, email, address, is_wholesale } = req.body;
   if (!name || !name.trim()) {
@@ -75,18 +75,18 @@ router.post('/', (req: Request, res: Response) => {
     return;
   }
   const id = uuidv4();
-  db.prepare(
+  await db.prepare(
     'INSERT INTO customers (id, name, phone, email, address, is_wholesale) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(id, name.trim(), phone || null, email || null, address || null, is_wholesale ? 1 : 0);
-  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
-  logAudit((req as any).user?.id || null, 'create', 'customer', id, name.trim());
+  const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
+  await logAudit((req as any).user?.id || null, 'create', 'customer', id, name.trim());
   res.status(201).json(customer);
 });
 
-router.put('/:id', (req: Request, res: Response) => {
+router.put('/:id', async (req: Request, res: Response) => {
   const db = getDb();
   const { name, phone, email, address, is_wholesale } = req.body;
-  const existing = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id) as any;
+  const existing = await db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id) as any;
   if (!existing) {
     res.status(404).json({ error: 'Customer not found' });
     return;
@@ -100,7 +100,7 @@ router.put('/:id', (req: Request, res: Response) => {
     return;
   }
   const customerId = req.params.id as string;
-  db.prepare(
+  await db.prepare(
     `UPDATE customers SET name = ?, phone = ?, email = ?, address = ?, is_wholesale = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(
     (name !== undefined ? name.trim() : existing.name),
@@ -110,26 +110,26 @@ router.put('/:id', (req: Request, res: Response) => {
     is_wholesale !== undefined ? (is_wholesale ? 1 : 0) : existing.is_wholesale,
     customerId
   );
-  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
-  logAudit((req as any).user?.id || null, 'update', 'customer', customerId);
+  const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
+  await logAudit((req as any).user?.id || null, 'update', 'customer', customerId);
   res.json(customer);
 });
 
-router.delete('/:id', requireAdmin, (req: Request, res: Response) => {
+router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   const db = getDb();
-  const existing = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+  const existing = await db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
   if (!existing) {
     res.status(404).json({ error: 'Customer not found' });
     return;
   }
-  const used = db.prepare('SELECT COUNT(*) as cnt FROM invoices WHERE customer_id = ?').get(req.params.id) as any;
+  const used = await db.prepare('SELECT COUNT(*) as cnt FROM invoices WHERE customer_id = ?').get(req.params.id) as any;
   if (used.cnt > 0) {
     res.status(409).json({ error: 'Cannot delete customer with existing invoices' });
     return;
   }
   const custId = req.params.id as string;
-  db.prepare('DELETE FROM customers WHERE id = ?').run(custId);
-  logAudit((req as any).user?.id || null, 'delete', 'customer', custId);
+  await db.prepare('DELETE FROM customers WHERE id = ?').run(custId);
+  await logAudit((req as any).user?.id || null, 'delete', 'customer', custId);
   res.status(204).send();
 });
 

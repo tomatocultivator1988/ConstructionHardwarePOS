@@ -1,7 +1,4 @@
-import path from 'path';
 import { Database, initDatabase } from './database';
-
-const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'data', 'construction_pos.db');
 
 let db: Database;
 
@@ -9,9 +6,9 @@ export async function initDb(): Promise<void> {
   if (db) return;
   try {
     await initDatabase();
-    db = new Database(dbPath);
-    initTables();
-    migrateSchema();
+    db = new Database();
+    await initTables();
+    await migrateSchema();
   } catch (err) {
     console.error('Failed to open database:', err);
     throw new Error('Database unavailable');
@@ -25,14 +22,15 @@ export function getDb(): Database {
   return db;
 }
 
-function initTables() {
-  db.exec(`
+async function initTables() {
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS customers (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       phone TEXT,
       email TEXT,
       address TEXT,
+      is_wholesale INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -44,7 +42,9 @@ function initTables() {
       stock REAL DEFAULT 0,
       cost_price REAL DEFAULT 0,
       price_per_unit REAL NOT NULL,
+      wholesale_price REAL DEFAULT 0,
       reorder_point REAL DEFAULT 10,
+      category TEXT DEFAULT '',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -61,6 +61,7 @@ function initTables() {
       issued_date TEXT DEFAULT (datetime('now')),
       due_date TEXT,
       paid_date TEXT,
+      user_id TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (customer_id) REFERENCES customers(id)
     );
@@ -181,96 +182,66 @@ function initTables() {
   `);
 }
 
-function migrateSchema() {
-  const tableInfo = db.prepare("PRAGMA table_info('materials')").all() as any[];
-  const materialCols = tableInfo.map(r => r.name);
+async function migrateSchema() {
+  const tableInfo = (await db.prepare("PRAGMA table_info('materials')").all()) as any[];
+  const materialCols = tableInfo.map((r: any) => r.name);
 
   if (!materialCols.includes('reorder_point')) {
-    db.exec("ALTER TABLE materials ADD COLUMN reorder_point REAL DEFAULT 10");
+    await db.exec("ALTER TABLE materials ADD COLUMN reorder_point REAL DEFAULT 10");
   }
-
   if (!materialCols.includes('cost_price')) {
-    db.exec("ALTER TABLE materials ADD COLUMN cost_price REAL DEFAULT 0");
+    await db.exec("ALTER TABLE materials ADD COLUMN cost_price REAL DEFAULT 0");
   }
-
   if (!materialCols.includes('category')) {
-    db.exec("ALTER TABLE materials ADD COLUMN category TEXT DEFAULT ''");
+    await db.exec("ALTER TABLE materials ADD COLUMN category TEXT DEFAULT ''");
   }
   if (!materialCols.includes('wholesale_price')) {
-    db.exec("ALTER TABLE materials ADD COLUMN wholesale_price REAL DEFAULT 0");
+    await db.exec("ALTER TABLE materials ADD COLUMN wholesale_price REAL DEFAULT 0");
   }
 
-  const custInfo = db.prepare("PRAGMA table_info('customers')").all() as any[];
-  const custCols = custInfo.map(r => r.name);
+  const custInfo = (await db.prepare("PRAGMA table_info('customers')").all()) as any[];
+  const custCols = custInfo.map((r: any) => r.name);
   if (!custCols.includes('is_wholesale')) {
-    db.exec("ALTER TABLE customers ADD COLUMN is_wholesale INTEGER DEFAULT 0");
+    await db.exec("ALTER TABLE customers ADD COLUMN is_wholesale INTEGER DEFAULT 0");
   }
 
-  const invoiceInfo = db.prepare("PRAGMA table_info('invoices')").all() as any[];
-  const invoiceCols = invoiceInfo.map(r => r.name);
+  const invoiceInfo = (await db.prepare("PRAGMA table_info('invoices')").all()) as any[];
+  const invoiceCols = invoiceInfo.map((r: any) => r.name);
 
   if (!invoiceCols.includes('subtotal')) {
-    db.exec("ALTER TABLE invoices ADD COLUMN subtotal REAL DEFAULT 0");
+    await db.exec("ALTER TABLE invoices ADD COLUMN subtotal REAL DEFAULT 0");
   }
   if (!invoiceCols.includes('tax_rate')) {
-    db.exec("ALTER TABLE invoices ADD COLUMN tax_rate REAL DEFAULT 0");
+    await db.exec("ALTER TABLE invoices ADD COLUMN tax_rate REAL DEFAULT 0");
   }
   if (!invoiceCols.includes('tax_amount')) {
-    db.exec("ALTER TABLE invoices ADD COLUMN tax_amount REAL DEFAULT 0");
+    await db.exec("ALTER TABLE invoices ADD COLUMN tax_amount REAL DEFAULT 0");
   }
   if (!invoiceCols.includes('user_id')) {
-    db.exec("ALTER TABLE invoices ADD COLUMN user_id TEXT");
+    await db.exec("ALTER TABLE invoices ADD COLUMN user_id TEXT");
   }
 
-  const existingIndexes = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all() as any[];
+  const existingIndexes = (await db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all()) as any[];
   const indexNames = existingIndexes.map((r: any) => r.name);
 
-  if (!indexNames.includes('idx_invoice_items_invoice_id')) {
-    db.exec("CREATE INDEX idx_invoice_items_invoice_id ON invoice_items(invoice_id)");
-  }
-  if (!indexNames.includes('idx_payments_invoice_id')) {
-    db.exec("CREATE INDEX idx_payments_invoice_id ON payments(invoice_id)");
-  }
-  if (!indexNames.includes('idx_expenses_date')) {
-    db.exec("CREATE INDEX idx_expenses_date ON expenses(expense_date)");
-  }
-  if (!indexNames.includes('idx_expenses_category')) {
-    db.exec("CREATE INDEX idx_expenses_category ON expenses(category)");
-  }
-  if (!indexNames.includes('idx_po_supplier')) {
-    db.exec("CREATE INDEX idx_po_supplier ON purchase_orders(supplier_id)");
-  }
-  if (!indexNames.includes('idx_po_status')) {
-    db.exec("CREATE INDEX idx_po_status ON purchase_orders(status)");
-  }
-  if (!indexNames.includes('idx_po_items_po')) {
-    db.exec("CREATE INDEX idx_po_items_po ON po_items(po_id)");
-  }
-  if (!indexNames.includes('idx_stock_mov_material')) {
-    db.exec("CREATE INDEX idx_stock_mov_material ON stock_movements(material_id)");
-  }
-  if (!indexNames.includes('idx_stock_mov_type')) {
-    db.exec("CREATE INDEX idx_stock_mov_type ON stock_movements(type)");
-  }
-  if (!indexNames.includes('idx_audit_entity')) {
-    db.exec("CREATE INDEX idx_audit_entity ON audit_log(entity)");
-  }
-  if (!indexNames.includes('idx_audit_date')) {
-    db.exec("CREATE INDEX idx_audit_date ON audit_log(created_at)");
+  const idxList = [
+    'idx_invoice_items_invoice_id', 'idx_payments_invoice_id',
+    'idx_expenses_date', 'idx_expenses_category',
+    'idx_po_supplier', 'idx_po_status', 'idx_po_items_po',
+    'idx_stock_mov_material', 'idx_stock_mov_type',
+    'idx_audit_entity', 'idx_audit_date',
+  ];
+
+  for (const idx of idxList) {
+    if (!indexNames.includes(idx)) {
+      const create = idx.replace('idx_', 'CREATE INDEX IF NOT EXISTS ' + idx + ' ON ').replace(/_/g, ' ').split(' ').slice(0, -1).join('_');
+      // Use simple approach: create index if not exists
+      await db.exec(`CREATE INDEX IF NOT EXISTS ${idx} ON ${idx.split('_').slice(1).join('_')}(${idx.split('_').pop()})`);
+    }
   }
 
-  // Create default admin if no users exist
-  const userCount = (db.prepare('SELECT COUNT(*) as cnt FROM users').get() as any).cnt;
-  if (userCount === 0) {
-    const bcrypt = require('bcryptjs');
-    const adminId = require('uuid').v4();
-    const hash = bcrypt.hashSync('0000', 10);
-    db.prepare('INSERT INTO users (id, username, pin_hash, role) VALUES (?, ?, ?, ?)').run(adminId, 'admin', hash, 'admin');
-    console.log('Default admin user created (username: admin, PIN: 0000)');
-  }
-
-  db.exec('DROP VIEW IF EXISTS v_invoice_profit_margin');
-  db.exec(`
+  await db.exec('DROP VIEW IF EXISTS v_invoice_profit_margin');
+  await db.exec(`
     CREATE VIEW IF NOT EXISTS v_invoice_profit_margin AS
     SELECT ii.invoice_id,
       CASE WHEN SUM(ii.total) > 0
@@ -280,4 +251,13 @@ function migrateSchema() {
     LEFT JOIN materials m ON m.id = ii.material_id
     GROUP BY ii.invoice_id
   `);
+
+  // Create default admin if no users exist
+  const userCount = (await db.prepare('SELECT COUNT(*) as cnt FROM users').get()) as any;
+  if (userCount.cnt === 0) {
+    const bcrypt = require('bcryptjs');
+    const hash = bcrypt.hashSync('0000', 10);
+    await db.prepare('INSERT INTO users (id, username, pin_hash, role) VALUES (?, ?, ?, ?)').run(require('uuid').v4(), 'admin', hash, 'admin');
+    console.log('Default admin user created (username: admin, PIN: 0000)');
+  }
 }

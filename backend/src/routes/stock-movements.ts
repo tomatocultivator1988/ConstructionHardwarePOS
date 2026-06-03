@@ -3,7 +3,7 @@ import { getDb } from '../db/setup';
 
 const router = Router();
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   const db = getDb();
   let query = `
     SELECT sm.*, m.name AS material_name, m.unit
@@ -35,7 +35,7 @@ router.get('/', (req: Request, res: Response) => {
   }
   query += ' ORDER BY sm.created_at DESC LIMIT 200';
 
-  res.json(db.prepare(query).all(...params));
+  res.json(await db.prepare(query).all(...params));
 });
 
 export default router;
