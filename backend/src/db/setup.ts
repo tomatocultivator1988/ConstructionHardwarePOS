@@ -224,20 +224,38 @@ async function migrateSchema() {
   const existingIndexes = (await db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all()) as any[];
   const indexNames = existingIndexes.map((r: any) => r.name);
 
-  const idxList = [
-    'idx_invoice_items_invoice_id', 'idx_payments_invoice_id',
-    'idx_expenses_date', 'idx_expenses_category',
-    'idx_po_supplier', 'idx_po_status', 'idx_po_items_po',
-    'idx_stock_mov_material', 'idx_stock_mov_type',
-    'idx_audit_entity', 'idx_audit_date',
-  ];
-
-  for (const idx of idxList) {
-    if (!indexNames.includes(idx)) {
-      const create = idx.replace('idx_', 'CREATE INDEX IF NOT EXISTS ' + idx + ' ON ').replace(/_/g, ' ').split(' ').slice(0, -1).join('_');
-      // Use simple approach: create index if not exists
-      await db.exec(`CREATE INDEX IF NOT EXISTS ${idx} ON ${idx.split('_').slice(1).join('_')}(${idx.split('_').pop()})`);
-    }
+  if (!indexNames.includes('idx_invoice_items_invoice_id')) {
+    await db.exec("CREATE INDEX idx_invoice_items_invoice_id ON invoice_items(invoice_id)");
+  }
+  if (!indexNames.includes('idx_payments_invoice_id')) {
+    await db.exec("CREATE INDEX idx_payments_invoice_id ON payments(invoice_id)");
+  }
+  if (!indexNames.includes('idx_expenses_date')) {
+    await db.exec("CREATE INDEX idx_expenses_date ON expenses(expense_date)");
+  }
+  if (!indexNames.includes('idx_expenses_category')) {
+    await db.exec("CREATE INDEX idx_expenses_category ON expenses(category)");
+  }
+  if (!indexNames.includes('idx_po_supplier')) {
+    await db.exec("CREATE INDEX idx_po_supplier ON purchase_orders(supplier_id)");
+  }
+  if (!indexNames.includes('idx_po_status')) {
+    await db.exec("CREATE INDEX idx_po_status ON purchase_orders(status)");
+  }
+  if (!indexNames.includes('idx_po_items_po')) {
+    await db.exec("CREATE INDEX idx_po_items_po ON po_items(po_id)");
+  }
+  if (!indexNames.includes('idx_stock_mov_material')) {
+    await db.exec("CREATE INDEX idx_stock_mov_material ON stock_movements(material_id)");
+  }
+  if (!indexNames.includes('idx_stock_mov_type')) {
+    await db.exec("CREATE INDEX idx_stock_mov_type ON stock_movements(type)");
+  }
+  if (!indexNames.includes('idx_audit_entity')) {
+    await db.exec("CREATE INDEX idx_audit_entity ON audit_log(entity)");
+  }
+  if (!indexNames.includes('idx_audit_date')) {
+    await db.exec("CREATE INDEX idx_audit_date ON audit_log(created_at)");
   }
 
   await db.exec('DROP VIEW IF EXISTS v_invoice_profit_margin');
