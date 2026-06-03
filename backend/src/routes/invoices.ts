@@ -33,7 +33,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 router.post('/', async (req: Request, res: Response) => {
   const db = getDb();
-  const { customer_id, items, due_date, tax_rate } = req.body;
+  const { customer_id, items, due_date, tax_rate, issued_date } = req.body;
 
   if (!items || !items.length) {
     res.status(400).json({ error: 'At least one line item is required' });
@@ -98,9 +98,9 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    await db.prepare(
-      'INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(invoiceId, customer_id || null, invoice_number, 0, tax_rate ?? 0, 0, due_date || null, (req as any).user?.id || null);
+    await     db.prepare(
+      'INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(invoiceId, customer_id || null, invoice_number, 0, tax_rate ?? 0, 0, due_date || null, issued_date || null, (req as any).user?.id || null);
 
     let subtotal = 0;
     for (const item of items) {
