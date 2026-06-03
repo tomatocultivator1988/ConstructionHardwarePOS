@@ -72,7 +72,9 @@ router.post('/', requireAdmin, async (_req: Request, res: Response) => {
     supIds.push(id);
   }
 
-  // --- 30 days of invoices ---
+  // --- Generate invoices (accepts batch param for days) ---
+  const days = Math.min(parseInt((_req as any).query?.days) || 7, 15);
+  const offset = Math.max(parseInt((_req as any).query?.offset) || 0, 0);
   const today = new Date();
   const getSeq = db.prepare('SELECT next_number FROM invoice_sequence WHERE id = 1');
   const upSeq = db.prepare('UPDATE invoice_sequence SET next_number = next_number + 1 WHERE id = 1');
@@ -86,7 +88,7 @@ router.post('/', requireAdmin, async (_req: Request, res: Response) => {
   let invoiceCount = 0;
   const adminId = ((await db.prepare("SELECT id FROM users WHERE username='admin'").get()) as any)?.id || null;
 
-  for (let d = 29; d >= 0; d--) {
+  for (let d = days - 1 + offset; d >= offset; d--) {
     const date = new Date(today);
     date.setDate(date.getDate() - d);
     const dateStr = date.toISOString().slice(0, 10);
