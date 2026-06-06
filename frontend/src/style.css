@@ -140,7 +140,6 @@ nav { display: flex; gap: 2px; background: var(--c-bg); padding: 3px; border-rad
   font-weight: 700;
   padding: 0 5px;
   margin-left: 4px;
-  animation: pulse 2s infinite;
 }
 
 /* ── Main Content ── */
@@ -431,7 +430,6 @@ tr.low-stock:hover { background: rgba(245, 158, 11, 0.2); }
 .modal {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.6);
-  backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center;
   z-index: 100; padding: var(--space-4);
 }

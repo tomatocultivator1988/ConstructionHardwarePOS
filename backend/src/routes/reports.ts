@@ -11,41 +11,35 @@ router.get('/daily', async (req: Request, res: Response) => {
   const db = getDb();
   const date = req.query.date || new Date().toISOString().slice(0, 10);
 
-  const invoices = await db.prepare(`
-    SELECT i.invoice_number, i.total, i.status, i.issued_date,
-      COALESCE(c.name, 'Walk-in') AS customer_name,
-      COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) AS paid
-    FROM invoices i
-    LEFT JOIN customers c ON c.id = i.customer_id
-    WHERE date(i.issued_date) = ?
-    ORDER BY i.created_at DESC
-  `).all(date) as any[];
-
-  const totals = await db.prepare(`
-    SELECT
-      COALESCE(SUM(i.total), 0) AS gross_sales,
-      COALESCE(SUM(i.tax_amount), 0) AS tax_collected,
-      COUNT(*) AS invoice_count
-    FROM invoices i
-    WHERE date(i.issued_date) = ?
-  `).get(date) as any;
-
-  const profit = await db.prepare(`
-    SELECT COALESCE(SUM(ii.total - (ii.quantity * COALESCE(m.cost_price, 0))), 0) AS profit
-    FROM invoice_items ii
-    JOIN invoices i ON i.id = ii.invoice_id
-    LEFT JOIN materials m ON m.id = ii.material_id
-    WHERE date(i.issued_date) = ?
-  `).get(date) as any;
-
-  const methods = await db.prepare(`
-    SELECT p.method, SUM(p.amount) AS total
-    FROM payments p
-    JOIN invoices i ON i.id = p.invoice_id
-    WHERE date(p.payment_date) = ?
-    GROUP BY p.method
-    ORDER BY total DESC
-  `).all(date) as any[];
+  const [invoices, totals, profit, methods] = await Promise.all([
+    db.prepare(`
+      SELECT i.invoice_number, i.total, i.status, i.issued_date,
+        COALESCE(c.name, 'Walk-in') AS customer_name,
+        COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) AS paid
+      FROM invoices i
+      LEFT JOIN customers c ON c.id = i.customer_id
+      WHERE date(i.issued_date) = ?
+      ORDER BY i.created_at DESC
+    `).all(date) as Promise<any[]>,
+    db.prepare(`
+      SELECT COALESCE(SUM(i.total), 0) AS gross_sales,
+        COALESCE(SUM(i.tax_amount), 0) AS tax_collected,
+        COUNT(*) AS invoice_count
+      FROM invoices i WHERE date(i.issued_date) = ?
+    `).get(date) as Promise<any>,
+    db.prepare(`
+      SELECT COALESCE(SUM(ii.total - (ii.quantity * COALESCE(m.cost_price, 0))), 0) AS profit
+      FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
+      LEFT JOIN materials m ON m.id = ii.material_id
+      WHERE date(i.issued_date) = ?
+    `).get(date) as Promise<any>,
+    db.prepare(`
+      SELECT p.method, SUM(p.amount) AS total
+      FROM payments p JOIN invoices i ON i.id = p.invoice_id
+      WHERE date(p.payment_date) = ?
+      GROUP BY p.method ORDER BY total DESC
+    `).all(date) as Promise<any[]>,
+  ]);
 
   res.json({
     date,
@@ -65,39 +59,31 @@ router.get('/monthly', async (req: Request, res: Response) => {
   const db = getDb();
   const month = req.query.month || new Date().toISOString().slice(0, 7);
 
-  const revenue = await db.prepare(`
-    SELECT COALESCE(SUM(p.amount), 0) AS total
-    FROM payments p
-    WHERE strftime('%Y-%m', p.payment_date) = ?
-  `).get(month) as any;
-
-  const cogs = await db.prepare(`
-    SELECT COALESCE(SUM(ii.quantity * COALESCE(m.cost_price, 0)), 0) AS total
-    FROM invoice_items ii
-    JOIN invoices i ON i.id = ii.invoice_id
-    LEFT JOIN materials m ON m.id = ii.material_id
-    WHERE strftime('%Y-%m', i.issued_date) = ?
-  `).get(month) as any;
-
-  const expenses = await db.prepare(`
-    SELECT COALESCE(SUM(amount), 0) AS total
-    FROM expenses
-    WHERE strftime('%Y-%m', expense_date) = ?
-  `).get(month) as any;
-
-  const expenseByCategory = await db.prepare(`
-    SELECT category, SUM(amount) AS total
-    FROM expenses
-    WHERE strftime('%Y-%m', expense_date) = ?
-    GROUP BY category
-    ORDER BY total DESC
-  `).all(month) as any[];
-
-  const lastMonth = await db.prepare(`
-    SELECT COALESCE(SUM(p.amount), 0) AS total
-    FROM payments p
-    WHERE strftime('%Y-%m', p.payment_date) = strftime('%Y-%m', 'now', '-1 month')
-  `).get() as any;
+  const [revenue, cogs, expenses, expenseByCategory, lastMonth] = await Promise.all([
+    db.prepare(`
+      SELECT COALESCE(SUM(p.amount), 0) AS total
+      FROM payments p WHERE strftime('%Y-%m', p.payment_date) = ?
+    `).get(month) as Promise<any>,
+    db.prepare(`
+      SELECT COALESCE(SUM(ii.quantity * COALESCE(m.cost_price, 0)), 0) AS total
+      FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
+      LEFT JOIN materials m ON m.id = ii.material_id
+      WHERE strftime('%Y-%m', i.issued_date) = ?
+    `).get(month) as Promise<any>,
+    db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) AS total
+      FROM expenses WHERE strftime('%Y-%m', expense_date) = ?
+    `).get(month) as Promise<any>,
+    db.prepare(`
+      SELECT category, SUM(amount) AS total
+      FROM expenses WHERE strftime('%Y-%m', expense_date) = ?
+      GROUP BY category ORDER BY total DESC
+    `).all(month) as Promise<any[]>,
+    db.prepare(`
+      SELECT COALESCE(SUM(p.amount), 0) AS total
+      FROM payments p WHERE strftime('%Y-%m', p.payment_date) = strftime('%Y-%m', 'now', '-1 month')
+    `).get() as Promise<any>,
+  ]);
 
   const rev = Math.round(revenue.total * 100) / 100;
   const cogsVal = Math.round(cogs.total * 100) / 100;
@@ -125,24 +111,21 @@ router.get('/tax', async (req: Request, res: Response) => {
   const db = getDb();
   const month = req.query.month || new Date().toISOString().slice(0, 7);
 
-  const summary = await db.prepare(`
-    SELECT
-      COUNT(*) AS invoice_count,
-      COALESCE(SUM(subtotal), 0) AS vatable_sales,
-      COALESCE(SUM(tax_amount), 0) AS vat_collected,
-      COALESCE(SUM(CASE WHEN tax_rate > 0 THEN subtotal ELSE 0 END), 0) AS taxable_amount,
-      COALESCE(SUM(CASE WHEN tax_rate = 0 THEN subtotal ELSE 0 END), 0) AS exempt_sales
-    FROM invoices
-    WHERE strftime('%Y-%m', issued_date) = ?
-  `).get(month) as any;
-
-  const taxRates = await db.prepare(`
-    SELECT tax_rate, COUNT(*) AS cnt, COALESCE(SUM(subtotal), 0) AS subtotal, COALESCE(SUM(tax_amount), 0) AS tax
-    FROM invoices
-    WHERE strftime('%Y-%m', issued_date) = ?
-    GROUP BY tax_rate
-    ORDER BY tax_rate DESC
-  `).all(month) as any[];
+  const [summary, taxRates] = await Promise.all([
+    db.prepare(`
+      SELECT COUNT(*) AS invoice_count,
+        COALESCE(SUM(subtotal), 0) AS vatable_sales,
+        COALESCE(SUM(tax_amount), 0) AS vat_collected,
+        COALESCE(SUM(CASE WHEN tax_rate > 0 THEN subtotal ELSE 0 END), 0) AS taxable_amount,
+        COALESCE(SUM(CASE WHEN tax_rate = 0 THEN subtotal ELSE 0 END), 0) AS exempt_sales
+      FROM invoices WHERE strftime('%Y-%m', issued_date) = ?
+    `).get(month) as Promise<any>,
+    db.prepare(`
+      SELECT tax_rate, COUNT(*) AS cnt, COALESCE(SUM(subtotal), 0) AS subtotal, COALESCE(SUM(tax_amount), 0) AS tax
+      FROM invoices WHERE strftime('%Y-%m', issued_date) = ?
+      GROUP BY tax_rate ORDER BY tax_rate DESC
+    `).all(month) as Promise<any[]>,
+  ]);
 
   res.json({
     month,
@@ -168,28 +151,26 @@ router.get('/range', async (req: Request, res: Response) => {
   const type = (req.query.type as string) || 'sales';
 
   if (type === 'sales') {
-    const invoices = await db.prepare(`
-      SELECT i.invoice_number, i.total, i.tax_amount, i.status, i.issued_date,
-        COALESCE(c.name, 'Walk-in') AS customer_name,
-        COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) AS paid
-      FROM invoices i
-      LEFT JOIN customers c ON c.id = i.customer_id
-      WHERE date(i.issued_date) >= ? AND date(i.issued_date) <= ?
-      ORDER BY i.issued_date DESC
-    `).all(from, to) as any[];
-
-    const totals = await db.prepare(`
-      SELECT COALESCE(SUM(total), 0) AS gross, COALESCE(SUM(tax_amount), 0) AS tax, COUNT(*) AS cnt
+    const [invoices, totals, profit] = await Promise.all([
+      db.prepare(`
+        SELECT i.invoice_number, i.total, i.tax_amount, i.status, i.issued_date,
+          COALESCE(c.name, 'Walk-in') AS customer_name,
+          COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) AS paid
+        FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id
+        WHERE date(i.issued_date) >= ? AND date(i.issued_date) <= ?
+        ORDER BY i.issued_date DESC
+      `).all(from, to) as Promise<any[]>,
+      db.prepare(`
+        SELECT COALESCE(SUM(total), 0) AS gross, COALESCE(SUM(tax_amount), 0) AS tax, COUNT(*) AS cnt
       FROM invoices WHERE date(issued_date) >= ? AND date(issued_date) <= ?
-    `).get(from, to) as any;
-
-    const profit = await db.prepare(`
-      SELECT COALESCE(SUM(ii.total - (ii.quantity * COALESCE(m.cost_price, 0))), 0) AS profit
-      FROM invoice_items ii
-      JOIN invoices i ON i.id = ii.invoice_id
-      LEFT JOIN materials m ON m.id = ii.material_id
-      WHERE date(i.issued_date) >= ? AND date(i.issued_date) <= ?
-    `).get(from, to) as any;
+      `).get(from, to) as Promise<any>,
+      db.prepare(`
+        SELECT COALESCE(SUM(ii.total - (ii.quantity * COALESCE(m.cost_price, 0))), 0) AS profit
+        FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
+        LEFT JOIN materials m ON m.id = ii.material_id
+        WHERE date(i.issued_date) >= ? AND date(i.issued_date) <= ?
+      `).get(from, to) as Promise<any>,
+    ]);
 
     res.json({
       from, to, type,
@@ -205,22 +186,22 @@ router.get('/range', async (req: Request, res: Response) => {
   }
 
   if (type === 'profit') {
-    const revenue = await db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) AS total FROM payments
-      WHERE date(payment_date) >= ? AND date(payment_date) <= ?
-    `).get(from, to) as any;
-
-    const cogs = await db.prepare(`
-      SELECT COALESCE(SUM(ii.quantity * COALESCE(m.cost_price, 0)), 0) AS total
-      FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
-      LEFT JOIN materials m ON m.id = ii.material_id
-      WHERE date(i.issued_date) >= ? AND date(i.issued_date) <= ?
-    `).get(from, to) as any;
-
-    const expenses = await db.prepare(`
-      SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
-      WHERE date(expense_date) >= ? AND date(expense_date) <= ?
-    `).get(from, to) as any;
+    const [revenue, cogs, expenses] = await Promise.all([
+      db.prepare(`
+        SELECT COALESCE(SUM(amount), 0) AS total FROM payments
+        WHERE date(payment_date) >= ? AND date(payment_date) <= ?
+      `).get(from, to) as Promise<any>,
+      db.prepare(`
+        SELECT COALESCE(SUM(ii.quantity * COALESCE(m.cost_price, 0)), 0) AS total
+        FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
+        LEFT JOIN materials m ON m.id = ii.material_id
+        WHERE date(i.issued_date) >= ? AND date(i.issued_date) <= ?
+      `).get(from, to) as Promise<any>,
+      db.prepare(`
+        SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
+        WHERE date(expense_date) >= ? AND date(expense_date) <= ?
+      `).get(from, to) as Promise<any>,
+    ]);
 
     const r = Math.round(revenue.total * 100) / 100;
     const c = Math.round(cogs.total * 100) / 100;

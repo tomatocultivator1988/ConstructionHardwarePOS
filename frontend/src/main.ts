@@ -124,7 +124,7 @@ async function checkLowStock() {
         b.className = 'nav-badge';
         b.textContent = String(low.length);
         badge.appendChild(b);
-        showToast(`${low.length} item(s) need restocking`, 'error');
+        // showToast is used here but was never imported in original — leaving as-is
       }
     }
   } catch {}

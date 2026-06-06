@@ -259,6 +259,15 @@ async function migrateSchema() {
   if (!indexNames.includes('idx_audit_date')) {
     await db.exec("CREATE INDEX idx_audit_date ON audit_log(created_at)");
   }
+  if (!indexNames.includes('idx_payments_date')) {
+    await db.exec("CREATE INDEX idx_payments_date ON payments(payment_date)");
+  }
+  if (!indexNames.includes('idx_invoices_issued_date')) {
+    await db.exec("CREATE INDEX idx_invoices_issued_date ON invoices(issued_date)");
+  }
+  if (!indexNames.includes('idx_invoices_status')) {
+    await db.exec("CREATE INDEX idx_invoices_status ON invoices(status)");
+  }
 
   await db.exec('DROP VIEW IF EXISTS v_invoice_profit_margin');
   await db.exec(`

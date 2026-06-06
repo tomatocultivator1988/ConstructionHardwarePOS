@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db/setup';
 import { requireAdmin } from '../lib/auth';
 import { logAudit } from '../lib/audit';
+import { clearCache } from '../lib/cache';
 
 const router = Router();
 
@@ -71,7 +72,6 @@ router.post('/', async (req: Request, res: Response) => {
     'INSERT INTO invoice_items (id, invoice_id, material_id, description, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );
   const deductStock = db.prepare('UPDATE materials SET stock = stock - ? WHERE id = ?');
-  const checkStock = db.prepare('SELECT id, name, stock, unit FROM materials WHERE id = ?');
   const getSeq = db.prepare('SELECT next_number FROM invoice_sequence WHERE id = 1');
   const updateSeq = db.prepare('UPDATE invoice_sequence SET next_number = next_number + 1 WHERE id = 1');
   let invoice_number = '';
@@ -85,16 +85,15 @@ router.post('/', async (req: Request, res: Response) => {
     await updateSeq.run();
     invoice_number = `INV-${String(num).padStart(4, '0')}`;
 
-    for (const materialId of usedMaterialIds) {
-      const mat = await checkStock.get(materialId) as any;
-      if (!mat) {
-        throw new Error(`Material ${materialId} not found`);
-      }
-      const qtyNeeded = items
-        .filter((it: any) => it.material_id === materialId)
-        .reduce((s: number, it: any) => s + it.quantity, 0);
-      if (mat.stock < qtyNeeded) {
-        throw new Error(`Insufficient stock for ${mat.name}: have ${mat.stock} ${mat.unit}, need ${qtyNeeded} ${mat.unit}`);
+    if (usedMaterialIds.size > 0) {
+      const placeholders = Array.from(usedMaterialIds).map(() => '?').join(',');
+      const mats = await db.prepare(`SELECT id, name, stock, unit FROM materials WHERE id IN (${placeholders})`).all(...usedMaterialIds) as any[];
+      const matMap = new Map(mats.map((m: any) => [m.id, m]));
+      for (const materialId of usedMaterialIds) {
+        const mat = matMap.get(materialId);
+        if (!mat) throw new Error(`Material ${materialId} not found`);
+        const qtyNeeded = items.filter((it: any) => it.material_id === materialId).reduce((s: number, it: any) => s + it.quantity, 0);
+        if (mat.stock < qtyNeeded) throw new Error(`Insufficient stock for ${mat.name}: have ${mat.stock} ${mat.unit}, need ${qtyNeeded} ${mat.unit}`);
       }
     }
 
@@ -128,6 +127,7 @@ router.post('/', async (req: Request, res: Response) => {
 
   try {
     await txn();
+    clearCache('analytics:');
     await logAudit((req as any).user?.id || null, 'create', 'invoice', invoiceId, `Created ${invoice_number}`);
   } catch (e: any) {
     res.status(400).json({ error: e.message });
@@ -191,6 +191,7 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
       }
     });
     await txn();
+    clearCache('analytics:');
     await logAudit((req as any).user?.id || null, 'update', 'invoice', req.params.id as string, `Payment of ${amount} via ${method}`);
   } catch (e: any) {
     res.status(400).json({ error: e.message });
@@ -254,6 +255,7 @@ router.post('/:id/return', async (req: Request, res: Response) => {
   });
 
   await txn();
+  clearCache('analytics:');
   res.json(await db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId));
 });
 
@@ -279,6 +281,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
     await db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
   });
   await txn();
+  clearCache('analytics:');
   await logAudit((req as any).user?.id || null, 'delete', 'invoice', req.params.id as string, `Deleted ${existing.invoice_number}`);
   res.status(204).end();
 });
