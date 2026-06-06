@@ -73,10 +73,10 @@ async function loadUsersTab() {
         <tbody>
           ${users.map((u: any) => `
             <tr>
-              <td style="font-weight:600">${esc(u.username)}</td>
-              <td><span class="status-badge" style="background:${u.role === 'admin' ? 'var(--c-primary-bg)' : 'var(--c-success-bg)'};color:${u.role === 'admin' ? 'var(--c-primary)' : 'var(--c-success)'}">${u.role}</span></td>
-              <td>${fmtDate(u.created_at)}</td>
-              <td class="actions">
+              <td data-label="Username" style="font-weight:600">${esc(u.username)}</td>
+              <td data-label="Role"><span class="status-badge" style="background:${u.role === 'admin' ? 'var(--c-primary-bg)' : 'var(--c-success-bg)'};color:${u.role === 'admin' ? 'var(--c-primary)' : 'var(--c-success)'}">${u.role}</span></td>
+              <td data-label="Created">${fmtDate(u.created_at)}</td>
+              <td data-label="" class="actions">
                 <button class="btn btn-primary btn-sm" onclick="showUserModal('${u.id}')">Edit</button>
                 <button class="btn btn-danger btn-sm" onclick="delUser('${u.id}')">Delete</button>
               </td>
@@ -156,11 +156,11 @@ async function loadAuditTab() {
         <tbody>
           ${logs.length ? logs.map((l: any) => `
             <tr>
-              <td>${fmtDate(l.created_at)}</td>
-              <td>${esc(l.username || 'System')}</td>
-              <td><span class="status-badge" style="background:${l.action==='delete'?'var(--c-danger-bg)':l.action==='update'?'var(--c-warning-bg)':'var(--c-success-bg)'};color:${l.action==='delete'?'var(--c-danger)':l.action==='update'?'var(--c-warning)':'var(--c-success)'}">${l.action}</span></td>
-              <td>${esc(l.entity)}</td>
-              <td style="font-size:var(--fs-xs);color:var(--c-text-muted)">${esc(l.details || '-')}</td>
+              <td data-label="Date">${fmtDate(l.created_at)}</td>
+              <td data-label="User">${esc(l.username || 'System')}</td>
+              <td data-label="Action"><span class="status-badge" style="background:${l.action==='delete'?'var(--c-danger-bg)':l.action==='update'?'var(--c-warning-bg)':'var(--c-success-bg)'};color:${l.action==='delete'?'var(--c-danger)':l.action==='update'?'var(--c-warning)':'var(--c-success)'}">${l.action}</span></td>
+              <td data-label="Entity">${esc(l.entity)}</td>
+              <td data-label="Details" style="font-size:var(--fs-xs);color:var(--c-text-muted)">${esc(l.details || '-')}</td>
             </tr>
           `).join('') : '<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--c-text-muted)">No audit entries yet</td></tr>'}
         </tbody>

@@ -44,12 +44,12 @@ export async function renderExpenses(): Promise<string> {
         <tbody>
           ${expenses.length ? expenses.map((e: Expense) => `
             <tr>
-              <td>${fmtDate(e.expense_date)}</td>
-              <td><span class="status-badge" style="background:var(--c-primary-bg);color:var(--c-primary)">${esc(e.category)}</span></td>
-              <td>${esc(e.description || '-')}</td>
-              <td>${esc(e.vendor || '-')}</td>
-              <td style="font-weight:600">${fmtPeso(e.amount)}</td>
-              <td class="actions">
+              <td data-label="Date">${fmtDate(e.expense_date)}</td>
+              <td data-label="Category"><span class="status-badge" style="background:var(--c-primary-bg);color:var(--c-primary)">${esc(e.category)}</span></td>
+              <td data-label="Description">${esc(e.description || '-')}</td>
+              <td data-label="Vendor">${esc(e.vendor || '-')}</td>
+              <td data-label="Amount" style="font-weight:600">${fmtPeso(e.amount)}</td>
+              <td data-label="" class="actions">
                 <button class="btn btn-primary btn-sm" onclick="editExpense('${e.id}')">Edit</button>
                 <button class="btn btn-danger btn-sm" onclick="delExpense('${e.id}')">Delete</button>
               </td>

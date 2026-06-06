@@ -21,13 +21,13 @@ export async function renderPurchaseOrders(): Promise<string> {
         <tbody>
           ${pos.length ? pos.map((po: PurchaseOrder) => `
             <tr>
-              <td style="font-weight:600">${esc(po.po_number)}</td>
-              <td>${esc(po.supplier_name)}</td>
-              <td>${fmtPeso(po.total)}</td>
-              <td><span class="status-badge ${po.status}">${po.status}</span></td>
-              <td>${fmtDate(po.order_date)}</td>
-              <td>${po.received_date ? fmtDate(po.received_date) : '-'}</td>
-              <td class="actions">
+              <td data-label="PO #" style="font-weight:600">${esc(po.po_number)}</td>
+              <td data-label="Supplier">${esc(po.supplier_name)}</td>
+              <td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(po.total)}</td>
+              <td data-label="Status"><span class="status-badge ${po.status}">${po.status}</span></td>
+              <td data-label="Order Date">${fmtDate(po.order_date)}</td>
+              <td data-label="Received">${po.received_date ? fmtDate(po.received_date) : '-'}</td>
+              <td data-label="" class="actions">
                 <button class="btn btn-primary btn-sm" onclick="showPODetail('${po.id}')">View</button>
                 ${po.status === 'pending' ? `
                   <button class="btn btn-success btn-sm" onclick="receivePO('${po.id}')">Receive</button>
@@ -172,11 +172,11 @@ export async function showPODetail(id: string) {
       <tbody>
         ${(po.items || []).map((item: any) => `
           <tr>
-            <td>${esc(item.material_name || '-')}</td>
-            <td>${esc(item.description)}</td>
-            <td>${item.quantity}</td>
-            <td>${fmtPeso(item.unit_cost)}</td>
-            <td style="font-weight:600">${fmtPeso(item.total)}</td>
+            <td data-label="Material">${esc(item.material_name || '-')}</td>
+            <td data-label="Description">${esc(item.description)}</td>
+            <td data-label="Qty">${item.quantity}</td>
+            <td data-label="Unit Cost" style="font-family:var(--ff-mono)">${fmtPeso(item.unit_cost)}</td>
+            <td data-label="Total" style="font-family:var(--ff-mono);font-weight:700">${fmtPeso(item.total)}</td>
           </tr>
         `).join('')}
       </tbody>

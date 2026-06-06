@@ -257,11 +257,11 @@ export async function renderDashboard(): Promise<string> {
         <tbody>
           ${recentInvoices.length ? recentInvoices.map((inv: Invoice) => `
             <tr>
-              <td style="font-weight:600">${esc(inv.invoice_number)}</td>
-              <td>${esc(inv.customer_name)}</td>
-              <td>${fmtPeso(inv.total)}</td>
-              <td><span class="status-badge ${inv.status}">${inv.status}</span></td>
-              <td>${fmtDate(inv.issued_date)}</td>
+              <td data-label="#" style="font-weight:600">${esc(inv.invoice_number)}</td>
+              <td data-label="Customer">${esc(inv.customer_name)}</td>
+              <td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(inv.total)}</td>
+              <td data-label="Status"><span class="status-badge ${inv.status}">${inv.status}</span></td>
+              <td data-label="Date">${fmtDate(inv.issued_date)}</td>
             </tr>
           `).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--c-text-muted);padding:2rem">No invoices yet — create one to see data here</td></tr>'}
         </tbody>

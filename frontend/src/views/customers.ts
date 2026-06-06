@@ -21,11 +21,11 @@ export async function renderCustomers(): Promise<string> {
         <tbody>
           ${customers.length ? customers.map((c: Customer) => `
             <tr>
-              <td style="font-weight:600">${esc(c.name)}</td>
-              <td>${esc(c.phone || '-')}</td>
-              <td>${esc(c.email || '-')}</td>
-              <td>${c.is_wholesale ? '<span class="status-badge" style="background:var(--c-primary-bg);color:var(--c-primary)">Wholesale</span>' : '<span style="color:var(--c-text-muted);font-size:var(--fs-xs)">Retail</span>'}</td>
-              <td class="actions">
+              <td data-label="Name" style="font-weight:600">${esc(c.name)}</td>
+              <td data-label="Phone">${esc(c.phone || '-')}</td>
+              <td data-label="Email">${esc(c.email || '-')}</td>
+              <td data-label="Type">${c.is_wholesale ? '<span class="status-badge" style="background:var(--c-primary-bg);color:var(--c-primary)">Wholesale</span>' : '<span style="color:var(--c-text-muted);font-size:var(--fs-xs)">Retail</span>'}</td>
+              <td data-label="" class="actions">
                 <button class="btn btn-primary btn-sm" onclick="editCustomer('${c.id}')">Edit</button>
                 <button class="btn btn-sm" onclick="showCustomerStatement('${c.id}')">SOA</button>
                 <button class="btn btn-danger btn-sm" onclick="delCustomer('${c.id}')">Delete</button>
@@ -141,14 +141,14 @@ export async function showCustomerStatement(id: string) {
       <tbody>
         ${data.statements.length ? data.statements.map((s: any) => `
           <tr>
-            <td>${esc(s.invoice_number)}</td>
-            <td>${fmtDate(s.issued_date)}</td>
-            <td>${fmtPeso(s.total)}</td>
-            <td class="${s.paid >= s.total ? 'paid' : s.paid > 0 ? 'partial' : 'pending'}">${fmtPeso(s.paid)}</td>
-            <td class="right" style="${s.balance > 0 ? 'color:#ef4444' : 'color:#22c55e'}">${fmtPeso(s.balance)}</td>
+            <td data-label="Invoice #">${esc(s.invoice_number)}</td>
+            <td data-label="Date">${fmtDate(s.issued_date)}</td>
+            <td data-label="Total">${fmtPeso(s.total)}</td>
+            <td data-label="Paid" class="${s.paid >= s.total ? 'paid' : s.paid > 0 ? 'partial' : 'pending'}">${fmtPeso(s.paid)}</td>
+            <td data-label="Balance" class="right" style="${s.balance > 0 ? 'color:#ef4444' : 'color:#22c55e'}">${fmtPeso(s.balance)}</td>
           </tr>
-        `).join('') : '<tr><td colspan="5" style="text-align:center;padding:2rem;color:#666">No transactions</td></tr>'}
-        <tr class="total-row"><td colspan="4" class="right">Total Outstanding</td><td class="right" style="${balanceColor}">${fmtPeso(data.total_owed)}</td></tr>
+        `).join('') : '<tr><td data-label="" colspan="5" style="text-align:center;padding:2rem;color:#666">No transactions</td></tr>'}
+        <tr class="total-row"><td data-label="" colspan="4" class="right">Total Outstanding</td><td data-label="Balance" class="right" style="${balanceColor}">${fmtPeso(data.total_owed)}</td></tr>
       </tbody>
     </table>
     <script>window.onload=function(){window.print();window.close()}<\/script>

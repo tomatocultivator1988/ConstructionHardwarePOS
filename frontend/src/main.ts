@@ -72,8 +72,8 @@ Object.assign(window, {
   checkLowStock: () => checkLowStock(),
 });
 
-// Navigation
-document.querySelectorAll('.nav-btn').forEach(btn => {
+// Navigation — desktop
+document.querySelectorAll('#desktop-nav .nav-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
@@ -81,6 +81,54 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     if ((btn as HTMLElement).dataset.view === 'dashboard') checkLowStock();
   });
 });
+
+// Navigation — bottom nav
+document.querySelectorAll('#bottom-nav .nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadView((btn as HTMLElement).dataset.view!);
+    if ((btn as HTMLElement).dataset.view === 'dashboard') checkLowStock();
+  });
+});
+
+// Online/offline detection
+function updateOnlineStatus() {
+  document.body.classList.toggle('offline', !navigator.onLine);
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+updateOnlineStatus();
+
+// PWA install prompt
+let deferredPrompt: any;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.body.classList.add('show-install');
+});
+window.addEventListener('appinstalled', () => {
+  deferredPrompt = null;
+  document.body.classList.remove('show-install');
+});
+document.getElementById('install-btn')?.addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const result = await deferredPrompt.userChoice;
+  if (result.outcome === 'accepted') {
+    deferredPrompt = null;
+    document.body.classList.remove('show-install');
+  }
+});
+document.getElementById('install-dismiss')?.addEventListener('click', () => {
+  deferredPrompt = null;
+  document.body.classList.remove('show-install');
+});
+
+// Service worker registration
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
 
 export function applyRoleUI() {
   const admin = isAdmin();

@@ -26,12 +26,12 @@ export async function renderInvoices(): Promise<string> {
         <tbody>
           ${invoices.length ? invoices.map((inv: Invoice) => `
             <tr>
-              <td style="font-weight:600">${esc(inv.invoice_number)}</td>
-              <td>${esc(inv.customer_name)}</td>
-              <td>${fmtPeso(inv.total)}</td>
-              <td><span class="status-badge ${inv.status}">${inv.status}</span></td>
-              <td>${fmtDate(inv.issued_date)}</td>
-              <td class="actions">
+              <td data-label="#" style="font-weight:600">${esc(inv.invoice_number)}</td>
+              <td data-label="Customer">${esc(inv.customer_name)}</td>
+              <td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(inv.total)}</td>
+              <td data-label="Status"><span class="status-badge ${inv.status}">${inv.status}</span></td>
+              <td data-label="Issued">${fmtDate(inv.issued_date)}</td>
+              <td data-label="" class="actions">
                 <button class="btn btn-success btn-sm" onclick="showInvoiceDetail('${inv.id}')">View</button>
                 <button class="btn btn-danger btn-sm" onclick="delInvoice('${inv.id}')">Delete</button>
               </td>
@@ -213,7 +213,7 @@ export async function showInvoiceDetail(id: string) {
         <thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead>
         <tbody>
           ${inv.items.map((item: any) => `
-            <tr><td>${esc(item.description)}</td><td>${item.quantity}</td><td>${fmtPeso(item.unit_price)}</td><td>${fmtPeso(item.total)}</td></tr>
+            <tr><td data-label="Description">${esc(item.description)}</td><td data-label="Qty">${item.quantity}</td><td data-label="Unit Price" style="font-family:var(--ff-mono)">${fmtPeso(item.unit_price)}</td><td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(item.total)}</td></tr>
           `).join('')}
         </tbody>
       </table>
@@ -234,7 +234,7 @@ export async function showInvoiceDetail(id: string) {
         <thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Notes</th></tr></thead>
         <tbody>
           ${inv.payments.map((p: any) => `
-            <tr><td>${fmtDate(p.payment_date)}</td><td>${fmtPeso(p.amount)}</td><td>${esc(p.method)}</td><td>${esc(p.notes || '—')}</td></tr>
+            <tr><td data-label="Date">${fmtDate(p.payment_date)}</td><td data-label="Amount" style="font-family:var(--ff-mono);font-weight:600;color:var(--c-success)">${fmtPeso(p.amount)}</td><td data-label="Method">${esc(p.method)}</td><td data-label="Notes" style="color:var(--c-text-muted)">${esc(p.notes || '—')}</td></tr>
           `).join('')}
         </tbody>
       </table>

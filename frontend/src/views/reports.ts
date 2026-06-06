@@ -62,11 +62,11 @@ async function loadDailyReport(date?: string) {
         <tbody>
           ${data.invoices.length ? data.invoices.map((inv: any) => `
             <tr>
-              <td style="font-weight:600">${esc(inv.invoice_number)}</td>
-              <td>${esc(inv.customer_name)}</td>
-              <td>${fmtPeso(inv.total)}</td>
-              <td><span class="status-badge ${inv.status}">${inv.status}</span></td>
-              <td>${fmtPeso(inv.paid)}</td>
+              <td data-label="Invoice #" style="font-weight:600">${esc(inv.invoice_number)}</td>
+              <td data-label="Customer">${esc(inv.customer_name)}</td>
+              <td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(inv.total)}</td>
+              <td data-label="Status"><span class="status-badge ${inv.status}">${inv.status}</span></td>
+              <td data-label="Paid" style="font-family:var(--ff-mono);font-weight:600;color:var(--c-success)">${fmtPeso(inv.paid)}</td>
             </tr>
           `).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--c-text-muted);padding:2rem">No transactions for this date</td></tr>'}
         </tbody>
@@ -138,10 +138,10 @@ async function loadTaxReport(month?: string) {
         <tbody>
           ${data.by_rate?.length ? data.by_rate.map((r: any) => `
             <tr>
-              <td style="font-weight:600">${(r.tax_rate * 100).toFixed(0)}%</td>
-              <td>${r.count}</td>
-              <td>${fmtPeso(r.subtotal)}</td>
-              <td>${fmtPeso(r.tax)}</td>
+              <td data-label="Tax Rate" style="font-weight:600">${(r.tax_rate * 100).toFixed(0)}%</td>
+              <td data-label="Count">${r.count}</td>
+              <td data-label="Taxable Amount" style="font-family:var(--ff-mono)">${fmtPeso(r.subtotal)}</td>
+              <td data-label="Tax" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(r.tax)}</td>
             </tr>
           `).join('') : '<tr><td colspan="4" style="text-align:center;color:var(--c-text-muted);padding:2rem">No data</td></tr>'}
         </tbody>
@@ -193,11 +193,11 @@ export async function loadRangeReport() {
           <tbody>
             ${data.invoices?.length ? data.invoices.map((inv: any) => `
               <tr>
-                <td style="font-weight:600">${esc(inv.invoice_number)}</td>
-                <td>${esc(inv.customer_name)}</td>
-                <td>${fmtPeso(inv.total)}</td>
-                <td><span class="status-badge ${inv.status}">${inv.status}</span></td>
-                <td>${fmtDate(inv.issued_date)}</td>
+              <td data-label="Invoice #" style="font-weight:600">${esc(inv.invoice_number)}</td>
+              <td data-label="Customer">${esc(inv.customer_name)}</td>
+              <td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(inv.total)}</td>
+              <td data-label="Status"><span class="status-badge ${inv.status}">${inv.status}</span></td>
+              <td data-label="Date">${fmtDate(inv.issued_date)}</td>
               </tr>
             `).join('') : '<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--c-text-muted)">No data for this range</td></tr>'}
           </tbody>

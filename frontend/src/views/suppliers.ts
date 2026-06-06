@@ -18,12 +18,12 @@ export async function renderSuppliers(): Promise<string> {
         <tbody>
           ${suppliers.length ? suppliers.map((s: Supplier) => `
             <tr>
-              <td style="font-weight:600">${esc(s.name)}</td>
-              <td>${esc(s.contact_person || '-')}</td>
-              <td>${esc(s.phone || '-')}</td>
-              <td>${esc(s.email || '-')}</td>
-              <td>${esc(s.tin || '-')}</td>
-              <td class="actions">
+              <td data-label="Name" style="font-weight:600">${esc(s.name)}</td>
+              <td data-label="Contact Person">${esc(s.contact_person || '-')}</td>
+              <td data-label="Phone">${esc(s.phone || '-')}</td>
+              <td data-label="Email">${esc(s.email || '-')}</td>
+              <td data-label="TIN">${esc(s.tin || '-')}</td>
+              <td data-label="" class="actions">
                 <button class="btn btn-primary btn-sm" onclick="editSupplier('${s.id}')">Edit</button>
                 <button class="btn btn-danger btn-sm" onclick="delSupplier('${s.id}')">Delete</button>
               </td>

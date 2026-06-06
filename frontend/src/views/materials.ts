@@ -39,15 +39,15 @@ export async function renderMaterials(): Promise<string> {
             const profit = m.price_per_unit - (m.cost_price || 0);
             const margin = m.price_per_unit > 0 ? (profit / m.price_per_unit * 100) : 0;
             return `<tr class="${isLow ? 'low-stock' : ''}">
-              <td style="font-weight:600">${esc(m.name)}</td>
-              <td><span style="font-size:var(--fs-xs);color:var(--c-text-muted)">${esc(m.category || '-')}</span></td>
-              <td>${esc(m.unit)}</td>
-              <td>${m.stock}${isLow ? ' ⚠' : ''}</td>
-              <td>₱${(m.cost_price || 0).toFixed(2)}</td>
-              <td>₱${m.price_per_unit.toFixed(2)}</td>
-              <td style="color:${profit > 0 ? 'var(--c-success)' : profit < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">₱${profit.toFixed(2)}</td>
-              <td style="color:${margin > 0 ? 'var(--c-success)' : margin < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${margin.toFixed(1)}%</td>
-              <td class="actions">
+              <td data-label="Name" style="font-weight:600">${esc(m.name)}</td>
+              <td data-label="Category"><span style="font-size:var(--fs-xs);color:var(--c-text-muted)">${esc(m.category || '-')}</span></td>
+              <td data-label="Unit">${esc(m.unit)}</td>
+              <td data-label="Stock">${m.stock}${isLow ? ' ⚠' : ''}</td>
+              <td data-label="Cost">₱${(m.cost_price || 0).toFixed(2)}</td>
+              <td data-label="Retail">₱${m.price_per_unit.toFixed(2)}</td>
+              <td data-label="Profit" style="color:${profit > 0 ? 'var(--c-success)' : profit < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">₱${profit.toFixed(2)}</td>
+              <td data-label="Margin" style="color:${margin > 0 ? 'var(--c-success)' : margin < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${margin.toFixed(1)}%</td>
+              <td data-label="" class="actions">
                 <button class="btn btn-primary btn-sm" onclick="editMaterial('${m.id}')">Edit</button>
                 <button class="btn btn-sm" onclick="showStockHistory('${m.id}')">History</button>
                 <button class="btn btn-danger btn-sm" onclick="delMaterial('${m.id}')">Delete</button>
@@ -162,11 +162,11 @@ export async function showStockHistory(materialId: string) {
       <tbody>
         ${movements.map((sm: StockMovement) => `
           <tr>
-            <td>${fmtDate(sm.created_at)}</td>
-            <td><span class="status-badge" style="background:${sm.type === 'sale' ? 'var(--c-danger-bg)' : sm.type === 'po' ? 'var(--c-success-bg)' : 'var(--c-primary-bg)'};color:${sm.type === 'sale' ? 'var(--c-danger)' : sm.type === 'po' ? 'var(--c-success)' : 'var(--c-primary)'}">${sm.type}</span></td>
-            <td style="color:${sm.quantity < 0 ? 'var(--c-danger)' : 'var(--c-success)'};font-weight:600">${sm.quantity > 0 ? '+' : ''}${sm.quantity}</td>
-            <td>${esc(sm.reference_type || '-')}</td>
-            <td>${esc(sm.notes || '-')}</td>
+            <td data-label="Date">${fmtDate(sm.created_at)}</td>
+            <td data-label="Type"><span class="status-badge" style="background:${sm.type === 'sale' ? 'var(--c-danger-bg)' : sm.type === 'po' ? 'var(--c-success-bg)' : 'var(--c-primary-bg)'};color:${sm.type === 'sale' ? 'var(--c-danger)' : sm.type === 'po' ? 'var(--c-success)' : 'var(--c-primary)'}">${sm.type}</span></td>
+            <td data-label="Qty" style="color:${sm.quantity < 0 ? 'var(--c-danger)' : 'var(--c-success)'};font-weight:600">${sm.quantity > 0 ? '+' : ''}${sm.quantity}</td>
+            <td data-label="Reference">${esc(sm.reference_type || '-')}</td>
+            <td data-label="Notes">${esc(sm.notes || '-')}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -189,15 +189,15 @@ export async function filterMaterials() {
     const profit = m.price_per_unit - (m.cost_price || 0);
     const margin = m.price_per_unit > 0 ? (profit / m.price_per_unit * 100) : 0;
     return `<tr class="${isLow ? 'low-stock' : ''}">
-      <td style="font-weight:600">${esc(m.name)}</td>
-      <td><span style="font-size:var(--fs-xs);color:var(--c-text-muted)">${esc(m.category || '-')}</span></td>
-      <td>${esc(m.unit)}</td>
-      <td>${m.stock}${isLow ? ' ⚠' : ''}</td>
-      <td>₱${(m.cost_price || 0).toFixed(2)}</td>
-      <td>₱${m.price_per_unit.toFixed(2)}</td>
-      <td style="color:${profit > 0 ? 'var(--c-success)' : profit < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">₱${profit.toFixed(2)}</td>
-      <td style="color:${margin > 0 ? 'var(--c-success)' : margin < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${margin.toFixed(1)}%</td>
-      <td class="actions">
+      <td data-label="Name" style="font-weight:600">${esc(m.name)}</td>
+      <td data-label="Category"><span style="font-size:var(--fs-xs);color:var(--c-text-muted)">${esc(m.category || '-')}</span></td>
+      <td data-label="Unit">${esc(m.unit)}</td>
+      <td data-label="Stock">${m.stock}${isLow ? ' ⚠' : ''}</td>
+      <td data-label="Cost">₱${(m.cost_price || 0).toFixed(2)}</td>
+      <td data-label="Retail">₱${m.price_per_unit.toFixed(2)}</td>
+      <td data-label="Profit" style="color:${profit > 0 ? 'var(--c-success)' : profit < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">₱${profit.toFixed(2)}</td>
+      <td data-label="Margin" style="color:${margin > 0 ? 'var(--c-success)' : margin < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${margin.toFixed(1)}%</td>
+      <td data-label="" class="actions">
         <button class="btn btn-primary btn-sm" onclick="editMaterial('${m.id}')">Edit</button>
         <button class="btn btn-sm" onclick="showStockHistory('${m.id}')">History</button>
         <button class="btn btn-danger btn-sm" onclick="delMaterial('${m.id}')">Delete</button>
