@@ -5,7 +5,7 @@ const cache = new Map<string, { data: any; ts: number }>();
 
 function invalidatePattern(pattern: string) {
   for (const key of cache.keys()) {
-    if (key.startsWith(pattern)) cache.delete(key);
+    if (key.startsWith('/' + pattern) || key.startsWith(pattern)) cache.delete(key);
   }
 }
 

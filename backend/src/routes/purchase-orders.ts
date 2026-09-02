@@ -6,6 +6,17 @@ import { logAudit } from '../lib/audit';
 
 const router = Router();
 
+function validateItems(items: any[]): string | null {
+  if (!Array.isArray(items) || !items.length) return 'At least one item is required';
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (!item || typeof item.description !== 'string' || !item.description.trim()) return `Item ${i + 1}: description is required`;
+    if (typeof item.quantity !== 'number' || !Number.isFinite(item.quantity) || item.quantity <= 0) return `Item ${i + 1}: quantity must be greater than 0`;
+    if (typeof item.unit_cost !== 'number' || !Number.isFinite(item.unit_cost) || item.unit_cost < 0) return `Item ${i + 1}: unit cost must be >= 0`;
+  }
+  return null;
+}
+
 router.get('/', async (_req: Request, res: Response) => {
   const db = getDb();
   const pos = await db.prepare(`
@@ -46,17 +57,10 @@ router.post('/', async (req: Request, res: Response) => {
     const supplier = await db.prepare('SELECT * FROM suppliers WHERE id = ?').get(supplier_id);
   if (!supplier) { res.status(404).json({ error: 'Supplier not found' }); return; }
 
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    if (!item.description || !item.description.trim()) {
-      res.status(400).json({ error: `Item ${i + 1}: description is required` }); return;
-    }
-    if (!item.quantity || item.quantity <= 0) {
-      res.status(400).json({ error: `Item ${i + 1}: quantity must be greater than 0` }); return;
-    }
-    if (!item.unit_cost || item.unit_cost < 0) {
-      res.status(400).json({ error: `Item ${i + 1}: unit cost must be >= 0` }); return;
-    }
+  const itemError = validateItems(items);
+  if (itemError) { res.status(400).json({ error: itemError }); return; }
+  for (const item of items) if (item.material_id && !await db.prepare('SELECT id FROM materials WHERE id = ?').get(item.material_id)) {
+    res.status(400).json({ error: 'One or more materials do not exist' }); return;
   }
 
   const poId = uuidv4();
@@ -111,6 +115,9 @@ router.put('/:id', async (req: Request, res: Response) => {
 
   const { supplier_id, items, order_date } = req.body;
 
+  if (order_date !== undefined && (typeof order_date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(order_date))) { res.status(400).json({ error: 'Invalid order date' }); return; }
+  if (items !== undefined) { const itemError = validateItems(items); if (itemError) { res.status(400).json({ error: itemError }); return; } }
+
   if (supplier_id) {
   const supplier = await db.prepare('SELECT * FROM suppliers WHERE id = ?').get(supplier_id);
     if (!supplier) { res.status(404).json({ error: 'Supplier not found' }); return; }
@@ -152,6 +159,7 @@ router.put('/:id/receive', requireAdmin, async (req: Request, res: Response) => 
   }
 
   const poItems = await db.prepare('SELECT * FROM po_items WHERE po_id = ?').all(req.params.id) as any[];
+  for (const item of poItems) if (item.material_id && !await db.prepare('SELECT id FROM materials WHERE id = ?').get(item.material_id)) { res.status(409).json({ error: 'Purchase order contains a missing material' }); return; }
   const updateStock = db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?');
   const insertMovement = db.prepare(
     'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'

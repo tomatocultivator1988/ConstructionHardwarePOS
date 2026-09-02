@@ -22,6 +22,9 @@ function validateExpense(body: any, existing?: any) {
   if (body.category !== undefined && (!category || !EXPENSE_CATEGORIES.includes(category))) {
     errors.push('Valid category is required');
   }
+  if (!category || !EXPENSE_CATEGORIES.includes(category)) errors.push('Valid category is required');
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) errors.push('Amount must be greater than 0');
+  if (typeof expense_date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(expense_date)) errors.push('Valid date is required');
   if (body.amount !== undefined && (isNaN(amount) || amount <= 0)) {
     errors.push('Amount must be greater than 0');
   }

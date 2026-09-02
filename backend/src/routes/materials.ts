@@ -17,6 +17,17 @@ function validateMaterial(body: any, existing?: any) {
   const category = body.category !== undefined ? body.category : (existing?.category ?? '');
   const wholesale_price = body.wholesale_price != null ? body.wholesale_price : (existing?.wholesale_price ?? 0);
 
+  if (typeof name !== 'string' || !name.trim()) errors.push('Name is required');
+  if (typeof unit !== 'string' || !unit.trim()) errors.push('Unit is required');
+  for (const [label, value] of [['stock', stock], ['cost price', cost_price], ['retail price', price_per_unit], ['wholesale price', wholesale_price], ['reorder point', reorder_point]] as const) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) errors.push(`${label} must be a valid number`);
+  }
+  if (Number(stock) < 0) errors.push('Stock cannot be negative');
+  if (Number(cost_price) < 0) errors.push('Cost price cannot be negative');
+  if (Number(price_per_unit) <= 0) errors.push('Retail price must be greater than 0');
+  if (Number(wholesale_price) < 0) errors.push('Wholesale price cannot be negative');
+  if (Number(reorder_point) < 0) errors.push('Reorder point cannot be negative');
+
   return { name, unit, stock, cost_price, price_per_unit, reorder_point, category, wholesale_price, errors };
 }
 
@@ -80,6 +91,12 @@ router.put('/:id', async (req: Request, res: Response) => {
     validation.category,
     req.params.id
   );
+  const oldStock = Number((existing as any).stock);
+  const newStock = Number(validation.stock);
+  if (oldStock !== newStock) {
+    await db.prepare('INSERT INTO stock_movements (id, material_id, type, quantity, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(uuidv4(), req.params.id, 'adjustment', newStock - oldStock, 'manual', 'Manual stock adjustment');
+  }
   const updated = await db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id);
   await logAudit((req as any).user?.id || null, 'update', 'material', req.params.id as string);
   res.json(updated);

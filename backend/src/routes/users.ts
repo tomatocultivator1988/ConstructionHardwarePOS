@@ -16,7 +16,7 @@ router.get('/', requireAdmin, async (_req: Request, res: Response) => {
 router.post('/', requireAdmin, async (req: Request, res: Response) => {
   const { username, pin, role } = req.body;
   if (!username || !username.trim()) { res.status(400).json({ error: 'Username required' }); return; }
-  if (!pin || pin.length < 4 || pin.length > 6) { res.status(400).json({ error: 'PIN must be 4-6 digits' }); return; }
+  if (!/^\d{4,6}$/.test(String(pin || ''))) { res.status(400).json({ error: 'PIN must be 4-6 digits' }); return; }
   if (role && !['admin', 'staff'].includes(role)) { res.status(400).json({ error: 'Role must be admin or staff' }); return; }
 
   const db = getDb();
@@ -41,7 +41,8 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
 
   const { pin, role } = req.body;
   if (role && !['admin', 'staff'].includes(role)) { res.status(400).json({ error: 'Role must be admin or staff' }); return; }
-  if (pin && (pin.length < 4 || pin.length > 6)) { res.status(400).json({ error: 'PIN must be 4-6 digits' }); return; }
+  if (pin !== undefined && !/^\d{4,6}$/.test(String(pin))) { res.status(400).json({ error: 'PIN must be 4-6 digits' }); return; }
+  if (uid === req.user?.id && role === 'staff') { res.status(400).json({ error: 'You cannot demote your own account' }); return; }
 
   if (pin) {
     const hash = bcrypt.hashSync(pin, 10);
@@ -60,6 +61,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   const uid = req.params.id as string;
   const existing = await db.prepare('SELECT * FROM users WHERE id = ?').get(uid) as any;
   if (!existing) { res.status(404).json({ error: 'User not found' }); return; }
+  if (uid === req.user?.id) { res.status(400).json({ error: 'You cannot delete your own account' }); return; }
   if (existing.role === 'admin') {
     const adminCount = (await db.prepare("SELECT COUNT(*) as cnt FROM users WHERE role = 'admin'").get() as any).cnt;
     if (adminCount <= 1) { res.status(400).json({ error: 'Cannot delete the last admin' }); return; }

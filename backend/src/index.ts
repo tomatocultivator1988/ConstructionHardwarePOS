@@ -144,6 +144,8 @@ async function start() {
     process.exit(1);
   }
 }
-start();
+
+// Vercel imports the app and manages the server lifecycle itself.
+if (require.main === module) start();
 
 export default app;

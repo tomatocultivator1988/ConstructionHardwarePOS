@@ -75,8 +75,21 @@ async function initTables() {
       description TEXT NOT NULL,
       quantity REAL NOT NULL,
       unit_price REAL NOT NULL,
+      cost_price REAL DEFAULT 0,
       total REAL NOT NULL,
       FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS invoice_returns (
+      id TEXT PRIMARY KEY,
+      invoice_item_id TEXT NOT NULL,
+      invoice_id TEXT NOT NULL,
+      material_id TEXT NOT NULL,
+      quantity REAL NOT NULL CHECK (quantity > 0),
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (invoice_item_id) REFERENCES invoice_items(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (material_id) REFERENCES materials(id)
     );
 
     CREATE TABLE IF NOT EXISTS payments (
@@ -185,6 +198,10 @@ async function initTables() {
 }
 
 async function migrateSchema() {
+  await db.exec('PRAGMA foreign_keys = ON');
+  const itemInfo = (await db.prepare("PRAGMA table_info('invoice_items')").all()) as any[];
+  if (!itemInfo.some((r: any) => r.name === 'cost_price')) await db.exec('ALTER TABLE invoice_items ADD COLUMN cost_price REAL DEFAULT 0');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_returns_item ON invoice_returns(invoice_item_id)');
   const tableInfo = (await db.prepare("PRAGMA table_info('materials')").all()) as any[];
   const materialCols = tableInfo.map((r: any) => r.name);
 

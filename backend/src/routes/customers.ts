@@ -74,6 +74,9 @@ router.post('/', async (req: Request, res: Response) => {
     res.status(400).json({ error: 'Invalid email format' });
     return;
   }
+  if (phone !== undefined && phone !== null && phone !== '' && !/^\d{7,13}$/.test(String(phone))) {
+    res.status(400).json({ error: 'Phone must be 7-13 digits' }); return;
+  }
   const id = uuidv4();
   await db.prepare(
     'INSERT INTO customers (id, name, phone, email, address, is_wholesale) VALUES (?, ?, ?, ?, ?, ?)'
@@ -98,6 +101,9 @@ router.put('/:id', async (req: Request, res: Response) => {
   if (email && !EMAIL_RE.test(email)) {
     res.status(400).json({ error: 'Invalid email format' });
     return;
+  }
+  if (phone !== undefined && phone !== null && phone !== '' && !/^\d{7,13}$/.test(String(phone))) {
+    res.status(400).json({ error: 'Phone must be 7-13 digits' }); return;
   }
   const customerId = req.params.id as string;
   await db.prepare(

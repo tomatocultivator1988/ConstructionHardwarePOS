@@ -266,7 +266,7 @@ export async function showInvoiceDetail(id: string) {
         <div class="line-item" style="margin-bottom:var(--space-2)">
           <span style="flex:2;font-size:var(--fs-sm)">${esc(item.description)}</span>
           <span style="flex:1;font-size:var(--fs-sm);color:var(--c-text-muted)">Sold: ${item.quantity}</span>
-          <input id="ret-qty-${item.material_id || item.id}" type="number" min="0" max="${item.quantity}" value="0" style="flex:1;min-height:32px;font-size:var(--fs-sm);width:60px" />
+          <input id="ret-qty-${item.id}" type="number" min="0" max="${item.quantity}" value="0" style="flex:1;min-height:32px;font-size:var(--fs-sm);width:60px" />
         </div>
       `).join('')}
     </div>
@@ -321,9 +321,9 @@ export async function returnItems(invoiceId: string) {
     const retItems: { material_id: string; quantity: number }[] = [];
     for (const item of inv.items) {
       if (!item.material_id) continue;
-      const qty = parseInt((document.getElementById(`ret-qty-${item.material_id}`) as HTMLInputElement)?.value || '0');
+      const qty = parseFloat((document.getElementById(`ret-qty-${item.id}`) as HTMLInputElement)?.value || '0');
       if (qty > 0 && qty <= item.quantity) {
-        retItems.push({ material_id: item.material_id, quantity: qty });
+        retItems.push({ invoice_item_id: item.id, material_id: item.material_id, quantity: qty } as any);
       }
     }
     if (!retItems.length) { showToast('Enter return quantities'); return; }

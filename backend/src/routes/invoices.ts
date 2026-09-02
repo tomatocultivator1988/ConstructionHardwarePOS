@@ -48,11 +48,11 @@ router.post('/', async (req: Request, res: Response) => {
       res.status(400).json({ error: `Item ${i + 1}: description is required` });
       return;
     }
-    if (!item.quantity || item.quantity <= 0) {
+    if (typeof item.quantity !== 'number' || !Number.isFinite(item.quantity) || item.quantity <= 0) {
       res.status(400).json({ error: `Item ${i + 1}: quantity must be greater than 0` });
       return;
     }
-    if (!item.unit_price || item.unit_price <= 0) {
+    if (typeof item.unit_price !== 'number' || !Number.isFinite(item.unit_price) || item.unit_price <= 0) {
       res.status(400).json({ error: `Item ${i + 1}: unit price must be greater than 0` });
       return;
     }
@@ -69,7 +69,7 @@ router.post('/', async (req: Request, res: Response) => {
   const invoiceId = uuidv4();
 
   const insertItem = db.prepare(
-    'INSERT INTO invoice_items (id, invoice_id, material_id, description, quantity, unit_price, total) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO invoice_items (id, invoice_id, material_id, description, quantity, unit_price, cost_price, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const deductStock = db.prepare('UPDATE materials SET stock = stock - ? WHERE id = ?');
   const getSeq = db.prepare('SELECT next_number FROM invoice_sequence WHERE id = 1');
@@ -105,7 +105,8 @@ router.post('/', async (req: Request, res: Response) => {
     for (const item of items) {
       const lineTotal = item.quantity * item.unit_price;
       subtotal += lineTotal;
-      await insertItem.run(uuidv4(), invoiceId, item.material_id || null, item.description.trim(), item.quantity, item.unit_price, Math.round(lineTotal * 100) / 100);
+      const cost = item.material_id ? Number((await db.prepare('SELECT cost_price FROM materials WHERE id = ?').get(item.material_id) as any)?.cost_price || 0) : 0;
+      await insertItem.run(uuidv4(), invoiceId, item.material_id || null, item.description.trim(), item.quantity, item.unit_price, cost, Math.round(lineTotal * 100) / 100);
     }
 
     const appliedTaxRate = tax_rate ?? Number((await db.prepare("SELECT value FROM settings WHERE key = 'default_tax_rate'").get() as any)?.value ?? 0);
@@ -145,11 +146,11 @@ router.post('/', async (req: Request, res: Response) => {
 router.post('/:id/pay', async (req: Request, res: Response) => {
   const db = getDb();
   const { amount, method, notes } = req.body;
-  if (!amount || amount <= 0) {
+  if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
     res.status(400).json({ error: 'Amount must be greater than 0' });
     return;
   }
-  if (!method) {
+  if (typeof method !== 'string' || !method.trim()) {
     res.status(400).json({ error: 'Payment method is required' });
     return;
   }
@@ -217,16 +218,19 @@ router.post('/:id/return', async (req: Request, res: Response) => {
     return;
   }
 
+  const requested = new Map<string, number>();
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     if (!item.material_id) { res.status(400).json({ error: `Return item ${i + 1}: material is required` }); return; }
     if (!item.quantity || item.quantity <= 0) { res.status(400).json({ error: `Return item ${i + 1}: quantity must be > 0` }); return; }
 
-      const lineItem = await db.prepare(
-        'SELECT * FROM invoice_items WHERE invoice_id = ? AND material_id = ?'
-      ).get(invoiceId, item.material_id) as any;
+    const lineItem = await db.prepare('SELECT * FROM invoice_items WHERE id = ? AND invoice_id = ? AND material_id = ?')
+      .get(item.invoice_item_id || '', invoiceId, item.material_id) as any;
+    const itemKey = lineItem?.id || item.material_id;
+    requested.set(itemKey, (requested.get(itemKey) || 0) + item.quantity);
     if (!lineItem) { res.status(400).json({ error: `Material not found on this invoice` }); return; }
-    if (item.quantity > lineItem.quantity) {
+    const returned = (await db.prepare('SELECT COALESCE(SUM(quantity), 0) AS total FROM invoice_returns WHERE invoice_item_id = ?').get(lineItem.id) as any).total;
+    if (requested.get(itemKey)! + returned > lineItem.quantity) {
       res.status(400).json({ error: `Cannot return more than purchased (${lineItem.quantity})` });
       return;
     }
@@ -239,6 +243,9 @@ router.post('/:id/return', async (req: Request, res: Response) => {
 
   const txn = db.transaction(async () => {
     for (const item of items) {
+      const lineItem = await db.prepare('SELECT id FROM invoice_items WHERE id = ? AND invoice_id = ?').get(item.invoice_item_id || '', invoiceId) as any;
+      await db.prepare('INSERT INTO invoice_returns (id, invoice_item_id, invoice_id, material_id, quantity) VALUES (?, ?, ?, ?, ?)')
+        .run(uuidv4(), lineItem.id, invoiceId, item.material_id, item.quantity);
       await restoreStock.run(item.quantity, item.material_id);
       await insertMovement.run(uuidv4(), item.material_id, 'return', item.quantity, invoiceId, 'invoice', `Returned from ${inv.invoice_number}`);
     }
@@ -269,14 +276,18 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   );
 
   const txn = db.transaction(async () => {
-    const items = await db.prepare('SELECT material_id, quantity FROM invoice_items WHERE invoice_id = ?').all(req.params.id) as any[];
+    const items = await db.prepare(`SELECT ii.material_id, ii.quantity,
+      COALESCE((SELECT SUM(quantity) FROM invoice_returns ir WHERE ir.invoice_item_id = ii.id), 0) AS returned
+      FROM invoice_items ii WHERE ii.invoice_id = ?`).all(req.params.id) as any[];
     for (const item of items) {
       if (item.material_id) {
-        await db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?').run(item.quantity, item.material_id);
-        await insertMovement.run(uuidv4(), item.material_id, 'sale', item.quantity, req.params.id, 'invoice', `Restored from deleted invoice ${existing.invoice_number}`);
+        const restorable = Math.max(0, item.quantity - item.returned);
+        await db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?').run(restorable, item.material_id);
+        if (restorable > 0) await insertMovement.run(uuidv4(), item.material_id, 'sale', restorable, req.params.id, 'invoice', `Restored from deleted invoice ${existing.invoice_number}`);
       }
     }
     await db.prepare('DELETE FROM payments WHERE invoice_id = ?').run(req.params.id);
+    await db.prepare('DELETE FROM invoice_returns WHERE invoice_id = ?').run(req.params.id);
     await db.prepare('DELETE FROM invoice_items WHERE invoice_id = ?').run(req.params.id);
     await db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
   });

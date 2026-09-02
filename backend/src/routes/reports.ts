@@ -28,7 +28,7 @@ router.get('/daily', async (req: Request, res: Response) => {
       FROM invoices i WHERE date(i.issued_date) = ?
     `).get(date) as Promise<any>,
     db.prepare(`
-      SELECT COALESCE(SUM(ii.total - (ii.quantity * COALESCE(m.cost_price, 0))), 0) AS profit
+      SELECT COALESCE(SUM(ii.total - (ii.quantity * COALESCE(ii.cost_price, m.cost_price, 0))), 0) AS profit
       FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
       LEFT JOIN materials m ON m.id = ii.material_id
       WHERE date(i.issued_date) = ?
@@ -65,7 +65,7 @@ router.get('/monthly', async (req: Request, res: Response) => {
       FROM payments p WHERE strftime('%Y-%m', p.payment_date) = ?
     `).get(month) as Promise<any>,
     db.prepare(`
-      SELECT COALESCE(SUM(ii.quantity * COALESCE(m.cost_price, 0)), 0) AS total
+      SELECT COALESCE(SUM(ii.quantity * COALESCE(ii.cost_price, m.cost_price, 0)), 0) AS total
       FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
       LEFT JOIN materials m ON m.id = ii.material_id
       WHERE strftime('%Y-%m', i.issued_date) = ?
@@ -165,7 +165,7 @@ router.get('/range', async (req: Request, res: Response) => {
       FROM invoices WHERE date(issued_date) >= ? AND date(issued_date) <= ?
       `).get(from, to) as Promise<any>,
       db.prepare(`
-        SELECT COALESCE(SUM(ii.total - (ii.quantity * COALESCE(m.cost_price, 0))), 0) AS profit
+        SELECT COALESCE(SUM(ii.total - (ii.quantity * COALESCE(ii.cost_price, m.cost_price, 0))), 0) AS profit
         FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
         LEFT JOIN materials m ON m.id = ii.material_id
         WHERE date(i.issued_date) >= ? AND date(i.issued_date) <= ?
