@@ -61,7 +61,7 @@ export async function showPOModal() {
       </div>
       <div class="form-group">
         <label>Order Date *</label>
-        <input id="pof-date" type="date" value="${new Date().toISOString().slice(0, 10)}" />
+        <input id="pof-date" type="date" value="${new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date())}" />
         <div class="field-error" id="pof-date-err"></div>
       </div>
     </div>

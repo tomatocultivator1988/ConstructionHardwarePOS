@@ -80,7 +80,7 @@ export function showExpenseModal(data?: Expense) {
     <div class="form-row">
       <div class="form-group">
         <label>Date *</label>
-        <input id="exf-date" type="date" value="${data?.expense_date?.slice(0, 10) ?? new Date().toISOString().slice(0, 10)}" />
+        <input id="exf-date" type="date" value="${data?.expense_date?.slice(0, 10) ?? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date())}" />
         <div class="field-error" id="exf-date-err"></div>
       </div>
       <div class="form-group">

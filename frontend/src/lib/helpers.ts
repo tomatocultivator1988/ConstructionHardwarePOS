@@ -14,6 +14,14 @@ export function fmtDate(d: string): string {
   });
 }
 
+export function businessDate(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date());
+}
+
+export function businessMonth(): string {
+  return businessDate().slice(0, 7);
+}
+
 export function fmtTime(d: string): string {
   if (!d) return '';
   return new Date(d).toLocaleTimeString('en-US', {

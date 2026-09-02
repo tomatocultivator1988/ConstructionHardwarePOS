@@ -1,5 +1,5 @@
 import { apiGet } from '../lib/api';
-import { esc, fmtDate, fmtPeso } from '../lib/helpers';
+import { esc, fmtDate, fmtPeso, businessDate, businessMonth } from '../lib/helpers';
 import { showToast } from '../lib/helpers';
 
 let currentSubTab = 'daily';
@@ -38,7 +38,7 @@ export async function switchReportTab(tab: string) {
 }
 
 async function loadDailyReport(date?: string) {
-  const d = date || new Date().toISOString().slice(0, 10);
+  const d = date || businessDate();
   const data = await apiGet<any>(`/reports/daily?date=${d}`);
   return `
     <div style="display:flex;gap:var(--space-4);margin-bottom:var(--space-5);align-items:center">
@@ -76,7 +76,7 @@ async function loadDailyReport(date?: string) {
 }
 
 async function loadMonthlyReport(month?: string) {
-  const m = month || new Date().toISOString().slice(0, 7);
+  const m = month || businessMonth();
   const data = await apiGet<any>(`/reports/monthly?month=${m}`);
   const netColor = data.net_profit >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
   const momColor = data.mom_change >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
@@ -118,7 +118,7 @@ async function loadMonthlyReport(month?: string) {
 }
 
 async function loadTaxReport(month?: string) {
-  const m = month || new Date().toISOString().slice(0, 7);
+  const m = month || businessMonth();
   const data = await apiGet<any>(`/reports/tax?month=${m}`);
   return `
     <div style="display:flex;gap:var(--space-4);margin-bottom:var(--space-5);align-items:center">
@@ -151,8 +151,8 @@ async function loadTaxReport(month?: string) {
 }
 
 async function loadRangeForm() {
-  const from = new Date().toISOString().slice(0, 10);
-  const to = new Date().toISOString().slice(0, 10);
+  const from = businessDate();
+  const to = businessDate();
   return `
     <div style="display:flex;gap:var(--space-4);margin-bottom:var(--space-5);align-items:center;flex-wrap:wrap">
       <label style="font-size:var(--fs-sm);color:var(--c-text-secondary)">From</label>

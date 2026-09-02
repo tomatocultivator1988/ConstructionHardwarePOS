@@ -17,7 +17,7 @@ router.get('/summary', async (_req: Request, res: Response) => {
     const today = await db.prepare(`
       SELECT COALESCE(SUM(amount), 0) as total
       FROM payments
-      WHERE date(payment_date) = date('now')
+      WHERE date(payment_date, '+8 hours') = date('now', '+8 hours')
     `).get() as any;
 
     res.json({ daily, todayTotal: today.total });

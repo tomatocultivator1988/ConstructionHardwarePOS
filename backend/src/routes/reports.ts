@@ -4,12 +4,15 @@ import { requireAdmin } from '../lib/auth';
 
 const router = Router();
 
+const businessDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date());
+const businessMonth = () => businessDate().slice(0, 7);
+
 router.use(requireAdmin);
 
 // ─── Daily Sales Report ───
 router.get('/daily', async (req: Request, res: Response) => {
   const db = getDb();
-  const date = req.query.date || new Date().toISOString().slice(0, 10);
+  const date = req.query.date || businessDate();
 
   const [invoices, totals, profit, methods] = await Promise.all([
     db.prepare(`
@@ -57,7 +60,7 @@ router.get('/daily', async (req: Request, res: Response) => {
 // ─── Monthly Profit & Loss ───
 router.get('/monthly', async (req: Request, res: Response) => {
   const db = getDb();
-  const month = req.query.month || new Date().toISOString().slice(0, 7);
+  const month = req.query.month || businessMonth();
 
   const [revenue, cogs, expenses, expenseByCategory, lastMonth] = await Promise.all([
     db.prepare(`
@@ -81,7 +84,7 @@ router.get('/monthly', async (req: Request, res: Response) => {
     `).all(month) as Promise<any[]>,
     db.prepare(`
       SELECT COALESCE(SUM(p.amount), 0) AS total
-      FROM payments p WHERE strftime('%Y-%m', p.payment_date) = strftime('%Y-%m', 'now', '-1 month')
+      FROM payments p WHERE strftime('%Y-%m', p.payment_date, '+8 hours') = strftime('%Y-%m', 'now', '+8 hours', '-1 month')
     `).get() as Promise<any>,
   ]);
 
@@ -109,7 +112,7 @@ router.get('/monthly', async (req: Request, res: Response) => {
 // ─── Monthly Tax Summary ───
 router.get('/tax', async (req: Request, res: Response) => {
   const db = getDb();
-  const month = req.query.month || new Date().toISOString().slice(0, 7);
+  const month = req.query.month || businessMonth();
 
   const [summary, taxRates] = await Promise.all([
     db.prepare(`
@@ -146,8 +149,8 @@ router.get('/tax', async (req: Request, res: Response) => {
 // ─── Date Range Report ───
 router.get('/range', async (req: Request, res: Response) => {
   const db = getDb();
-  const from = (req.query.from as string) || new Date().toISOString().slice(0, 10);
-  const to = (req.query.to as string) || new Date().toISOString().slice(0, 10);
+  const from = (req.query.from as string) || businessDate();
+  const to = (req.query.to as string) || businessDate();
   const type = (req.query.type as string) || 'sales';
 
   if (type === 'sales') {

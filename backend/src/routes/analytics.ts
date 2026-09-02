@@ -40,7 +40,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       `).all() as Promise<any[]>,
       db.prepare(`
         WITH dates AS (
-          SELECT date('now', '-' || (6 - t) || ' days') AS d
+          SELECT date('now', '+8 hours', '-' || (6 - t) || ' days') AS d
           FROM (SELECT 0 AS t UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6)
         )
         SELECT dates.d AS date,
@@ -69,7 +69,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       db.prepare(`
         SELECT COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
         FROM payments p LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = p.invoice_id
-        WHERE date(p.payment_date) = date('now')
+        WHERE date(p.payment_date, '+8 hours') = date('now', '+8 hours')
       `).get() as Promise<any>,
       db.prepare(`
         SELECT COALESCE(SUM(amount), 0) AS total
@@ -79,19 +79,19 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
         SELECT COALESCE(SUM(p.amount), 0) AS revenue,
           COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
         FROM payments p LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = p.invoice_id
-        WHERE strftime('%Y-%m', p.payment_date) = strftime('%Y-%m', 'now')
+        WHERE strftime('%Y-%m', p.payment_date, '+8 hours') = strftime('%Y-%m', 'now', '+8 hours')
       `).get() as Promise<any>,
       db.prepare(`
         SELECT COALESCE(SUM(p.amount), 0) AS revenue,
           COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
         FROM payments p LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = p.invoice_id
-        WHERE strftime('%Y-%m', p.payment_date) = strftime('%Y-%m', 'now', '-1 month')
+        WHERE strftime('%Y-%m', p.payment_date, '+8 hours') = strftime('%Y-%m', 'now', '+8 hours', '-1 month')
       `).get() as Promise<any>,
       db.prepare(`
         SELECT COALESCE(SUM(p.amount), 0) AS revenue,
           COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
         FROM payments p LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = p.invoice_id
-        WHERE strftime('%Y', p.payment_date) = strftime('%Y', 'now')
+        WHERE strftime('%Y', p.payment_date, '+8 hours') = strftime('%Y', 'now', '+8 hours')
       `).get() as Promise<any>,
       db.prepare(`
         SELECT COALESCE(SUM(p.amount), 0) AS revenue,
@@ -100,7 +100,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       `).get() as Promise<any>,
       db.prepare(`
         WITH months AS (
-          SELECT strftime('%Y-%m', 'now', '-' || (5 - t) || ' months') AS m
+          SELECT strftime('%Y-%m', 'now', '+8 hours', '-' || (5 - t) || ' months') AS m
           FROM (SELECT 0 AS t UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5)
         )
         SELECT months.m AS month,

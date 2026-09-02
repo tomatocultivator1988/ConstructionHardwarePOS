@@ -1,5 +1,5 @@
 import { apiGet } from '../lib/api';
-import { esc, fmtDate, fmtPeso } from '../lib/helpers';
+import { esc, fmtDate, fmtPeso, businessDate } from '../lib/helpers';
 import { getChartInstances } from '../lib/router';
 import type { Invoice, Analytics, PaySummary } from '../lib/types';
 
@@ -12,14 +12,14 @@ export async function renderDashboard(): Promise<string> {
   ]);
 
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
+  const today = businessDate();
 
   const todaySales = paySummary.todayTotal || 0;
   const last7: { date: string; label: string; total: number; profit: number }[] = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
-    const ds = d.toISOString().slice(0, 10);
+    const ds = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(d);
     const dayData = (paySummary.daily || []).find((dd: any) => dd.date === ds);
     const profitData = (analytics.profitTrend || []).find((dd: any) => dd.date === ds);
     last7.push({
