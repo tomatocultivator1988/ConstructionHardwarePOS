@@ -47,7 +47,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
           COALESCE(SUM(p.amount), 0) AS revenue,
           COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
         FROM dates
-        LEFT JOIN payments p ON date(p.payment_date) = dates.d
+        LEFT JOIN payments p ON date(p.payment_date, '+8 hours') = dates.d
         LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = p.invoice_id
         GROUP BY dates.d
         ORDER BY dates.d
@@ -106,7 +106,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
         SELECT months.m AS month,
           COALESCE(SUM(p.amount), 0) AS revenue,
           COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
-        FROM months LEFT JOIN payments p ON strftime('%Y-%m', p.payment_date) = months.m
+        FROM months LEFT JOIN payments p ON strftime('%Y-%m', p.payment_date, '+8 hours') = months.m
         LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = p.invoice_id
         GROUP BY months.m ORDER BY months.m
       `).all() as Promise<any[]>,

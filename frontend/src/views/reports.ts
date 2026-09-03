@@ -241,11 +241,33 @@ export async function reloadTax() {
 export function printReport(type: string, date: string) {
   const w = window.open('', '_blank', 'width=800,height=700');
   if (!w) return;
+  const content = document.getElementById('report-content')?.innerHTML || '';
   w.document.write(`
-    <html><head><title>Report — ${date}</title>
-    <style>body{font-family:sans-serif;padding:2rem;color:#111}</style></head><body>
-    ${document.getElementById('report-content')?.innerHTML || ''}
-    <script>window.onload=function(){window.print();window.close()}</script>
+    <html><head><title>BuildPro Report — ${date}</title>
+    <style>
+      @page { size: A4; margin: 16mm; }
+      * { box-sizing: border-box; }
+      body { font-family: Arial, sans-serif; color: #17202a; background: #fff; margin: 0; font-size: 10pt; }
+      body:before { content: 'BUILDPRO CONSTRUCTION SUPPLY'; display: block; font-size: 18pt; font-weight: 800; letter-spacing: .03em; margin-bottom: 3px; }
+      body:after { content: 'Generated ${date}'; display: block; margin-top: 18px; padding-top: 8px; border-top: 1px solid #cbd5e1; color: #64748b; font-size: 8pt; }
+      #report-content, .report-content { display: block !important; }
+      h2 { font-size: 15pt; margin: 0 0 14px; }
+      h3, h4 { color: #334155; margin: 14px 0 7px; }
+      .dashboard-grid { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; gap: 8px !important; margin: 0 0 14px !important; }
+      .dashboard-card, .chart-card { background: #fff !important; border: 1px solid #cbd5e1 !important; border-radius: 4px !important; padding: 9px !important; box-shadow: none !important; }
+      .card-label { color: #64748b !important; font-size: 8pt !important; text-transform: uppercase; }
+      .card-value { color: #0f172a !important; font-size: 13pt !important; }
+      .card-sub, .tc-name, .tc-amount { color: #475569 !important; }
+      table { width: 100%; border-collapse: collapse; margin: 8px 0 14px; }
+      th { background: #e2e8f0; color: #1e293b; font-weight: 700; text-align: left; }
+      th, td { border: 1px solid #cbd5e1; padding: 6px 7px; font-size: 8.5pt; }
+      .status-badge { border: 0 !important; background: transparent !important; color: #334155 !important; padding: 0 !important; }
+      input, select, button, .nav-btn, .no-print { display: none !important; }
+      .table-wrap { overflow: visible !important; }
+      .summary-line { display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding: 6px 0; }
+      .summary-line.total { font-weight: 800; border-top: 2px solid #334155; border-bottom: 0; }
+    </style></head><body><div id="report-content">${content}</div>
+    <script>window.onload=function(){window.print()}</script>
     </body></html>
   `);
   w.document.close();
