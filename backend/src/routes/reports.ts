@@ -9,6 +9,23 @@ const businessMonth = () => businessDate().slice(0, 7);
 
 router.use(requireAdmin);
 
+router.get('/export', async (req: Request, res: Response) => {
+  const db = getDb();
+  const from = (req.query.from as string) || businessDate();
+  const to = (req.query.to as string) || from;
+  const rows = await db.prepare(`SELECT i.invoice_number, i.issued_date, COALESCE(c.name,'Walk-in') customer_name,
+    COALESCE(c.tin,'') customer_tin, i.subtotal, i.tax_rate, i.tax_amount, i.total, i.status,
+    COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) paid
+    FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id
+    WHERE date(i.issued_date) BETWEEN ? AND ? ORDER BY i.issued_date, i.invoice_number`).all(from, to) as any[];
+  const cell = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = ['Invoice Number,Date,Buyer,Buyer TIN,Subtotal,Tax Rate,Tax Amount,Total,Status,Paid', ...rows.map(r =>
+    [r.invoice_number,r.issued_date,r.customer_name,r.customer_tin,r.subtotal,r.tax_rate,r.tax_amount,r.total,r.status,r.paid].map(cell).join(','))].join('\r\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="sales-${from}-${to}.csv"`);
+  res.send('\ufeff' + csv);
+});
+
 // ─── Daily Sales Report ───
 router.get('/daily', async (req: Request, res: Response) => {
   const db = getDb();

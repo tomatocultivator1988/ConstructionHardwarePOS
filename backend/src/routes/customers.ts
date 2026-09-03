@@ -65,7 +65,7 @@ router.get('/:id/statement', async (req: Request, res: Response) => {
 
 router.post('/', async (req: Request, res: Response) => {
   const db = getDb();
-  const { name, phone, email, address, is_wholesale } = req.body;
+  const { name, phone, email, address, tin, is_wholesale } = req.body;
   if (!name || !name.trim()) {
     res.status(400).json({ error: 'Name is required' });
     return;
@@ -79,8 +79,8 @@ router.post('/', async (req: Request, res: Response) => {
   }
   const id = uuidv4();
   await db.prepare(
-    'INSERT INTO customers (id, name, phone, email, address, is_wholesale) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(id, name.trim(), phone || null, email || null, address || null, is_wholesale ? 1 : 0);
+    'INSERT INTO customers (id, name, phone, email, address, tin, is_wholesale) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, name.trim(), phone || null, email || null, address || null, tin || null, is_wholesale ? 1 : 0);
   const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
   await logAudit((req as any).user?.id || null, 'create', 'customer', id, name.trim());
   res.status(201).json(customer);
@@ -88,7 +88,7 @@ router.post('/', async (req: Request, res: Response) => {
 
 router.put('/:id', async (req: Request, res: Response) => {
   const db = getDb();
-  const { name, phone, email, address, is_wholesale } = req.body;
+  const { name, phone, email, address, tin, is_wholesale } = req.body;
   const existing = await db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id) as any;
   if (!existing) {
     res.status(404).json({ error: 'Customer not found' });
@@ -107,12 +107,13 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
   const customerId = req.params.id as string;
   await db.prepare(
-    `UPDATE customers SET name = ?, phone = ?, email = ?, address = ?, is_wholesale = ?, updated_at = datetime('now') WHERE id = ?`
+    `UPDATE customers SET name = ?, phone = ?, email = ?, address = ?, tin = ?, is_wholesale = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(
     (name !== undefined ? name.trim() : existing.name),
     phone ?? existing.phone,
     email ?? existing.email,
     address ?? existing.address,
+    tin ?? existing.tin,
     is_wholesale !== undefined ? (is_wholesale ? 1 : 0) : existing.is_wholesale,
     customerId
   );

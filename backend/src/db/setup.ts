@@ -32,6 +32,7 @@ async function initTables() {
       phone TEXT,
       email TEXT,
       address TEXT,
+      tin TEXT,
       is_wholesale INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
@@ -192,6 +193,45 @@ async function initTables() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS cashier_shifts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      opened_at TEXT DEFAULT (datetime('now')),
+      opening_cash REAL NOT NULL CHECK (opening_cash >= 0),
+      closed_at TEXT,
+      expected_cash REAL,
+      closing_cash REAL,
+      variance REAL,
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
+      notes TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS credit_memos (
+      id TEXT PRIMARY KEY,
+      invoice_id TEXT NOT NULL,
+      memo_number TEXT NOT NULL UNIQUE,
+      reason TEXT NOT NULL,
+      amount REAL NOT NULL CHECK (amount > 0),
+      status TEXT NOT NULL DEFAULT 'issued' CHECK (status IN ('issued','voided')),
+      created_by TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS refunds (
+      id TEXT PRIMARY KEY,
+      invoice_id TEXT NOT NULL,
+      credit_memo_id TEXT,
+      amount REAL NOT NULL CHECK (amount > 0),
+      method TEXT NOT NULL,
+      reference TEXT,
+      created_by TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id),
+      FOREIGN KEY (credit_memo_id) REFERENCES credit_memos(id)
+    );
+
     INSERT OR IGNORE INTO invoice_sequence (id, next_number) VALUES (1, 1);
     INSERT OR IGNORE INTO po_sequence (id, next_number) VALUES (1, 1);
   `);
@@ -223,6 +263,7 @@ async function migrateSchema() {
   if (!custCols.includes('is_wholesale')) {
     await db.exec("ALTER TABLE customers ADD COLUMN is_wholesale INTEGER DEFAULT 0");
   }
+  if (!custCols.includes('tin')) await db.exec("ALTER TABLE customers ADD COLUMN tin TEXT");
 
   const invoiceInfo = (await db.prepare("PRAGMA table_info('invoices')").all()) as any[];
   const invoiceCols = invoiceInfo.map((r: any) => r.name);
@@ -239,6 +280,9 @@ async function migrateSchema() {
   if (!invoiceCols.includes('user_id')) {
     await db.exec("ALTER TABLE invoices ADD COLUMN user_id TEXT");
   }
+  if (!invoiceCols.includes('voided_at')) await db.exec("ALTER TABLE invoices ADD COLUMN voided_at TEXT");
+  if (!invoiceCols.includes('voided_by')) await db.exec("ALTER TABLE invoices ADD COLUMN voided_by TEXT");
+  if (!invoiceCols.includes('void_reason')) await db.exec("ALTER TABLE invoices ADD COLUMN void_reason TEXT");
 
   const existingIndexes = (await db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all()) as any[];
   const indexNames = existingIndexes.map((r: any) => r.name);
@@ -285,6 +329,9 @@ async function migrateSchema() {
   if (!indexNames.includes('idx_invoices_status')) {
     await db.exec("CREATE INDEX idx_invoices_status ON invoices(status)");
   }
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_customers_tin ON customers(tin)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_shifts_status ON cashier_shifts(status)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_credit_memos_invoice ON credit_memos(invoice_id)');
 
   await db.exec('DROP VIEW IF EXISTS v_invoice_profit_margin');
   await db.exec(`

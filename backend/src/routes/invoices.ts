@@ -175,6 +175,7 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
     const txn = db.transaction(async () => {
       const invoice = await getInvoice.get(req.params.id) as any;
       if (!invoice) throw new Error('Invoice not found');
+      if (invoice.status === 'voided') throw new Error('Cannot pay a voided invoice');
 
       const existingPaid = (await getTotalPaid.get(req.params.id) as any).paid;
       const remainingBalance = invoice.total - existingPaid;
@@ -200,6 +201,70 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
   }
 
   res.status(201).json(await db.prepare('SELECT * FROM payments WHERE id = ?').get(paymentId));
+});
+
+// Issued invoices are never hard-deleted. Voiding preserves the audit trail and restores
+// only the quantity that has not already been returned.
+router.put('/:id/void', requireAdmin, async (req: Request, res: Response) => {
+  const db = getDb();
+  const invoice = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as any;
+  if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+  if (invoice.status === 'voided' || invoice.voided_at) { res.status(409).json({ error: 'Invoice is already voided' }); return; }
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+  if (reason.length < 3) { res.status(400).json({ error: 'A void reason is required' }); return; }
+  const txn = db.transaction(async () => {
+    const items = await db.prepare(`SELECT ii.material_id, ii.quantity,
+      COALESCE((SELECT SUM(quantity) FROM invoice_returns ir WHERE ir.invoice_item_id = ii.id), 0) returned
+      FROM invoice_items ii WHERE ii.invoice_id = ?`).all(invoice.id) as any[];
+    for (const item of items) {
+      const restorable = Math.max(0, Number(item.quantity) - Number(item.returned));
+      if (item.material_id && restorable > 0) {
+        await db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?').run(restorable, item.material_id);
+        await db.prepare('INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .run(uuidv4(), item.material_id, 'void', restorable, invoice.id, 'invoice', `Restored from voided ${invoice.invoice_number}`);
+      }
+    }
+    await db.prepare("UPDATE invoices SET status = 'voided', voided_at = datetime('now'), voided_by = ?, void_reason = ? WHERE id = ?")
+      .run((req as any).user?.id || null, reason, invoice.id);
+  });
+  try { await txn(); } catch (e: any) { res.status(400).json({ error: e.message }); return; }
+  clearCache('analytics:');
+  await logAudit((req as any).user?.id || null, 'void', 'invoice', invoice.id, `Voided ${invoice.invoice_number}: ${reason}`);
+  res.json(await db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoice.id));
+});
+
+router.post('/:id/credit-memo', requireAdmin, async (req: Request, res: Response) => {
+  const db = getDb();
+  const invoice = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as any;
+  if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+  if (invoice.status === 'voided') { res.status(400).json({ error: 'Cannot adjust a voided invoice' }); return; }
+  const amount = Number(req.body?.amount);
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+  if (!Number.isFinite(amount) || amount <= 0 || amount > Number(invoice.total)) { res.status(400).json({ error: 'Credit amount must be greater than zero and no more than the invoice total' }); return; }
+  if (reason.length < 3) { res.status(400).json({ error: 'A credit memo reason is required' }); return; }
+  const id = uuidv4();
+  const number = `CM-${Date.now().toString().slice(-8)}`;
+  await db.prepare('INSERT INTO credit_memos (id, invoice_id, memo_number, reason, amount, created_by) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, invoice.id, number, reason, Math.round(amount * 100) / 100, (req as any).user?.id || null);
+  await logAudit((req as any).user?.id || null, 'create', 'credit_memo', id, `${number} for ${invoice.invoice_number}: ${reason}`);
+  res.status(201).json(await db.prepare('SELECT * FROM credit_memos WHERE id = ?').get(id));
+});
+
+router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => {
+  const db = getDb();
+  const invoice = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as any;
+  const amount = Number(req.body?.amount);
+  const method = typeof req.body?.method === 'string' ? req.body.method.trim() : '';
+  if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+  if (!Number.isFinite(amount) || amount <= 0 || !method) { res.status(400).json({ error: 'Valid refund amount and method are required' }); return; }
+  const paid = (await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM payments WHERE invoice_id = ?').get(invoice.id) as any).total;
+  const refunded = (await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id = ?').get(invoice.id) as any).total;
+  if (amount > Number(paid) - Number(refunded)) { res.status(400).json({ error: 'Refund exceeds unapplied payments' }); return; }
+  const id = uuidv4();
+  await db.prepare('INSERT INTO refunds (id, invoice_id, amount, method, reference, created_by) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(id, invoice.id, amount, method, req.body?.reference || null, (req as any).user?.id || null);
+  await logAudit((req as any).user?.id || null, 'create', 'refund', id, `Refund ${amount} via ${method} for ${invoice.invoice_number}`);
+  res.status(201).json(await db.prepare('SELECT * FROM refunds WHERE id = ?').get(id));
 });
 
 router.post('/:id/return', async (req: Request, res: Response) => {
@@ -270,6 +335,10 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   const db = getDb();
   const existing = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as any;
   if (!existing) { res.status(404).json({ error: 'Invoice not found' }); return; }
+  const paymentCount = await db.prepare('SELECT COUNT(*) AS count FROM payments WHERE invoice_id = ?').get(req.params.id) as any;
+  if (existing.status !== 'pending' || Number(paymentCount.count) > 0) {
+    res.status(409).json({ error: 'Issued invoices cannot be deleted. Void the invoice instead.' }); return;
+  }
 
   const insertMovement = db.prepare(
     'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'

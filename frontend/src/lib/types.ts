@@ -4,6 +4,7 @@ export interface Customer {
   phone: string | null;
   email: string | null;
   address: string | null;
+  tin: string | null;
   is_wholesale: number;
   created_at: string;
   updated_at: string;
@@ -50,7 +51,7 @@ export interface Invoice {
   tax_rate: number;
   tax_amount: number;
   total: number;
-  status: 'pending' | 'partial' | 'paid';
+  status: 'pending' | 'partial' | 'paid' | 'voided';
   issued_date: string;
   due_date: string | null;
   paid_date: string | null;

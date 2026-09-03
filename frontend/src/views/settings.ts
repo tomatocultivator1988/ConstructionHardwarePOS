@@ -30,13 +30,24 @@ export async function switchSettingsTab(tab: string) {
 }
 
 async function loadGeneralSettings() {
-  const settings = await apiGet<{ value: string }>('/settings/default_tax_rate');
+  const keys = ['default_tax_rate','business_name','business_address','business_tin','business_rdo','vat_registered'];
+  const values = Object.fromEntries(await Promise.all(keys.map(async key => [key, (await apiGet<{ value: string }>(`/settings/${key}`)).value || ''])));
   return `
     <div class="settings-card">
-      <h3 style="margin-bottom:var(--space-4)">Invoice Defaults</h3>
+      <h3 style="margin-bottom:var(--space-4)">Business & Invoice Profile</h3>
+      <div class="form-row">
+        <div class="form-group"><label>Registered business name</label><input id="s-business-name" value="${esc(values.business_name)}" maxlength="150" /></div>
+        <div class="form-group"><label>TIN</label><input id="s-business-tin" value="${esc(values.business_tin)}" maxlength="20" placeholder="000-000-000-000" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Registered address</label><input id="s-business-address" value="${esc(values.business_address)}" maxlength="250" /></div>
+        <div class="form-group"><label>RDO / branch code</label><input id="s-business-rdo" value="${esc(values.business_rdo)}" maxlength="30" /></div>
+      </div>
+      <div class="form-group"><label>VAT registered</label><select id="s-vat"><option value="0" ${values.vat_registered !== '1' ? 'selected' : ''}>No / non-VAT</option><option value="1" ${values.vat_registered === '1' ? 'selected' : ''}>Yes / VAT</option></select></div>
+      <h3 style="margin:var(--space-5) 0 var(--space-4)">Invoice Defaults</h3>
       <div class="form-group">
         <label>Default Tax Rate</label>
-        <input id="s-tax" type="number" step="0.01" min="0" max="1" value="${settings.value || '0'}" />
+        <input id="s-tax" type="number" step="0.01" min="0" max="1" value="${values.default_tax_rate || '0'}" />
         <div class="helper">Decimal value (0.12 = 12%). Applied to new invoices by default.</div>
         <div class="field-error" id="s-tax-err"></div>
       </div>
@@ -51,7 +62,14 @@ export async function saveSettings() {
   if (isNaN(tax) || tax < 0 || tax > 1) { setErr('s-tax-err', 'Enter a valid rate between 0 and 1'); return; }
   disableBtn('s-save-btn', true);
   try {
-    await apiPut('/settings/default_tax_rate', { value: String(tax) });
+    await Promise.all([
+      apiPut('/settings/default_tax_rate', { value: String(tax) }),
+      apiPut('/settings/business_name', { value: val('s-business-name').trim() }),
+      apiPut('/settings/business_address', { value: val('s-business-address').trim() }),
+      apiPut('/settings/business_tin', { value: val('s-business-tin').trim() }),
+      apiPut('/settings/business_rdo', { value: val('s-business-rdo').trim() }),
+      apiPut('/settings/vat_registered', { value: val('s-vat') }),
+    ]);
     const label = document.querySelector('#s-save-btn')!;
     label.textContent = 'Saved';
     setTimeout(() => { label.textContent = 'Save Settings'; }, 2000);

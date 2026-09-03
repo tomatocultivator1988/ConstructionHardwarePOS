@@ -56,6 +56,7 @@ export function showCustomerModal(data?: Customer) {
     <div class="form-group"><label>Phone</label><input id="cf-phone" maxlength="11" value="${esc(data?.phone || '')}" placeholder="09123456789" /><div class="field-error" id="cf-phone-err"></div></div>
     <div class="form-group"><label>Email</label><input id="cf-email" type="email" value="${esc(data?.email || '')}" /><div class="field-error" id="cf-email-err"></div></div>
     <div class="form-group"><label>Address *</label><input id="cf-address" maxlength="200" value="${esc(data?.address || '')}" /><div class="field-error" id="cf-address-err"></div></div>
+    <div class="form-group"><label>TIN (optional)</label><input id="cf-tin" maxlength="20" value="${esc(data?.tin || '')}" placeholder="000-000-000-000" /></div>
     <div class="toggle-group">
       <label class="toggle"><input type="checkbox" id="cf-wholesale" ${data?.is_wholesale ? 'checked' : ''} /><span class="slider"></span></label>
       <label for="cf-wholesale">Wholesale customer</label>
@@ -73,6 +74,7 @@ export async function saveCustomer() {
   const phone = val('cf-phone').trim();
   const email = val('cf-email').trim();
   const address = val('cf-address').trim();
+  const tin = val('cf-tin').trim();
   const isWholesale = (document.getElementById('cf-wholesale') as HTMLInputElement)?.checked;
   if (!name) { setErr('cf-name-err', 'Name is required'); return; }
   if (phone && !PHONE_RE.test(phone)) { setErr('cf-phone-err', 'Must be exactly 11 digits'); return; }
@@ -81,7 +83,7 @@ export async function saveCustomer() {
   if (address.length < 5) { setErr('cf-address-err', 'Must be at least 5 characters'); return; }
   disableBtn('cf-save-btn', true);
   try {
-    await apiPost('/customers', { name, phone, email, address, is_wholesale: isWholesale });
+    await apiPost('/customers', { name, phone, email, address, tin, is_wholesale: isWholesale });
     closeModal();
     loadView('customers');
   } catch (e: any) { showToast(e.message); }
@@ -94,6 +96,7 @@ export async function updateCustomer(id: string) {
   const phone = val('cf-phone').trim();
   const email = val('cf-email').trim();
   const address = val('cf-address').trim();
+  const tin = val('cf-tin').trim();
   const isWholesale = (document.getElementById('cf-wholesale') as HTMLInputElement)?.checked;
   if (!name) { setErr('cf-name-err', 'Name is required'); return; }
   if (phone && !PHONE_RE.test(phone)) { setErr('cf-phone-err', 'Must be exactly 11 digits'); return; }
@@ -102,7 +105,7 @@ export async function updateCustomer(id: string) {
   if (address.length < 5) { setErr('cf-address-err', 'Must be at least 5 characters'); return; }
   disableBtn('cf-save-btn', true);
   try {
-    await apiPut(`/customers/${id}`, { name, phone, email, address, is_wholesale: isWholesale });
+    await apiPut(`/customers/${id}`, { name, phone, email, address, tin, is_wholesale: isWholesale });
     closeModal();
     loadView('customers');
   } catch (e: any) { showToast(e.message); }
