@@ -7,6 +7,8 @@ import type { Material, StockMovement } from '../lib/types';
 const UNIT_OPTIONS = ['Each', 'Kilogram', 'Meter', 'Roll', 'Gallon', 'Pieces', 'Liter', 'Box', 'Set', 'Bag', 'Pair', 'Sack', 'Bottle', 'Pack'];
 
 const MAT_CATEGORIES = ['', 'Cement', 'Steel/Rebar', 'Lumber/Wood', 'Plumbing', 'Electrical', 'Paint', 'Hardware', 'Sand/Gravel', 'Roofing', 'Tools', 'Other'];
+let materialPage = 1;
+const MATERIAL_PAGE_SIZE = 15;
 
 function unitOptions(selected?: string) {
   const all = selected && !UNIT_OPTIONS.includes(selected) ? [selected, ...UNIT_OPTIONS] : UNIT_OPTIONS;
@@ -35,7 +37,7 @@ export async function renderMaterials(): Promise<string> {
       <table>
         <thead><tr><th>Name</th><th>Category</th><th>Unit</th><th>Stock</th><th>Cost</th><th>Retail</th><th>Profit</th><th>Margin</th><th class="actions">Actions</th></tr></thead>
         <tbody>
-          ${materials.length ? materials.map((m: Material) => {
+          ${materials.length ? materials.slice((materialPage - 1) * MATERIAL_PAGE_SIZE, materialPage * MATERIAL_PAGE_SIZE).map((m: Material) => {
             const isLow = m.stock <= m.reorder_point;
             const profit = m.price_per_unit - (m.cost_price || 0);
             const margin = m.price_per_unit > 0 ? (profit / m.price_per_unit * 100) : 0;
@@ -59,8 +61,16 @@ export async function renderMaterials(): Promise<string> {
         </tbody>
       </table>
     </div>
+    <div id="materials-pagination">${materials.length > MATERIAL_PAGE_SIZE ? paginationMarkup(materials.length) : ''}</div>
   `;
 }
+
+function paginationMarkup(total: number) {
+  const pages = Math.ceil(total / MATERIAL_PAGE_SIZE);
+  return `<div class="pagination"><span>Showing ${(materialPage-1)*MATERIAL_PAGE_SIZE+1}–${Math.min(materialPage*MATERIAL_PAGE_SIZE, total)} of ${total}</span><button class="btn btn-sm" ${materialPage===1?'disabled':''} onclick="changeMaterialPage(${materialPage-1})">Previous</button><strong>Page ${materialPage} of ${pages}</strong><button class="btn btn-sm" ${materialPage>=pages?'disabled':''} onclick="changeMaterialPage(${materialPage+1})">Next</button></div>`;
+}
+
+export function changeMaterialPage(page: number) { materialPage = Math.max(1, page); loadView('materials'); }
 
 export function showMaterialModal(data?: Material) {
   const isEdit = !!data;
@@ -181,6 +191,7 @@ export async function showStockHistory(materialId: string) {
 }
 
 export async function filterMaterials() {
+  materialPage = 1;
   const cat = (document.getElementById('mat-cat-filter') as HTMLSelectElement)?.value ?? '';
   const search = (document.getElementById('mat-search') as HTMLInputElement)?.value.trim() ?? '';
   const params = new URLSearchParams();
@@ -190,7 +201,7 @@ export async function filterMaterials() {
   const materials = await apiGet<Material[]>(url);
   const tbody = document.querySelector('table tbody');
   if (!tbody) return;
-  tbody.innerHTML = materials.length ? materials.map((m: Material) => {
+  tbody.innerHTML = materials.length ? materials.slice((materialPage - 1) * MATERIAL_PAGE_SIZE, materialPage * MATERIAL_PAGE_SIZE).map((m: Material) => {
     const isLow = m.stock <= m.reorder_point;
     const profit = m.price_per_unit - (m.cost_price || 0);
     const margin = m.price_per_unit > 0 ? (profit / m.price_per_unit * 100) : 0;
@@ -211,6 +222,8 @@ export async function filterMaterials() {
       </td>
     </tr>`;
   }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--c-text-muted);padding:2rem">No materials found</td></tr>';
+  const pager = document.getElementById('materials-pagination');
+  if (pager) pager.innerHTML = materials.length > MATERIAL_PAGE_SIZE ? paginationMarkup(materials.length) : '';
 }
 
 export function toggleMobileDetails(id: string) {

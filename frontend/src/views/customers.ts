@@ -5,6 +5,8 @@ import { loadView } from '../lib/router';
 import type { Customer } from '../lib/types';
 
 let customerNames: Record<string, string> = {};
+let customerPage = 1;
+const PAGE_SIZE = 15;
 
 export async function renderCustomers(): Promise<string> {
   const customers = await apiGet<Customer[]>('/customers');
@@ -19,7 +21,7 @@ export async function renderCustomers(): Promise<string> {
       <table>
         <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Type</th><th class="actions">Actions</th></tr></thead>
         <tbody>
-          ${customers.length ? customers.map((c: Customer) => `
+          ${customers.length ? customers.slice((customerPage - 1) * PAGE_SIZE, customerPage * PAGE_SIZE).map((c: Customer) => `
             <tr class="customer-row" data-customer-row="${c.id}">
               <td data-label="Name" style="font-weight:600">${esc(c.name)}</td>
               <td data-label="Phone">${esc(c.phone || '-')}</td>
@@ -36,8 +38,11 @@ export async function renderCustomers(): Promise<string> {
         </tbody>
       </table>
     </div>
+    ${customers.length > PAGE_SIZE ? `<div class="pagination"><span>Showing ${(customerPage-1)*PAGE_SIZE+1}–${Math.min(customerPage*PAGE_SIZE, customers.length)} of ${customers.length}</span><button class="btn btn-sm" ${customerPage===1?'disabled':''} onclick="changeCustomerPage(${customerPage-1})">Previous</button><strong>Page ${customerPage} of ${Math.ceil(customers.length/PAGE_SIZE)}</strong><button class="btn btn-sm" ${customerPage>=Math.ceil(customers.length/PAGE_SIZE)?'disabled':''} onclick="changeCustomerPage(${customerPage+1})">Next</button></div>` : ''}
   `;
 }
+
+export function changeCustomerPage(page: number) { customerPage = Math.max(1, page); loadView('customers'); }
 
 export function toggleCustomerDetails(id: string) {
   document.querySelector(`[data-customer-row="${id}"]`)?.classList.toggle('expanded');

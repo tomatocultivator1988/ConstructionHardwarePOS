@@ -5,6 +5,9 @@ import { loadView } from '../lib/router';
 import { printReceipt } from './receipt';
 import type { Invoice, Material, Customer } from '../lib/types';
 
+let invoicePage = 1;
+const INVOICE_PAGE_SIZE = 15;
+
 export async function renderInvoices(): Promise<string> {
   const [invoices, customers, materials, settings] = await Promise.all([
     apiGet<Invoice[]>('/invoices'),
@@ -24,7 +27,7 @@ export async function renderInvoices(): Promise<string> {
       <table>
         <thead><tr><th>#</th><th>Customer</th><th>Total</th><th>Status</th><th>Issued</th><th class="actions">Actions</th></tr></thead>
         <tbody>
-          ${invoices.length ? invoices.map((inv: Invoice) => `
+          ${invoices.length ? invoices.slice((invoicePage - 1) * INVOICE_PAGE_SIZE, invoicePage * INVOICE_PAGE_SIZE).map((inv: Invoice) => `
             <tr>
               <td data-label="#" style="font-weight:600">${esc(inv.invoice_number)}</td>
               <td data-label="Customer">${esc(inv.customer_name)}</td>
@@ -40,8 +43,11 @@ export async function renderInvoices(): Promise<string> {
         </tbody>
       </table>
     </div>
+    ${invoices.length > INVOICE_PAGE_SIZE ? `<div class="pagination"><span>Showing ${(invoicePage-1)*INVOICE_PAGE_SIZE+1}–${Math.min(invoicePage*INVOICE_PAGE_SIZE, invoices.length)} of ${invoices.length}</span><button class="btn btn-sm" ${invoicePage===1?'disabled':''} onclick="changeInvoicePage(${invoicePage-1})">Previous</button><strong>Page ${invoicePage} of ${Math.ceil(invoices.length/INVOICE_PAGE_SIZE)}</strong><button class="btn btn-sm" ${invoicePage>=Math.ceil(invoices.length/INVOICE_PAGE_SIZE)?'disabled':''} onclick="changeInvoicePage(${invoicePage+1})">Next</button></div>` : ''}
   `;
 }
+
+export function changeInvoicePage(page: number) { invoicePage = Math.max(1, page); loadView('invoices'); }
 
 export function showInvoiceModal() {
   const customers = (window as any).__invCustomers || [];

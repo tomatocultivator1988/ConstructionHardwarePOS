@@ -859,6 +859,10 @@ body.show-install #install-prompt { display: flex; }
 
 .mobile-details-btn { display: none; }
 
+.pagination { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 14px 4px; color: var(--c-text-muted); font-size: var(--fs-xs); }
+.pagination strong { color: var(--c-text); font-weight: 600; }
+@media (max-width: 680px) { .pagination { flex-wrap: wrap; gap: 8px; } .pagination span { flex-basis: 100%; text-align: center; } }
+
 @media (max-width: 680px) {
   .mobile-details-btn { display: inline-flex; }
 }
