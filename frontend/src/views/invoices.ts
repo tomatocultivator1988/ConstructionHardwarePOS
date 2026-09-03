@@ -1,5 +1,5 @@
-import { apiGet, apiPost, apiDel } from '../lib/api';
-import { esc, val, fmtDate, fmtPeso, setErr, clearErr, disableBtn } from '../lib/helpers';
+import { apiGet, apiPost, apiPut, apiDel } from '../lib/api';
+import { esc, val, fmtDate, fmtPeso, setErr, clearErr, disableBtn, isAdmin } from '../lib/helpers';
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
 import { loadView } from '../lib/router';
 import { printReceipt } from './receipt';
@@ -249,7 +249,7 @@ export async function showInvoiceDetail(id: string) {
     </div>
     ` : ''}
 
-    ${balance > 0 ? `
+    ${balance > 0 && inv.status !== 'voided' ? `
     <h4>Record Payment</h4>
     <div style="display:flex;gap:0.75rem;align-items:end;flex-wrap:wrap">
       <div class="form-group" style="flex:1;min-width:120px"><label>Amount</label><input id="pay-amount" type="number" step="0.01" min="0.01" max="${balance.toFixed(2)}" value="${balance.toFixed(2)}" /></div>
@@ -267,7 +267,7 @@ export async function showInvoiceDetail(id: string) {
     <div class="field-error" id="pay-err"></div>
     ` : '<p style="color:var(--c-success);font-weight:600;margin-top:1rem">✓ Paid in Full</p>'}
 
-    ${inv.status !== 'pending' ? `
+    ${inv.status !== 'pending' && inv.status !== 'voided' ? `
     <h4 style="margin-top:var(--space-5)">Return Items</h4>
     <div id="return-items">
       ${inv.items.map((item: any) => `
@@ -284,9 +284,33 @@ export async function showInvoiceDetail(id: string) {
 
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="printReceipt('${inv.id}')">Print Receipt</button>
+      ${isAdmin() && inv.status !== 'voided' ? `<button class="btn btn-warning" onclick="voidInvoice('${inv.id}')">Void Invoice</button><button class="btn" onclick="issueCreditMemo('${inv.id}')">Credit Memo</button>${totalPaid > 0 ? `<button class="btn" onclick="recordRefund('${inv.id}')">Refund</button>` : ''}` : ''}
       <button class="btn" onclick="closeModal();loadView('invoices')">Close</button>
     </div>
   </div>`;
+}
+
+export async function voidInvoice(id: string) {
+  const reason = window.prompt('Enter the reason for voiding this invoice:')?.trim();
+  if (!reason) return;
+  try { await apiPut(`/invoices/${id}/void`, { reason }); showToast('Invoice voided and stock restored', 'success'); closeModal(); loadView('invoices'); }
+  catch (e: any) { showToast(e.message); }
+}
+
+export async function issueCreditMemo(id: string) {
+  const amount = Number(window.prompt('Credit memo amount:'));
+  const reason = window.prompt('Credit memo reason:')?.trim();
+  if (!Number.isFinite(amount) || amount <= 0 || !reason) return;
+  try { await apiPost(`/invoices/${id}/credit-memo`, { amount, reason }); showToast('Credit memo issued', 'success'); }
+  catch (e: any) { showToast(e.message); }
+}
+
+export async function recordRefund(id: string) {
+  const amount = Number(window.prompt('Refund amount:'));
+  const method = window.prompt('Refund method (cash/card/bank):')?.trim();
+  if (!Number.isFinite(amount) || amount <= 0 || !method) return;
+  try { await apiPost(`/invoices/${id}/refund`, { amount, method }); showToast('Refund recorded', 'success'); }
+  catch (e: any) { showToast(e.message); }
 }
 
 export async function recordPayment(invoiceId: string) {

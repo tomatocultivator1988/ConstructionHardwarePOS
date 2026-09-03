@@ -86,9 +86,14 @@ interface Window {
   createInvoice: () => void;
   showInvoiceDetail: (id: string) => void;
   recordPayment: (invoiceId: string) => void;
+  voidInvoice: (invoiceId: string) => void;
+  issueCreditMemo: (invoiceId: string) => void;
+  recordRefund: (invoiceId: string) => void;
   delInvoice: (id: string) => void;
   printReceipt: (id: string) => void;
   saveSettings: () => void;
+  openCashierShift: () => void;
+  closeCashierShift: (id: string) => void;
   __customerNames: Record<string, string>;
   __materialNames: Record<string, string>;
   __invCustomers: any[];

@@ -15,6 +15,7 @@ export async function renderSettings(): Promise<string> {
       <button class="nav-btn ${settingsSubTab === 'general' ? 'active' : ''}" onclick="switchSettingsTab('general')">General</button>
       ${isAdm ? `<button class="nav-btn ${settingsSubTab === 'users' ? 'active' : ''}" onclick="switchSettingsTab('users')">Users</button>` : ''}
       ${isAdm ? `<button class="nav-btn ${settingsSubTab === 'audit' ? 'active' : ''}" onclick="switchSettingsTab('audit')">Audit Log</button>` : ''}
+      <button class="nav-btn ${settingsSubTab === 'shift' ? 'active' : ''}" onclick="switchSettingsTab('shift')">Cashier Shift</button>
     </div>
     <div id="settings-content">${await loadGeneralSettings()}</div>
   `;
@@ -27,6 +28,22 @@ export async function switchSettingsTab(tab: string) {
   if (tab === 'general') el.innerHTML = await loadGeneralSettings();
   else if (tab === 'users') el.innerHTML = await loadUsersTab();
   else if (tab === 'audit') el.innerHTML = await loadAuditTab();
+  else if (tab === 'shift') el.innerHTML = await loadShiftTab();
+}
+
+async function loadShiftTab() {
+  const shift = await apiGet<any>('/shifts/current');
+  return `<div class="settings-card"><h3>Cashier Shift</h3>${shift ? `<p>Opened: ${esc(fmtDate(shift.opened_at))}</p><div class="form-group"><label>Counted closing cash</label><input id="shift-closing" type="number" min="0" step="0.01" /></div><div class="form-group"><label>Notes</label><input id="shift-notes" maxlength="200" /></div><button class="btn btn-warning" onclick="closeCashierShift('${shift.id}')">Close Shift</button>` : `<p style="color:var(--c-text-muted)">No open shift.</p><div class="form-group"><label>Opening cash</label><input id="shift-opening" type="number" min="0" step="0.01" value="0" /></div><button class="btn btn-primary" onclick="openCashierShift()">Open Shift</button>`}</div>`;
+}
+
+export async function openCashierShift() {
+  const opening_cash = Number(val('shift-opening'));
+  try { await apiPost('/shifts/open', { opening_cash }); switchSettingsTab('shift'); showToast('Shift opened', 'success'); } catch (e: any) { showToast(e.message); }
+}
+
+export async function closeCashierShift(id: string) {
+  const closing_cash = Number(val('shift-closing'));
+  try { await apiPost(`/shifts/${id}/close`, { closing_cash, notes: val('shift-notes') }); switchSettingsTab('shift'); showToast('Shift closed', 'success'); } catch (e: any) { showToast(e.message); }
 }
 
 async function loadGeneralSettings() {
