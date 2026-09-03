@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "vercel-dev": "vc dev"
+    ,"qa:e2e": "node ../qa/e2e-workflows.mjs"
   },
   "keywords": [],
   "author": "",

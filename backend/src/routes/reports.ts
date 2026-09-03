@@ -47,17 +47,17 @@ router.get('/daily', async (req: Request, res: Response) => {
 
   const [invoices, totals, profit, methods] = await Promise.all([
     db.prepare(`
-      SELECT i.invoice_number, i.total, i.status, i.issued_date,
+      SELECT i.invoice_number, i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) AS total, i.status, i.issued_date,
         COALESCE(c.name, 'Walk-in') AS customer_name,
-        COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) AS paid
+        COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) - COALESCE((SELECT SUM(amount) FROM refunds WHERE invoice_id=i.id),0) AS paid
       FROM invoices i
       LEFT JOIN customers c ON c.id = i.customer_id
       WHERE date(i.issued_date) = ?
       ORDER BY i.created_at DESC
     `).all(date) as Promise<any[]>,
     db.prepare(`
-      SELECT COALESCE(SUM(i.total), 0) AS gross_sales,
-        COALESCE(SUM(i.tax_amount), 0) AS tax_collected,
+      SELECT COALESCE(SUM(i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0)), 0) AS gross_sales,
+        COALESCE(SUM(i.tax_amount - COALESCE((SELECT SUM(tax_amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - CASE WHEN i.tax_rate > 0 THEN COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) * i.tax_rate / (1+i.tax_rate) ELSE 0 END), 0) AS tax_collected,
         COUNT(*) AS invoice_count
       FROM invoices i WHERE date(i.issued_date) = ?
     `).get(date) as Promise<any>,
@@ -187,15 +187,15 @@ router.get('/range', async (req: Request, res: Response) => {
   if (type === 'sales') {
     const [invoices, totals, profit] = await Promise.all([
       db.prepare(`
-        SELECT i.invoice_number, i.total, i.tax_amount, i.status, i.issued_date,
+          SELECT i.invoice_number, i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) AS total, i.tax_amount, i.status, i.issued_date,
           COALESCE(c.name, 'Walk-in') AS customer_name,
-          COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) AS paid
+          COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) - COALESCE((SELECT SUM(amount) FROM refunds WHERE invoice_id=i.id),0) AS paid
         FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id
         WHERE date(i.issued_date) >= ? AND date(i.issued_date) <= ?
         ORDER BY i.issued_date DESC
       `).all(from, to) as Promise<any[]>,
       db.prepare(`
-        SELECT COALESCE(SUM(total), 0) AS gross, COALESCE(SUM(tax_amount), 0) AS tax, COUNT(*) AS cnt
+        SELECT COALESCE(SUM(total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=invoices.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=invoices.id),0)), 0) AS gross, COALESCE(SUM(tax_amount), 0) AS tax, COUNT(*) AS cnt
       FROM invoices WHERE date(issued_date) >= ? AND date(issued_date) <= ?
       `).get(from, to) as Promise<any>,
       db.prepare(`

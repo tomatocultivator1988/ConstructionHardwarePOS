@@ -9,6 +9,8 @@ const UNIT_OPTIONS = ['Each', 'Kilogram', 'Meter', 'Roll', 'Gallon', 'Pieces', '
 const MAT_CATEGORIES = ['', 'Cement', 'Steel/Rebar', 'Lumber/Wood', 'Plumbing', 'Electrical', 'Paint', 'Hardware', 'Sand/Gravel', 'Roofing', 'Tools', 'Other'];
 let materialPage = 1;
 const MATERIAL_PAGE_SIZE = 15;
+let materialSearch = '';
+let materialCategory = '';
 
 function unitOptions(selected?: string) {
   const all = selected && !UNIT_OPTIONS.includes(selected) ? [selected, ...UNIT_OPTIONS] : UNIT_OPTIONS;
@@ -20,7 +22,10 @@ function catOptions(selected?: string) {
 }
 
 export async function renderMaterials(): Promise<string> {
-  const response = await apiGet<Material[] | { data: Material[]; total: number }>(`/materials?page=${materialPage}&pageSize=${MATERIAL_PAGE_SIZE}`);
+  const query = new URLSearchParams({ page: String(materialPage), pageSize: String(MATERIAL_PAGE_SIZE) });
+  if (materialSearch) query.set('search', materialSearch);
+  if (materialCategory) query.set('category', materialCategory);
+  const response = await apiGet<Material[] | { data: Material[]; total: number }>(`/materials?${query}`);
   const materials = Array.isArray(response) ? response : response.data;
   const totalMaterials = Array.isArray(response) ? response.length : response.total;
   (window as any).__materialNames = Object.fromEntries(materials.map((m: Material) => [m.id, m.name]));
@@ -28,9 +33,9 @@ export async function renderMaterials(): Promise<string> {
     <div class="page-header">
       <h2>Materials</h2>
       <div class="material-toolbar" style="display:flex;gap:var(--space-3);align-items:center">
-        <input id="mat-search" type="search" placeholder="Search materials..." oninput="filterMaterials()" style="min-height:36px;min-width:220px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
+        <input id="mat-search" type="search" placeholder="Search materials..." value="${esc(materialSearch)}" oninput="filterMaterials()" style="min-height:36px;min-width:220px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
         <select id="mat-cat-filter" onchange="filterMaterials()" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)">
-          ${catOptions()}
+          ${catOptions(materialCategory)}
         </select>
         <button class="btn btn-primary" onclick="showMaterialModal()">+ Add Material</button>
       </div>
@@ -196,11 +201,15 @@ export async function filterMaterials() {
   materialPage = 1;
   const cat = (document.getElementById('mat-cat-filter') as HTMLSelectElement)?.value ?? '';
   const search = (document.getElementById('mat-search') as HTMLInputElement)?.value.trim() ?? '';
+  materialCategory = cat;
+  materialSearch = search;
   const params = new URLSearchParams();
   if (cat) params.set('category', cat);
   if (search) params.set('search', search);
   const url = params.toString() ? `/materials?${params}` : '/materials';
-  const materials = await apiGet<Material[]>(url);
+  const response = await apiGet<Material[] | { data: Material[]; total: number }>(`${url}${url.includes('?') ? '&' : '?'}page=${materialPage}&pageSize=${MATERIAL_PAGE_SIZE}`);
+  const materials = Array.isArray(response) ? response : response.data;
+  const totalMaterials = Array.isArray(response) ? response.length : response.total;
   const tbody = document.querySelector('table tbody');
   if (!tbody) return;
   tbody.innerHTML = materials.length ? materials.slice((materialPage - 1) * MATERIAL_PAGE_SIZE, materialPage * MATERIAL_PAGE_SIZE).map((m: Material) => {
@@ -225,7 +234,7 @@ export async function filterMaterials() {
     </tr>`;
   }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--c-text-muted);padding:2rem">No materials found</td></tr>';
   const pager = document.getElementById('materials-pagination');
-  if (pager) pager.innerHTML = materials.length > MATERIAL_PAGE_SIZE ? paginationMarkup(materials.length) : '';
+  if (pager) pager.innerHTML = totalMaterials > MATERIAL_PAGE_SIZE ? paginationMarkup(totalMaterials) : '';
 }
 
 export function toggleMobileDetails(id: string) {

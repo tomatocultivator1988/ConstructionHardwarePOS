@@ -41,8 +41,10 @@ router.get('/:id/statement', async (req: Request, res: Response) => {
   const to = (req.query.to as string) || '';
 
   let query = `
-    SELECT i.id, i.invoice_number, i.total, i.status, i.issued_date, i.due_date,
-      COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) AS paid
+    SELECT i.id, i.invoice_number,
+      i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) AS total,
+      i.status, i.issued_date, i.due_date,
+      COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) - COALESCE((SELECT SUM(amount) FROM refunds WHERE invoice_id=i.id),0) AS paid
     FROM invoices i
     WHERE i.customer_id = ?
   `;
@@ -125,7 +127,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     customerId
   );
   const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
-  await logAudit((req as any).user?.id || null, 'update', 'customer', customerId);
+  await logAudit((req as any).user?.id || null, 'update', 'customer', customerId, undefined, existing, customer);
   res.json(customer);
 });
 

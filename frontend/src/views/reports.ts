@@ -14,6 +14,7 @@ export async function renderReports(): Promise<string> {
       <button class="nav-btn ${currentSubTab === 'monthly' ? 'active' : ''}" onclick="switchReportTab('monthly')" style="font-size:var(--fs-sm)">P&L</button>
       <button class="nav-btn ${currentSubTab === 'tax' ? 'active' : ''}" onclick="switchReportTab('tax')" style="font-size:var(--fs-sm)">Tax Summary</button>
       <button class="nav-btn ${currentSubTab === 'range' ? 'active' : ''}" onclick="switchReportTab('range')" style="font-size:var(--fs-sm)">Date Range</button>
+      <button class="nav-btn ${currentSubTab === 'books' ? 'active' : ''}" onclick="switchReportTab('books')" style="font-size:var(--fs-sm)">Books</button>
     </div>
     <div id="report-content">
       ${await loadDailyReport()}
@@ -31,10 +32,28 @@ export async function switchReportTab(tab: string) {
     else if (tab === 'monthly') el.innerHTML = await loadMonthlyReport();
     else if (tab === 'tax') el.innerHTML = await loadTaxReport();
     else if (tab === 'range') el.innerHTML = await loadRangeForm();
+    else if (tab === 'books') el.innerHTML = await loadBooksReport();
     document.querySelectorAll('#report-content .nav-btn').forEach((b, i) => {
       b.classList.toggle('active', (['daily','monthly','tax','range'][i] === tab));
     });
   } catch (e: any) { showToast(e.message); }
+}
+
+async function loadBooksReport(from?: string, to?: string) {
+  const start = from || businessDate(); const end = to || start;
+  const data = await apiGet<any>(`/reports/books?from=${start}&to=${end}`);
+  const rows = (items: any[], fields: string[]) => items.length ? items.map((r: any) => `<tr>${fields.map(f => `<td data-label="${esc(f)}">${esc(String(r[f] ?? ''))}</td>`).join('')}</tr>`).join('') : '<tr><td colspan="6">No entries</td></tr>';
+  return `<div style="display:flex;gap:var(--space-3);align-items:center;margin-bottom:var(--space-4)"><input id="rpt-books-from" type="date" value="${start}" /><input id="rpt-books-to" type="date" value="${end}" /><button class="btn btn-primary btn-sm" onclick="reloadBooks()">Load</button><button class="btn btn-primary btn-sm" onclick="printReport('books','${start} to ${end}')">Print</button></div>
+    <h3>Sales Journal</h3><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Buyer</th><th>Subtotal</th><th>Tax</th><th>Total</th></tr></thead><tbody>${rows(data.sales,['invoice_number','issued_date','buyer','subtotal','tax_amount','total'])}</tbody></table></div>
+    <h3>Cash Receipts Journal</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Invoice</th><th>Method</th><th>Amount</th></tr></thead><tbody>${rows(data.receipts,['payment_date','invoice_number','method','amount'])}</tbody></table></div>
+    <h3>Expenses / Purchases</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Category</th><th>Vendor</th><th>Description</th><th>Amount</th></tr></thead><tbody>${rows(data.expenses,['expense_date','category','vendor','description','amount'])}</tbody></table></div>
+    <h3>Accounts Receivable</h3><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Buyer</th><th>Total</th><th>Paid</th><th>Balance</th></tr></thead><tbody>${rows(data.receivables,['invoice_number','buyer','total','paid','balance'])}</tbody></table></div>`;
+}
+
+export async function reloadBooks() {
+  const from = (document.getElementById('rpt-books-from') as HTMLInputElement)?.value;
+  const to = (document.getElementById('rpt-books-to') as HTMLInputElement)?.value;
+  const el = document.getElementById('report-content'); if (el) el.innerHTML = await loadBooksReport(from, to);
 }
 
 async function loadDailyReport(date?: string) {

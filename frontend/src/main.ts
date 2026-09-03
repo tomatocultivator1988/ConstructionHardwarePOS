@@ -70,6 +70,7 @@ Object.assign(window, {
   reloadTax: reports.reloadTax,
   loadRangeReport: reports.loadRangeReport,
   printReport: reports.printReport,
+  reloadBooks: reports.reloadBooks,
   switchSettingsTab: settings.switchSettingsTab,
   saveSettings: settings.saveSettings,
   openCashierShift: settings.openCashierShift,

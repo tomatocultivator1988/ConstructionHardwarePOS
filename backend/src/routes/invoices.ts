@@ -10,7 +10,9 @@ const router = Router();
 router.get('/', async (req: Request, res: Response) => {
   const db = getDb();
   const baseQuery = `
-    SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name, c.address AS customer_address, c.tin AS customer_tin
+    SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name, c.address AS customer_address, c.tin AS customer_tin,
+      i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) AS adjusted_total,
+      COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0) AS net_paid
     FROM invoices i
     LEFT JOIN customers c ON c.id = i.customer_id
     ORDER BY i.created_at DESC`;
@@ -28,7 +30,9 @@ router.get('/', async (req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   const db = getDb();
   const invoice = await db.prepare(`
-    SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name, c.address AS customer_address, c.tin AS customer_tin
+    SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name, c.address AS customer_address, c.tin AS customer_tin,
+      i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) AS adjusted_total,
+      COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0) AS net_paid
     FROM invoices i
     LEFT JOIN customers c ON c.id = i.customer_id
     WHERE i.id = ?
@@ -36,7 +40,9 @@ router.get('/:id', async (req: Request, res: Response) => {
   if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
   const items = await db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(req.params.id);
   const payments = await db.prepare('SELECT * FROM payments WHERE invoice_id = ?').all(req.params.id);
-  res.json({ ...invoice as any, items, payments });
+  const creditMemos = await db.prepare("SELECT * FROM credit_memos WHERE invoice_id = ? AND status = 'issued' ORDER BY created_at DESC").all(req.params.id);
+  const refunds = await db.prepare('SELECT * FROM refunds WHERE invoice_id = ? ORDER BY created_at DESC').all(req.params.id);
+  res.json({ ...invoice as any, items, payments, credit_memos: creditMemos, refunds });
 });
 
 router.post('/', async (req: Request, res: Response) => {
@@ -184,8 +190,10 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
       if (!invoice) throw new Error('Invoice not found');
       if (invoice.status === 'voided') throw new Error('Cannot pay a voided invoice');
 
-      const existingPaid = (await getTotalPaid.get(req.params.id) as any).paid;
-      const remainingBalance = invoice.total - existingPaid;
+      const credits = (await db.prepare("SELECT COALESCE(SUM(amount),0) total FROM credit_memos WHERE invoice_id=? AND status='issued'").get(req.params.id) as any).total;
+      const returnsCredit = (await db.prepare('SELECT COALESCE(SUM(total_credit),0) total FROM invoice_returns WHERE invoice_id=?').get(req.params.id) as any).total;
+      const existingPaid = (await getTotalPaid.get(req.params.id) as any).paid - Number((await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id=?').get(req.params.id) as any).total);
+      const remainingBalance = Number(invoice.total) - Number(credits) - Number(returnsCredit) - existingPaid;
       if (amount > remainingBalance) {
         throw new Error(`Payment of ${amount} exceeds remaining balance of ${remainingBalance}`);
       }
@@ -193,7 +201,7 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
       await insertPayment.run(paymentId, req.params.id, amount, method, notes || null);
       const totalPaid = existingPaid + amount;
 
-      if (totalPaid >= invoice.total) {
+      if (totalPaid >= Number(invoice.total) - Number(credits) - Number(returnsCredit)) {
         await updateStatusPaid.run(req.params.id);
       } else if (totalPaid > 0) {
         await updateStatusPartial.run(req.params.id);
@@ -201,7 +209,7 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
     });
     await txn();
     clearCache('analytics:');
-    await logAudit((req as any).user?.id || null, 'update', 'invoice', req.params.id as string, `Payment of ${amount} via ${method}`);
+    await logAudit((req as any).user?.id || null, 'update', 'invoice', req.params.id as string, `Payment of ${amount} via ${method}`, { status: 'before payment' }, { status: 'after payment', amount, method });
   } catch (e: any) {
     res.status(400).json({ error: e.message });
     return;
@@ -236,7 +244,7 @@ router.put('/:id/void', requireAdmin, async (req: Request, res: Response) => {
   });
   try { await txn(); } catch (e: any) { res.status(400).json({ error: e.message }); return; }
   clearCache('analytics:');
-  await logAudit((req as any).user?.id || null, 'void', 'invoice', invoice.id, `Voided ${invoice.invoice_number}: ${reason}`);
+  await logAudit((req as any).user?.id || null, 'void', 'invoice', invoice.id, `Voided ${invoice.invoice_number}: ${reason}`, invoice, { ...invoice, status: 'voided', void_reason: reason });
   res.json(await db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoice.id));
 });
 
@@ -247,13 +255,16 @@ router.post('/:id/credit-memo', requireAdmin, async (req: Request, res: Response
   if (invoice.status === 'voided') { res.status(400).json({ error: 'Cannot adjust a voided invoice' }); return; }
   const amount = Number(req.body?.amount);
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
-  if (!Number.isFinite(amount) || amount <= 0 || amount > Number(invoice.total)) { res.status(400).json({ error: 'Credit amount must be greater than zero and no more than the invoice total' }); return; }
+  const existingCredit = (await db.prepare("SELECT COALESCE(SUM(amount),0) total FROM credit_memos WHERE invoice_id=? AND status='issued'").get(invoice.id) as any).total;
+  if (!Number.isFinite(amount) || amount <= 0 || amount > Number(invoice.total) - Number(existingCredit)) { res.status(400).json({ error: 'Credit amount must be greater than zero and no more than the remaining invoice value' }); return; }
   if (reason.length < 3) { res.status(400).json({ error: 'A credit memo reason is required' }); return; }
   const id = uuidv4();
   const number = `CM-${Date.now().toString().slice(-8)}`;
-  await db.prepare('INSERT INTO credit_memos (id, invoice_id, memo_number, reason, amount, created_by) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(id, invoice.id, number, reason, Math.round(amount * 100) / 100, (req as any).user?.id || null);
-  await logAudit((req as any).user?.id || null, 'create', 'credit_memo', id, `${number} for ${invoice.invoice_number}: ${reason}`);
+  const creditAmount = Math.round(amount * 100) / 100;
+  const creditTax = Number(invoice.tax_rate) > 0 ? Math.round((creditAmount * Number(invoice.tax_rate) / (1 + Number(invoice.tax_rate))) * 100) / 100 : 0;
+  await db.prepare('INSERT INTO credit_memos (id, invoice_id, memo_number, reason, amount, tax_amount, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, invoice.id, number, reason, creditAmount, creditTax, (req as any).user?.id || null);
+  await logAudit((req as any).user?.id || null, 'create', 'credit_memo', id, `${number} for ${invoice.invoice_number}: ${reason}`, null, { invoice_id: invoice.id, memo_number: number, amount: creditAmount, tax_amount: creditTax, reason });
   res.status(201).json(await db.prepare('SELECT * FROM credit_memos WHERE id = ?').get(id));
 });
 
@@ -266,11 +277,12 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
   if (!Number.isFinite(amount) || amount <= 0 || !method) { res.status(400).json({ error: 'Valid refund amount and method are required' }); return; }
   const paid = (await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM payments WHERE invoice_id = ?').get(invoice.id) as any).total;
   const refunded = (await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id = ?').get(invoice.id) as any).total;
-  if (amount > Number(paid) - Number(refunded)) { res.status(400).json({ error: 'Refund exceeds unapplied payments' }); return; }
+  const availableRefund = Number(paid) - Number(refunded);
+  if (amount > availableRefund) { res.status(400).json({ error: 'Refund exceeds unapplied payments' }); return; }
   const id = uuidv4();
   await db.prepare('INSERT INTO refunds (id, invoice_id, amount, method, reference, created_by) VALUES (?, ?, ?, ?, ?, ?)')
     .run(id, invoice.id, amount, method, req.body?.reference || null, (req as any).user?.id || null);
-  await logAudit((req as any).user?.id || null, 'create', 'refund', id, `Refund ${amount} via ${method} for ${invoice.invoice_number}`);
+  await logAudit((req as any).user?.id || null, 'create', 'refund', id, `Refund ${amount} via ${method} for ${invoice.invoice_number}`, null, { invoice_id: invoice.id, amount, method });
   res.status(201).json(await db.prepare('SELECT * FROM refunds WHERE id = ?').get(id));
 });
 
@@ -316,15 +328,19 @@ router.post('/:id/return', async (req: Request, res: Response) => {
   const txn = db.transaction(async () => {
     for (const item of items) {
       const lineItem = await db.prepare('SELECT id FROM invoice_items WHERE id = ? AND invoice_id = ?').get(item.invoice_item_id || '', invoiceId) as any;
-      await db.prepare('INSERT INTO invoice_returns (id, invoice_item_id, invoice_id, material_id, quantity) VALUES (?, ?, ?, ?, ?)')
-        .run(uuidv4(), lineItem.id, invoiceId, item.material_id, item.quantity);
+      const totalCredit = Math.round(Number(lineItem.unit_price) * Number(item.quantity) * (1 + Number(inv.tax_rate || 0)) * 100) / 100;
+      await db.prepare('INSERT INTO invoice_returns (id, invoice_item_id, invoice_id, material_id, quantity, total_credit) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(uuidv4(), lineItem.id, invoiceId, item.material_id, item.quantity, totalCredit);
       await restoreStock.run(item.quantity, item.material_id);
       await insertMovement.run(uuidv4(), item.material_id, 'return', item.quantity, invoiceId, 'invoice', `Returned from ${inv.invoice_number}`);
     }
 
     // Recalculate invoice balance
     const totalPaid = (await db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE invoice_id = ?').get(invoiceId) as any).total;
-    const remainingBalance = inv.total - totalPaid;
+    const refunded = (await db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM refunds WHERE invoice_id = ?').get(invoiceId) as any).total;
+    const credits = (await db.prepare("SELECT COALESCE(SUM(amount),0) AS total FROM credit_memos WHERE invoice_id=? AND status='issued'").get(invoiceId) as any).total;
+    const returnsCredit = (await db.prepare('SELECT COALESCE(SUM(total_credit),0) AS total FROM invoice_returns WHERE invoice_id=?').get(invoiceId) as any).total;
+    const remainingBalance = Number(inv.total) - Number(credits) - Number(returnsCredit) - Number(totalPaid) + Number(refunded);
 
     if (remainingBalance > 0) {
       await db.prepare("UPDATE invoices SET status = 'partial' WHERE id = ?").run(invoiceId);

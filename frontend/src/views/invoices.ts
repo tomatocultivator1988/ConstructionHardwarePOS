@@ -197,8 +197,9 @@ export async function createInvoice() {
 
 export async function showInvoiceDetail(id: string) {
   const inv = await apiGet<Invoice>(`/invoices/${id}`);
-  const totalPaid = inv.payments.reduce((s: number, p: any) => s + p.amount, 0);
-  const balance = inv.total - totalPaid;
+  const totalPaid = inv.payments.reduce((s: number, p: any) => s + p.amount, 0) - ((inv as any).refunds || []).reduce((s: number, r: any) => s + r.amount, 0);
+  const adjustedTotal = Number((inv as any).adjusted_total ?? inv.total);
+  const balance = adjustedTotal - totalPaid;
   const modalId = 'invoice-detail-modal';
   document.getElementById(modalId)?.remove();
   const modal = document.createElement('div');
@@ -230,7 +231,8 @@ export async function showInvoiceDetail(id: string) {
     <div style="max-width:300px;margin-left:auto">
       <div class="summary-line"><span>Subtotal</span><span>${fmtPeso(inv.subtotal)}</span></div>
       ${Number(inv.tax_rate) > 0 ? `<div class="summary-line"><span>Tax (${(Number(inv.tax_rate)*100).toFixed(0)}%)</span><span>${fmtPeso(inv.tax_amount)}</span></div>` : ''}
-      <div class="summary-line total"><span>Total</span><span>${fmtPeso(inv.total)}</span></div>
+      <div class="summary-line"><span>Original Total</span><span>${fmtPeso(inv.total)}</span></div>
+      ${adjustedTotal !== Number(inv.total) ? `<div class="summary-line"><span>Adjusted Total</span><span>${fmtPeso(adjustedTotal)}</span></div>` : ''}
       <div class="summary-line"><span>Paid</span><span style="color:var(--c-success)">${fmtPeso(totalPaid)}</span></div>
       <div class="summary-line" style="font-weight:600;font-size:var(--fs-lg)"><span>Balance</span><span style="color:${balance < 0 ? 'var(--c-warning)' : balance > 0 ? 'var(--c-danger)' : 'var(--c-success)'}">${fmtPeso(balance)}</span></div>
     </div>
@@ -248,6 +250,9 @@ export async function showInvoiceDetail(id: string) {
       </table>
     </div>
     ` : ''}
+
+    ${(inv as any).credit_memos?.length ? `<h4>Credit Memos</h4><div class="table-wrap"><table><thead><tr><th>Number</th><th>Reason</th><th>Amount</th><th>Date</th></tr></thead><tbody>${(inv as any).credit_memos.map((cm: any) => `<tr><td>${esc(cm.memo_number)}</td><td>${esc(cm.reason)}</td><td>${fmtPeso(cm.amount)}</td><td>${fmtDate(cm.created_at)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${(inv as any).refunds?.length ? `<h4>Refunds</h4><div class="table-wrap"><table><thead><tr><th>Method</th><th>Amount</th><th>Reference</th><th>Date</th></tr></thead><tbody>${(inv as any).refunds.map((rf: any) => `<tr><td>${esc(rf.method)}</td><td>${fmtPeso(rf.amount)}</td><td>${esc(rf.reference || '—')}</td><td>${fmtDate(rf.created_at)}</td></tr>`).join('')}</tbody></table></div>` : ''}
 
     ${balance > 0 && inv.status !== 'voided' ? `
     <h4>Record Payment</h4>

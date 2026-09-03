@@ -87,6 +87,7 @@ async function initTables() {
       invoice_id TEXT NOT NULL,
       material_id TEXT NOT NULL,
       quantity REAL NOT NULL CHECK (quantity > 0),
+      total_credit REAL NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (invoice_item_id) REFERENCES invoice_items(id),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id),
@@ -216,6 +217,7 @@ async function initTables() {
       memo_number TEXT NOT NULL UNIQUE,
       reason TEXT NOT NULL,
       amount REAL NOT NULL CHECK (amount > 0),
+      tax_amount REAL NOT NULL DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'issued' CHECK (status IN ('issued','voided')),
       created_by TEXT,
       created_at TEXT DEFAULT (datetime('now')),
@@ -286,6 +288,10 @@ async function migrateSchema() {
   if (!invoiceCols.includes('voided_at')) await db.exec("ALTER TABLE invoices ADD COLUMN voided_at TEXT");
   if (!invoiceCols.includes('voided_by')) await db.exec("ALTER TABLE invoices ADD COLUMN voided_by TEXT");
   if (!invoiceCols.includes('void_reason')) await db.exec("ALTER TABLE invoices ADD COLUMN void_reason TEXT");
+  const creditInfo = (await db.prepare("PRAGMA table_info('credit_memos')").all()) as any[];
+  if (!creditInfo.some((r: any) => r.name === 'tax_amount')) await db.exec("ALTER TABLE credit_memos ADD COLUMN tax_amount REAL NOT NULL DEFAULT 0");
+  const returnInfo = (await db.prepare("PRAGMA table_info('invoice_returns')").all()) as any[];
+  if (!returnInfo.some((r: any) => r.name === 'total_credit')) await db.exec("ALTER TABLE invoice_returns ADD COLUMN total_credit REAL NOT NULL DEFAULT 0");
   const auditInfo = (await db.prepare("PRAGMA table_info('audit_log')").all()) as any[];
   const auditCols = auditInfo.map((r: any) => r.name);
   if (!auditCols.includes('old_values')) await db.exec("ALTER TABLE audit_log ADD COLUMN old_values TEXT");
