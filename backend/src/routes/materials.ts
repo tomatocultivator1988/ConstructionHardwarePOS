@@ -35,10 +35,13 @@ router.get('/', async (req: Request, res: Response) => {
   const db = getDb();
   let query = 'SELECT * FROM materials';
   const params: any[] = [];
+  const conditions: string[] = [];
+  if (req.query.search && String(req.query.search).trim()) { conditions.push('(name LIKE ? OR category LIKE ? OR unit LIKE ?)'); const q = `%${String(req.query.search).trim()}%`; params.push(q, q, q); }
   if (req.query.category && req.query.category !== '') {
-    query += ' WHERE category = ?';
+    conditions.push('category = ?');
     params.push(req.query.category);
   }
+  if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
   query += ' ORDER BY created_at DESC';
   const materials = await db.prepare(query).all(...params);
   res.json(materials);

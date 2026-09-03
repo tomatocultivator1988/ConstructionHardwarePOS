@@ -70,6 +70,7 @@ Object.assign(window, {
   delUser: settings.delUser,
   printReceipt,
   checkLowStock: () => checkLowStock(),
+  openMobileMore,
 });
 
 // Navigation — desktop
@@ -77,7 +78,8 @@ document.querySelectorAll('#desktop-nav .nav-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    loadView((btn as HTMLElement).dataset.view!);
+    const view = (btn as HTMLElement).dataset.view!;
+    if (view !== '__more') loadView(view);
     if ((btn as HTMLElement).dataset.view === 'dashboard') checkLowStock();
   });
 });
@@ -87,7 +89,8 @@ document.querySelectorAll('#bottom-nav .nav-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    loadView((btn as HTMLElement).dataset.view!);
+    const view = (btn as HTMLElement).dataset.view!;
+    if (view !== '__more') loadView(view);
     if ((btn as HTMLElement).dataset.view === 'dashboard') checkLowStock();
   });
 });
@@ -138,6 +141,15 @@ export function applyRoleUI() {
     const btn = document.querySelector(`[data-view="${view}"]`) as HTMLElement;
     if (btn) btn.style.display = admin ? '' : 'none';
   });
+}
+
+function openMobileMore() {
+  const options = [['expenses', 'Expenses'], ['suppliers', 'Suppliers'], ['purchase-orders', 'Purchase Orders'], ...(isAdmin() ? [['reports', 'Reports'], ['settings', 'Settings']] : [])];
+  const modal = document.createElement('div');
+  modal.className = 'modal'; modal.id = 'mobile-more-modal';
+  modal.innerHTML = `<div class="modal-content"><h3>More</h3><div class="mobile-more-menu">${options.map(([view, label]) => `<button class="btn mobile-more-option" onclick="closeModal();loadView('${view}')">${label}<span>›</span></button>`).join('')}</div><div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button></div></div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
 }
 
 // Init

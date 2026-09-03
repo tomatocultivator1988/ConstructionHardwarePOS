@@ -23,7 +23,8 @@ export async function renderMaterials(): Promise<string> {
   return `
     <div class="page-header">
       <h2>Materials</h2>
-      <div style="display:flex;gap:var(--space-3);align-items:center">
+      <div class="material-toolbar" style="display:flex;gap:var(--space-3);align-items:center">
+        <input id="mat-search" type="search" placeholder="Search materials..." oninput="filterMaterials()" style="min-height:36px;min-width:220px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
         <select id="mat-cat-filter" onchange="filterMaterials()" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)">
           ${catOptions()}
         </select>
@@ -180,7 +181,11 @@ export async function showStockHistory(materialId: string) {
 
 export async function filterMaterials() {
   const cat = (document.getElementById('mat-cat-filter') as HTMLSelectElement)?.value ?? '';
-  const url = cat ? `/materials?category=${encodeURIComponent(cat)}` : '/materials';
+  const search = (document.getElementById('mat-search') as HTMLInputElement)?.value.trim() ?? '';
+  const params = new URLSearchParams();
+  if (cat) params.set('category', cat);
+  if (search) params.set('search', search);
+  const url = params.toString() ? `/materials?${params}` : '/materials';
   const materials = await apiGet<Material[]>(url);
   const tbody = document.querySelector('table tbody');
   if (!tbody) return;

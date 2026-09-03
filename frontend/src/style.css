@@ -772,6 +772,10 @@ body.show-install #install-prompt { display: flex; }
   #main-content { padding: var(--space-3); }
   .login-page { inset: 56px 0 0 0; }
   #install-prompt { bottom: var(--bottom-nav-h); }
+  #bottom-nav { grid-template-columns: repeat(5, 1fr); }
+  #bottom-nav [data-view="expenses"], #bottom-nav [data-view="suppliers"], #bottom-nav [data-view="purchase-orders"], #bottom-nav [data-view="reports"], #bottom-nav [data-view="settings"] { display: none; }
+  #bottom-nav .nav-btn { min-width: 0; padding-inline: 2px; }
+  #bottom-nav .nav-btn span { font-size: 0.62rem; white-space: nowrap; }
 
   .dashboard-grid { grid-template-columns: 1fr 1fr; gap: var(--space-2); }
   .dashboard-card { padding: var(--space-3) var(--space-4); }
@@ -791,6 +795,8 @@ body.show-install #install-prompt { display: flex; }
 
   .page-header { flex-direction: column; gap: var(--space-3); align-items: stretch; }
   .page-header h2 { font-size: var(--fs-lg); }
+  .material-toolbar { flex-direction: column; align-items: stretch !important; }
+  .material-toolbar input { min-width: 0 !important; width: 100%; }
 
   thead th, td { padding: var(--space-2) var(--space-3); font-size: var(--fs-xs); }
   td.actions .btn { padding: var(--space-1) var(--space-2); font-size: 0.6rem; min-height: 24px; }
@@ -810,6 +816,10 @@ body.show-install #install-prompt { display: flex; }
 
   .settings-card { max-width: 100%; }
 }
+
+.mobile-more-menu { display: grid; gap: var(--space-2); }
+.mobile-more-option { width: 100%; justify-content: space-between; text-align: left; min-height: 46px; }
+.mobile-more-option span { font-size: 1.4rem; color: var(--c-text-muted); }
 
 /* Mobile card-based tables */
 @media (max-width: 680px) {
@@ -846,8 +856,7 @@ body.show-install #install-prompt { display: flex; }
 
 /* Small phones */
 @media (max-width: 480px) {
-  #bottom-nav .nav-btn span { display: none; }
-  #bottom-nav .nav-btn svg { width: 22px; height: 22px; }
+  #bottom-nav .nav-btn span { display: block; }
 
   .dashboard-grid { grid-template-columns: 1fr; }
   .dashboard-card .card-value { font-size: var(--fs-lg); }
