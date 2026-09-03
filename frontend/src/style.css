@@ -863,12 +863,23 @@ body.show-install #install-prompt { display: flex; }
   .mobile-details-btn { display: inline-flex; }
 }
 
+/* Dashboard summary cards use a compact mobile-first hierarchy. */
+@media (max-width: 680px) {
+  .dashboard-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+  .dashboard-summary-grid .dashboard-card { min-height: 92px; padding: 14px 12px 11px; border-radius: 12px; display: flex; flex-direction: column; justify-content: center; }
+  .dashboard-summary-grid .dashboard-card::before { height: 2px; }
+  .dashboard-summary-grid .card-label { font-size: 0.58rem; line-height: 1.2; letter-spacing: .045em; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dashboard-summary-grid .card-value { font-size: clamp(1.05rem, 5vw, 1.35rem); line-height: 1; letter-spacing: -.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dashboard-summary-grid .card-sub { font-size: 0.62rem; line-height: 1.2; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+
 /* Small phones */
 @media (max-width: 480px) {
   #bottom-nav .nav-btn span { display: block; }
 
-  .dashboard-grid { grid-template-columns: 1fr; }
-  .dashboard-card .card-value { font-size: var(--fs-lg); }
+  .dashboard-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-summary-grid .dashboard-card { min-height: 86px; padding-inline: 10px; }
+  .dashboard-summary-grid .card-value { font-size: 1.05rem; }
 
   .period-item { flex-wrap: wrap; }
   .period-label { min-width: 60px; font-size: 0.55rem; }

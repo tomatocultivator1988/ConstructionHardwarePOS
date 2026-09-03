@@ -148,7 +148,7 @@ export async function renderDashboard(): Promise<string> {
   }, 50);
 
   return `
-    <div class="dashboard-grid">
+    <div class="dashboard-grid dashboard-summary-grid">
       <div class="dashboard-card card-success">
         <div class="card-label">Today's Sales</div>
         <div class="card-value">${fmtPeso(todaySales)}</div>
