@@ -261,7 +261,9 @@ router.post('/:id/credit-memo', requireAdmin, async (req: Request, res: Response
   const amount = Number(req.body?.amount);
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
   const existingCredit = (await db.prepare("SELECT COALESCE(SUM(amount),0) total FROM credit_memos WHERE invoice_id=? AND status='issued'").get(invoice.id) as any).total;
-  if (!Number.isFinite(amount) || amount <= 0 || amount > Number(invoice.total) - Number(existingCredit)) { res.status(400).json({ error: 'Credit amount must be greater than zero and no more than the remaining invoice value' }); return; }
+  const existingReturns = (await db.prepare("SELECT COALESCE(SUM(total_credit),0) total FROM invoice_returns WHERE invoice_id=?").get(invoice.id) as any).total;
+  const remainingValue = Math.max(0, Number(invoice.total) - Number(existingCredit) - Number(existingReturns));
+  if (!Number.isFinite(amount) || amount <= 0 || amount > remainingValue + 0.005) { res.status(400).json({ error: 'Credit amount must be greater than zero and no more than the remaining invoice value' }); return; }
   if (reason.length < 3) { res.status(400).json({ error: 'A credit memo reason is required' }); return; }
   const id = uuidv4();
   const number = `CM-${Date.now().toString().slice(-8)}`;
@@ -308,6 +310,7 @@ router.post('/:id/return', async (req: Request, res: Response) => {
   const invoiceId = req.params.id as string;
     const inv = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId) as any;
   if (!inv) { res.status(404).json({ error: 'Invoice not found' }); return; }
+  if (inv.status === 'voided') { res.status(400).json({ error: 'Cannot return items on a voided invoice' }); return; }
   if (inv.status === 'pending') {
     res.status(400).json({ error: 'Cannot return items on an unpaid invoice — delete it instead' });
     return;
