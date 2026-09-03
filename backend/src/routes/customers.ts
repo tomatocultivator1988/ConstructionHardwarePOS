@@ -91,7 +91,7 @@ router.post('/', async (req: Request, res: Response) => {
     'INSERT INTO customers (id, name, phone, email, address, tin, is_wholesale) VALUES (?, ?, ?, ?, ?, ?, ?)'
   ).run(id, name.trim(), phone || null, email || null, address || null, tin || null, is_wholesale ? 1 : 0);
   const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
-  await logAudit((req as any).user?.id || null, 'create', 'customer', id, name.trim());
+  await logAudit((req as any).user?.id || null, 'create', 'customer', id, name.trim(), null, customer);
   res.status(201).json(customer);
 });
 
@@ -145,7 +145,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   }
   const custId = req.params.id as string;
   await db.prepare('DELETE FROM customers WHERE id = ?').run(custId);
-  await logAudit((req as any).user?.id || null, 'delete', 'customer', custId);
+  await logAudit((req as any).user?.id || null, 'delete', 'customer', custId, undefined, existing, null);
   res.status(204).send();
 });
 

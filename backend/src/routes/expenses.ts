@@ -104,7 +104,7 @@ router.post('/', async (req: Request, res: Response) => {
     'INSERT INTO expenses (id, category, amount, description, vendor, expense_date) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(id, validation.category, validation.amount, validation.description || null, validation.vendor || null, validation.expense_date);
   const expense = await db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
-  await logAudit((req as any).user?.id || null, 'create', 'expense', id, `${validation.category} — ${validation.amount}`);
+  await logAudit((req as any).user?.id || null, 'create', 'expense', id, `${validation.category} — ${validation.amount}`, null, expense);
   res.status(201).json(expense);
 });
 
@@ -121,7 +121,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     'UPDATE expenses SET category=?, amount=?, description=?, vendor=?, expense_date=? WHERE id=?'
   ).run(validation.category, validation.amount, validation.description || null, validation.vendor || null, validation.expense_date, req.params.id);
   const updated = await db.prepare('SELECT * FROM expenses WHERE id = ?').get(req.params.id);
-  await logAudit((req as any).user?.id || null, 'update', 'expense', req.params.id as string);
+  await logAudit((req as any).user?.id || null, 'update', 'expense', req.params.id as string, undefined, existing, updated);
   res.json(updated);
 });
 
@@ -131,7 +131,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   if (!existing) { res.status(404).json({ error: 'Expense not found' }); return; }
   const name = (existing as any).category + ' ' + (existing as any).amount;
   await db.prepare('DELETE FROM expenses WHERE id = ?').run(req.params.id);
-  await logAudit((req as any).user?.id || null, 'delete', 'expense', req.params.id as string, name);
+  await logAudit((req as any).user?.id || null, 'delete', 'expense', req.params.id as string, name, existing, null);
   res.status(204).send();
 });
 

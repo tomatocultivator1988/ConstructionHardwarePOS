@@ -76,7 +76,7 @@ router.post('/', async (req: Request, res: Response) => {
     'INSERT INTO materials (id, name, unit, stock, cost_price, price_per_unit, wholesale_price, reorder_point, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(id, validation.name.trim(), validation.unit, validation.stock ?? 0, validation.cost_price ?? 0, validation.price_per_unit, validation.wholesale_price, validation.reorder_point ?? 10, validation.category);
   const material = await db.prepare('SELECT * FROM materials WHERE id = ?').get(id);
-  await logAudit((req as any).user?.id || null, 'create', 'material', id, validation.name.trim());
+  await logAudit((req as any).user?.id || null, 'create', 'material', id, validation.name.trim(), null, material);
   res.status(201).json(material);
 });
 
@@ -110,7 +110,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       .run(uuidv4(), req.params.id, 'adjustment', newStock - oldStock, 'manual', 'Manual stock adjustment');
   }
   const updated = await db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id);
-  await logAudit((req as any).user?.id || null, 'update', 'material', req.params.id as string);
+  await logAudit((req as any).user?.id || null, 'update', 'material', req.params.id as string, undefined, existing, updated);
   res.json(updated);
 });
 
@@ -125,7 +125,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   }
   const name = (existing as any).name;
   await db.prepare('DELETE FROM materials WHERE id = ?').run(req.params.id);
-  await logAudit((req as any).user?.id || null, 'delete', 'material', req.params.id as string, name);
+  await logAudit((req as any).user?.id || null, 'delete', 'material', req.params.id as string, name, existing, null);
   res.status(204).send();
 });
 

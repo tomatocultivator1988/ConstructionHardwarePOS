@@ -56,7 +56,7 @@ router.post('/', async (req: Request, res: Response) => {
     'INSERT INTO suppliers (id, name, contact_person, phone, email, address, tin, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(id, v.name.trim(), v.contact_person, v.phone, v.email, v.address, v.tin, v.notes);
   const supplier = await db.prepare('SELECT * FROM suppliers WHERE id = ?').get(id);
-  await logAudit((req as any).user?.id || null, 'create', 'supplier', id, v.name);
+  await logAudit((req as any).user?.id || null, 'create', 'supplier', id, v.name, null, supplier);
   res.status(201).json(supplier);
 });
 
@@ -73,7 +73,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     'UPDATE suppliers SET name=?, contact_person=?, phone=?, email=?, address=?, tin=?, notes=? WHERE id=?'
   ).run(v.name.trim(), v.contact_person, v.phone, v.email, v.address, v.tin, v.notes, req.params.id);
   const updated = await db.prepare('SELECT * FROM suppliers WHERE id = ?').get(req.params.id);
-  await logAudit((req as any).user?.id || null, 'update', 'supplier', req.params.id as string);
+  await logAudit((req as any).user?.id || null, 'update', 'supplier', req.params.id as string, undefined, existing, updated);
   res.json(updated);
 });
 
@@ -83,7 +83,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   if (!existing) { res.status(404).json({ error: 'Supplier not found' }); return; }
   const name = (existing as any).name;
   await db.prepare('DELETE FROM suppliers WHERE id = ?').run(req.params.id);
-  await logAudit((req as any).user?.id || null, 'delete', 'supplier', req.params.id as string, name);
+  await logAudit((req as any).user?.id || null, 'delete', 'supplier', req.params.id as string, name, existing, null);
   res.status(204).send();
 });
 

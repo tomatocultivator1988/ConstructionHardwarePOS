@@ -27,9 +27,8 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
   const hash = bcrypt.hashSync(pin, 10);
   await db.prepare('INSERT INTO users (id, username, pin_hash, role) VALUES (?, ?, ?, ?)').run(id, username.trim(), hash, role || 'staff');
 
-  await logAudit(req.user?.id || null, 'create', 'user', id, `Created user ${username}`);
-
   const user = await db.prepare('SELECT id, username, role, created_at FROM users WHERE id = ?').get(id);
+  await logAudit(req.user?.id || null, 'create', 'user', id, `Created user ${username}`, null, user);
   res.status(201).json(user);
 });
 
@@ -51,9 +50,10 @@ router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
     await db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, uid);
   }
 
-  await logAudit(req.user?.id || null, 'update', 'user', uid, role ? `Changed role to ${role}` : 'Changed PIN');
+  const updated = await db.prepare('SELECT id, username, role, created_at FROM users WHERE id = ?').get(uid);
+  await logAudit(req.user?.id || null, 'update', 'user', uid, role ? `Changed role to ${role}` : 'Changed PIN', { username: existing.username, role: existing.role }, updated);
 
-  res.json(await db.prepare('SELECT id, username, role, created_at FROM users WHERE id = ?').get(uid));
+  res.json(updated);
 });
 
 router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
@@ -68,7 +68,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   }
 
   await db.prepare('DELETE FROM users WHERE id = ?').run(uid);
-  await logAudit(req.user?.id || null, 'delete', 'user', uid, `Deleted user ${existing.username}`);
+  await logAudit(req.user?.id || null, 'delete', 'user', uid, `Deleted user ${existing.username}`, existing, null);
   res.status(204).send();
 });
 
