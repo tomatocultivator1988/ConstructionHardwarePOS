@@ -39,9 +39,17 @@ await post(`/invoices/${invoice.id}/refund`, { amount: 25, method: 'cash', refer
 await post(`/invoices/${invoice.id}/credit-memo`, { amount: 10, reason: 'QA adjustment' });
 const adjusted = await call(`/invoices/${invoice.id}`);
 assert.equal(Number(adjusted.adjusted_total), 15);
-const closed = await post(`/shifts/${shift.id}/close`, { closing_cash: 100 });
+assert.equal(Number(adjusted.adjusted_tax), 0);
+const summary = await call('/reports/financial-summary?from=2000-01-01&to=2100-01-01');
+assert.ok(Number(summary.net_sales) >= 15, 'financial summary should include adjusted net sales');
+assert.ok(Number(summary.refunds) >= 25, 'financial summary should include refunds');
+const closed = await post(`/shifts/${shift.id}/close`, { closing_cash: 125 });
 assert.equal(closed.status, 'closed');
+assert.equal(Number(closed.expected_cash), 125);
 await put(`/invoices/${invoice.id}/void`, { reason: 'QA cleanup' });
 const voided = await call(`/invoices/${invoice.id}`);
 assert.equal(voided.status, 'voided');
+const audit = await call('/audit');
+const auditedEntities = new Set(audit.filter((entry) => [invoice.id, material.id, customer.id, shift.id].includes(entry.entity_id)).map((entry) => entry.entity));
+for (const entity of ['invoice', 'material', 'customer', 'cashier_shift']) assert.ok(auditedEntities.has(entity), `audit log missing ${entity}`);
 console.log('BuildPro POS E2E workflow checks passed:', marker);
