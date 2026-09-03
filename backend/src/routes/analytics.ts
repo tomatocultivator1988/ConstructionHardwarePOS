@@ -73,7 +73,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       `).get() as Promise<any>,
       db.prepare(`
         SELECT COALESCE(SUM(amount), 0) AS total
-        FROM payments WHERE payment_date >= datetime('now', '-7 days')
+        FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE i.status <> 'voided' AND p.payment_date >= datetime('now', '-7 days')
       `).get() as Promise<any>,
       db.prepare(`
         SELECT COALESCE(SUM(f.adjusted_total), 0) AS revenue,
@@ -105,16 +105,17 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
           FROM (SELECT 0 AS t UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5)
         )
         SELECT months.m AS month,
-          COALESCE(SUM(p.amount), 0) AS revenue,
-          COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
+          COALESCE(SUM(f.adjusted_total), 0) AS revenue,
+          COALESCE(SUM(f.net_sales * COALESCE(v.profit_ratio, 0)), 0) AS profit
         FROM months LEFT JOIN v_invoice_financials f ON strftime('%Y-%m', f.issued_date, '+8 hours') = months.m AND f.status <> 'voided'
         LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
         GROUP BY months.m ORDER BY months.m
       `).all() as Promise<any[]>,
       db.prepare(`
         SELECT COALESCE(c.name, 'Walk-in') AS name,
-          COUNT(DISTINCT i.id) AS invoice_count, SUM(p.amount) AS total_paid
+          COUNT(DISTINCT i.id) AS invoice_count, SUM(p.amount) - COALESCE(SUM((SELECT COALESCE(SUM(r.amount),0) FROM refunds r WHERE r.invoice_id=i.id)),0) AS total_paid
         FROM payments p JOIN invoices i ON i.id = p.invoice_id
+        WHERE i.status <> 'voided'
         LEFT JOIN customers c ON c.id = i.customer_id
         GROUP BY i.customer_id ORDER BY total_paid DESC LIMIT 5
       `).all() as Promise<any[]>,

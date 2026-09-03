@@ -232,11 +232,10 @@ router.get('/range', async (req: Request, res: Response) => {
       FROM v_invoice_financials WHERE status <> 'voided' AND date(issued_date) >= ? AND date(issued_date) <= ?
       `).get(from, to) as Promise<any>,
       db.prepare(`
-        SELECT COALESCE(SUM(ii.total - (ii.quantity * COALESCE(ii.cost_price, m.cost_price, 0))), 0) AS profit
-        FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
-        LEFT JOIN materials m ON m.id = ii.material_id
-        WHERE date(i.issued_date) >= ? AND date(i.issued_date) <= ?
-      `).get(from, to) as Promise<any>,
+        SELECT COALESCE(SUM(f.net_sales),0) - COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price, m.cost_price, 0)) FROM invoice_items ii JOIN invoices i2 ON i2.id=ii.invoice_id LEFT JOIN materials m ON m.id=ii.material_id WHERE i2.status <> 'voided' AND date(i2.issued_date) >= ? AND date(i2.issued_date) <= ?),0) AS profit
+        FROM v_invoice_financials f
+        WHERE f.status <> 'voided' AND date(f.issued_date) >= ? AND date(f.issued_date) <= ?
+      `).get(from, to, from, to) as Promise<any>,
     ]);
 
     res.json({
