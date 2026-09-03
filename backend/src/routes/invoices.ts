@@ -6,6 +6,7 @@ import { logAudit } from '../lib/audit';
 import { clearCache } from '../lib/cache';
 
 const router = Router();
+const PAYMENT_METHODS = ['cash', 'card', 'bank', 'check', 'credit'];
 
 router.get('/', async (req: Request, res: Response) => {
   const db = getDb();
@@ -165,7 +166,7 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
     res.status(400).json({ error: 'Amount must be greater than 0' });
     return;
   }
-  if (typeof method !== 'string' || !method.trim()) {
+  if (typeof method !== 'string' || !PAYMENT_METHODS.includes(method.trim().toLowerCase())) {
     res.status(400).json({ error: 'Payment method is required' });
     return;
   }
@@ -197,8 +198,8 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
       const credits = (await db.prepare("SELECT COALESCE(SUM(amount),0) total FROM credit_memos WHERE invoice_id=? AND status='issued'").get(req.params.id) as any).total;
       const returnsCredit = (await db.prepare('SELECT COALESCE(SUM(total_credit),0) total FROM invoice_returns WHERE invoice_id=?').get(req.params.id) as any).total;
       const existingPaid = (await getTotalPaid.get(req.params.id) as any).paid - Number((await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id=?').get(req.params.id) as any).total);
-      const remainingBalance = Number(invoice.total) - Number(credits) - Number(returnsCredit) - existingPaid;
-      if (amount > remainingBalance) {
+      const remainingBalance = Math.max(0, Number(invoice.total) - Number(credits) - Number(returnsCredit) - existingPaid);
+      if (amount > remainingBalance + 0.005) {
         throw new Error(`Payment of ${amount} exceeds remaining balance of ${remainingBalance}`);
       }
 
@@ -278,7 +279,7 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
   const amount = Number(req.body?.amount);
   const method = typeof req.body?.method === 'string' ? req.body.method.trim() : '';
   if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
-  if (!Number.isFinite(amount) || amount <= 0 || !method) { res.status(400).json({ error: 'Valid refund amount and method are required' }); return; }
+  if (!Number.isFinite(amount) || amount <= 0 || !PAYMENT_METHODS.includes(method.toLowerCase())) { res.status(400).json({ error: 'Valid refund amount and method are required' }); return; }
   const paid = (await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM payments WHERE invoice_id = ?').get(invoice.id) as any).total;
   const refunded = (await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id = ?').get(invoice.id) as any).total;
   const availableRefund = Number(paid) - Number(refunded);
