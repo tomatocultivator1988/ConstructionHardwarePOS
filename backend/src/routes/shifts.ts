@@ -32,7 +32,7 @@ router.post('/:id/close', async (req: Request, res: Response) => {
   if (!shift) { res.status(404).json({ error: 'Open shift not found' }); return; }
   if (shift.user_id !== req.user!.id && req.user!.role !== 'admin') { res.status(403).json({ error: 'You can only close your own shift' }); return; }
   const cash = await db.prepare("SELECT COALESCE(SUM(p.amount),0) total FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE p.shift_id=? AND p.method = 'cash' AND i.status <> 'voided'").get(shift.id) as any;
-  const refunds = await db.prepare("SELECT COALESCE(SUM(r.amount),0) total FROM refunds r JOIN invoices i ON i.id=r.invoice_id WHERE r.method='cash' AND r.created_at >= ? AND r.created_at <= datetime('now') AND i.status <> 'voided'").get(shift.opened_at) as any;
+  const refunds = await db.prepare("SELECT COALESCE(SUM(r.amount),0) total FROM refunds r JOIN invoices i ON i.id=r.invoice_id WHERE r.method='cash' AND r.shift_id=? AND i.status <> 'voided'").get(shift.id) as any;
   const events = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type='cash_in' THEN amount ELSE -amount END),0) total FROM cash_drawer_events WHERE shift_id=?").get(shift.id) as any;
   const expected = Number(shift.opening_cash) + Number(cash.total || 0) - Number(refunds.total || 0) + Number(events.total || 0);
   await db.prepare("UPDATE cashier_shifts SET closed_at = datetime('now'), expected_cash = ?, closing_cash = ?, variance = ?, status = 'closed', notes = ? WHERE id = ?")

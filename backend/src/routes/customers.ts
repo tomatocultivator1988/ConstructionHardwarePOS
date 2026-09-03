@@ -67,7 +67,7 @@ router.get('/:id/statement', async (req: Request, res: Response) => {
     };
   });
 
-  const totalOwed = Math.round(invoices.reduce((s, i) => s + i.total - i.paid, 0) * 100) / 100;
+  const totalOwed = Math.round(invoices.reduce((s, i) => s + Math.max(0, i.total - i.paid), 0) * 100) / 100;
 
   res.json({ customer: { name: customer.name, address: customer.address, phone: customer.phone }, statements, total_owed: totalOwed, from, to });
 });
