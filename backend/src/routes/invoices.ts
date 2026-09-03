@@ -186,10 +186,12 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
   const getInvoice = db.prepare('SELECT * FROM invoices WHERE id = ?');
 
   const paymentId = uuidv4();
+  let invoiceBefore: any = null;
 
   try {
     const txn = db.transaction(async () => {
       const invoice = await getInvoice.get(req.params.id) as any;
+      invoiceBefore = invoice ? { ...invoice } : null;
       if (!invoice) throw new Error('Invoice not found');
       if (invoice.status === 'voided') throw new Error('Cannot pay a voided invoice');
       const activeShift = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1").get((req as any).user?.id) as any;
@@ -214,7 +216,8 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
     });
     await txn();
     clearCache('analytics:');
-    await logAudit((req as any).user?.id || null, 'update', 'invoice', req.params.id as string, `Payment of ${amount} via ${method}`, { status: 'before payment' }, { status: 'after payment', amount, method });
+    const invoiceAfter = await getInvoice.get(req.params.id);
+    await logAudit((req as any).user?.id || null, 'update', 'invoice', req.params.id as string, `Payment of ${amount} via ${method}`, invoiceBefore, invoiceAfter);
   } catch (e: any) {
     res.status(400).json({ error: e.message });
     return;
