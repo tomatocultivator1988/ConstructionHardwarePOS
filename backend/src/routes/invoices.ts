@@ -269,8 +269,16 @@ router.post('/:id/credit-memo', requireAdmin, async (req: Request, res: Response
   const number = `CM-${Date.now().toString().slice(-8)}`;
   const creditAmount = Math.round(amount * 100) / 100;
   const creditTax = Number(invoice.tax_rate) > 0 ? Math.round((creditAmount * Number(invoice.tax_rate) / (1 + Number(invoice.tax_rate))) * 100) / 100 : 0;
-  await db.prepare('INSERT INTO credit_memos (id, invoice_id, memo_number, reason, amount, tax_amount, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, invoice.id, number, reason, creditAmount, creditTax, (req as any).user?.id || null);
+  const createCreditMemo = db.transaction(async () => {
+    const current = await db.prepare('SELECT status, total FROM invoices WHERE id=?').get(invoice.id) as any;
+    const used = await db.prepare("SELECT COALESCE(SUM(amount),0) total FROM credit_memos WHERE invoice_id=? AND status='issued'").get(invoice.id) as any;
+    const returned = await db.prepare("SELECT COALESCE(SUM(total_credit),0) total FROM invoice_returns WHERE invoice_id=?").get(invoice.id) as any;
+    if (!current || current.status === 'voided') throw new Error('Cannot adjust a voided or missing invoice');
+    if (creditAmount > Math.max(0, Number(current.total) - Number(used.total) - Number(returned.total)) + 0.005) throw new Error('Credit amount exceeds remaining invoice value');
+    await db.prepare('INSERT INTO credit_memos (id, invoice_id, memo_number, reason, amount, tax_amount, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, invoice.id, number, reason, creditAmount, creditTax, (req as any).user?.id || null);
+  });
+  try { await createCreditMemo(); } catch (e: any) { res.status(409).json({ error: e.message }); return; }
   await logAudit((req as any).user?.id || null, 'create', 'credit_memo', id, `${number} for ${invoice.invoice_number}: ${reason}`, null, { invoice_id: invoice.id, memo_number: number, amount: creditAmount, tax_amount: creditTax, reason });
   res.status(201).json(await db.prepare('SELECT * FROM credit_memos WHERE id = ?').get(id));
 });
@@ -282,10 +290,6 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
   const method = typeof req.body?.method === 'string' ? req.body.method.trim() : '';
   if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
   if (!Number.isFinite(amount) || amount <= 0 || !PAYMENT_METHODS.includes(method.toLowerCase())) { res.status(400).json({ error: 'Valid refund amount and method are required' }); return; }
-  const paid = (await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM payments WHERE invoice_id = ?').get(invoice.id) as any).total;
-  const refunded = (await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id = ?').get(invoice.id) as any).total;
-  const availableRefund = Number(paid) - Number(refunded);
-  if (amount > availableRefund) { res.status(400).json({ error: 'Refund exceeds unapplied payments' }); return; }
   let shiftId: string | null = null;
   if (method.toLowerCase() === 'cash') {
     const shift = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1").get((req as any).user?.id) as any;
@@ -293,8 +297,17 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
     shiftId = shift.id;
   }
   const id = uuidv4();
-  await db.prepare('INSERT INTO refunds (id, invoice_id, amount, method, reference, created_by, shift_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, invoice.id, amount, method, req.body?.reference || null, (req as any).user?.id || null, shiftId);
+  const createRefund = db.transaction(async () => {
+    const current = await db.prepare('SELECT status FROM invoices WHERE id=?').get(invoice.id) as any;
+    const paid = await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM payments WHERE invoice_id=?').get(invoice.id) as any;
+    const refunded = await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id=?').get(invoice.id) as any;
+    const availableRefund = Number(paid.total) - Number(refunded.total);
+    if (!current || current.status === 'voided') throw new Error('Cannot refund a voided or missing invoice');
+    if (amount > availableRefund + 0.005) throw new Error('Refund exceeds unapplied payments');
+    await db.prepare('INSERT INTO refunds (id, invoice_id, amount, method, reference, created_by, shift_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, invoice.id, amount, method, req.body?.reference || null, (req as any).user?.id || null, shiftId);
+  });
+  try { await createRefund(); } catch (e: any) { res.status(409).json({ error: e.message }); return; }
   await logAudit((req as any).user?.id || null, 'create', 'refund', id, `Refund ${amount} via ${method} for ${invoice.invoice_number}`, null, { invoice_id: invoice.id, amount, method });
   res.status(201).json(await db.prepare('SELECT * FROM refunds WHERE id = ?').get(id));
 });
