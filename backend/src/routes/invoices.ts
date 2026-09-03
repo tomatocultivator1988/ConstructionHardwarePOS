@@ -213,11 +213,11 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
       } else if (totalPaid > 0) {
         await updateStatusPartial.run(req.params.id);
       }
+      const invoiceAfter = await getInvoice.get(req.params.id);
+      await logAudit((req as any).user?.id || null, 'update', 'invoice', req.params.id as string, `Payment of ${amount} via ${method}`, invoiceBefore, invoiceAfter);
     });
     await txn();
     clearCache('analytics:');
-    const invoiceAfter = await getInvoice.get(req.params.id);
-    await logAudit((req as any).user?.id || null, 'update', 'invoice', req.params.id as string, `Payment of ${amount} via ${method}`, invoiceBefore, invoiceAfter);
   } catch (e: any) {
     res.status(400).json({ error: e.message });
     return;
@@ -280,9 +280,9 @@ router.post('/:id/credit-memo', requireAdmin, async (req: Request, res: Response
     if (creditAmount > Math.max(0, Number(current.total) - Number(used.total) - Number(returned.total)) + 0.005) throw new Error('Credit amount exceeds remaining invoice value');
     await db.prepare('INSERT INTO credit_memos (id, invoice_id, memo_number, reason, amount, tax_amount, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(id, invoice.id, number, reason, creditAmount, creditTax, (req as any).user?.id || null);
+    await logAudit((req as any).user?.id || null, 'create', 'credit_memo', id, `${number} for ${invoice.invoice_number}: ${reason}`, null, { invoice_id: invoice.id, memo_number: number, amount: creditAmount, tax_amount: creditTax, reason });
   });
   try { await createCreditMemo(); } catch (e: any) { res.status(409).json({ error: e.message }); return; }
-  await logAudit((req as any).user?.id || null, 'create', 'credit_memo', id, `${number} for ${invoice.invoice_number}: ${reason}`, null, { invoice_id: invoice.id, memo_number: number, amount: creditAmount, tax_amount: creditTax, reason });
   res.status(201).json(await db.prepare('SELECT * FROM credit_memos WHERE id = ?').get(id));
 });
 
@@ -309,9 +309,9 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
     if (amount > availableRefund + 0.005) throw new Error('Refund exceeds unapplied payments');
     await db.prepare('INSERT INTO refunds (id, invoice_id, amount, method, reference, created_by, shift_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(id, invoice.id, amount, method, req.body?.reference || null, (req as any).user?.id || null, shiftId);
+    await logAudit((req as any).user?.id || null, 'create', 'refund', id, `Refund ${amount} via ${method} for ${invoice.invoice_number}`, null, { invoice_id: invoice.id, amount, method, shift_id: shiftId });
   });
   try { await createRefund(); } catch (e: any) { res.status(409).json({ error: e.message }); return; }
-  await logAudit((req as any).user?.id || null, 'create', 'refund', id, `Refund ${amount} via ${method} for ${invoice.invoice_number}`, null, { invoice_id: invoice.id, amount, method });
   res.status(201).json(await db.prepare('SELECT * FROM refunds WHERE id = ?').get(id));
 });
 
