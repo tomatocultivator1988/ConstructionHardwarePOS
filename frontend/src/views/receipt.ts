@@ -22,8 +22,8 @@ export async function printReceipt(id: string) {
 
     const isVat = businessSettings.vat_registered === '1' || Number(inv.tax_rate) > 0;
     const vatRate = isVat ? Number(inv.tax_rate) : 0;
-    const vatableSales = Number(inv.subtotal);
-    const vatAmount = Number(inv.tax_amount);
+    const vatAmount = Number((inv as any).adjusted_tax ?? inv.tax_amount);
+    const vatableSales = Math.max(0, adjustedTotal - vatAmount);
 
     printWin.document.write(`
       <!DOCTYPE html>

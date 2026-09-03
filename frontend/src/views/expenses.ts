@@ -8,6 +8,7 @@ const EXPENSE_CATEGORIES = [
   'Rent', 'Utilities', 'Labor/Salary', 'Delivery/Transport',
   'Tools & Equipment', 'Maintenance', 'Supplies', 'Other'
 ];
+const PAYMENT_METHODS = ['cash', 'bank', 'card', 'check', 'credit'];
 
 function catOptions(selected?: string) {
   return EXPENSE_CATEGORIES.map(c => `<option value="${esc(c)}"${c === selected ? ' selected' : ''}>${esc(c)}</option>`).join('');
@@ -40,7 +41,7 @@ export async function renderExpenses(): Promise<string> {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Vendor</th><th>Amount</th><th class="actions">Actions</th></tr></thead>
+        <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Vendor</th><th>Payment</th><th>Amount</th><th class="actions">Actions</th></tr></thead>
         <tbody>
           ${expenses.length ? expenses.map((e: Expense) => `
             <tr>
@@ -48,13 +49,14 @@ export async function renderExpenses(): Promise<string> {
               <td data-label="Category"><span class="status-badge" style="background:var(--c-primary-bg);color:var(--c-primary)">${esc(e.category)}</span></td>
               <td data-label="Description">${esc(e.description || '-')}</td>
               <td data-label="Vendor">${esc(e.vendor || '-')}</td>
+              <td data-label="Payment">${esc(e.payment_method || 'cash')}</td>
               <td data-label="Amount" style="font-weight:600">${fmtPeso(e.amount)}</td>
               <td data-label="" class="actions">
                 <button class="btn btn-primary btn-sm" onclick="editExpense('${e.id}')">Edit</button>
                 <button class="btn btn-danger btn-sm" onclick="delExpense('${e.id}')">Delete</button>
               </td>
             </tr>
-          `).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--c-text-muted);padding:2rem">No expenses recorded yet</td></tr>'}
+          `).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--c-text-muted);padding:2rem">No expenses recorded yet</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -76,6 +78,10 @@ export function showExpenseModal(data?: Expense) {
         <input id="exf-amount" type="number" step="0.01" min="0.01" value="${data?.amount ?? ''}" placeholder="0.00" />
         <div class="field-error" id="exf-amount-err"></div>
       </div>
+    </div>
+    <div class="form-group">
+      <label>Payment method *</label>
+      <select id="exf-payment">${PAYMENT_METHODS.map(m => `<option value="${m}"${(data?.payment_method || 'cash') === m ? ' selected' : ''}>${m[0].toUpperCase()+m.slice(1)}</option>`).join('')}</select>
     </div>
     <div class="form-row">
       <div class="form-group">
@@ -106,12 +112,13 @@ export async function createExpense() {
   const date = val('exf-date');
   const vendor = val('exf-vendor').trim();
   const description = val('exf-desc').trim();
+  const payment_method = val('exf-payment');
   if (!category) { setErr('exf-category-err', 'Category is required'); return; }
   if (isNaN(amount) || amount <= 0) { setErr('exf-amount-err', 'Amount must be > 0'); return; }
   if (!date) { setErr('exf-date-err', 'Date is required'); return; }
   disableBtn('exf-save-btn', true);
   try {
-    await apiPost('/expenses', { category, amount, expense_date: date, vendor: vendor || null, description: description || null });
+    await apiPost('/expenses', { category, amount, expense_date: date, vendor: vendor || null, description: description || null, payment_method });
     closeModal(); loadView('expenses');
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('exf-save-btn', false); }
@@ -124,12 +131,13 @@ export async function updateExpense(id: string) {
   const date = val('exf-date');
   const vendor = val('exf-vendor').trim();
   const description = val('exf-desc').trim();
+  const payment_method = val('exf-payment');
   if (!category) { setErr('exf-category-err', 'Category is required'); return; }
   if (isNaN(amount) || amount <= 0) { setErr('exf-amount-err', 'Amount must be > 0'); return; }
   if (!date) { setErr('exf-date-err', 'Date is required'); return; }
   disableBtn('exf-save-btn', true);
   try {
-    await apiPut(`/expenses/${id}`, { category, amount, expense_date: date, vendor: vendor || null, description: description || null });
+    await apiPut(`/expenses/${id}`, { category, amount, expense_date: date, vendor: vendor || null, description: description || null, payment_method });
     closeModal(); loadView('expenses');
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('exf-save-btn', false); }

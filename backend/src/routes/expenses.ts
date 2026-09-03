@@ -10,6 +10,7 @@ const EXPENSE_CATEGORIES = [
   'Rent', 'Utilities', 'Labor/Salary', 'Delivery/Transport',
   'Tools & Equipment', 'Maintenance', 'Supplies', 'Other'
 ];
+const PAYMENT_METHODS = ['cash', 'bank', 'card', 'check', 'credit'];
 
 function validateExpense(body: any, existing?: any) {
   const errors: string[] = [];
@@ -18,6 +19,7 @@ function validateExpense(body: any, existing?: any) {
   const expense_date = body.expense_date ?? existing?.expense_date;
   const description = body.description !== undefined ? body.description : existing?.description;
   const vendor = body.vendor !== undefined ? body.vendor : existing?.vendor;
+  const payment_method = body.payment_method ?? existing?.payment_method ?? 'cash';
 
   if (body.category !== undefined && (!category || !EXPENSE_CATEGORIES.includes(category))) {
     errors.push('Valid category is required');
@@ -31,7 +33,8 @@ function validateExpense(body: any, existing?: any) {
   if (body.expense_date !== undefined && !expense_date) {
     errors.push('Date is required');
   }
-  return { category, amount, description, vendor, expense_date, errors };
+  if (!PAYMENT_METHODS.includes(payment_method)) errors.push('Valid payment method is required');
+  return { category, amount, description, vendor, expense_date, payment_method, errors };
 }
 
 router.get('/', async (req: Request, res: Response) => {
@@ -101,8 +104,8 @@ router.post('/', async (req: Request, res: Response) => {
   }
   const id = uuidv4();
   await db.prepare(
-    'INSERT INTO expenses (id, category, amount, description, vendor, expense_date) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(id, validation.category, validation.amount, validation.description || null, validation.vendor || null, validation.expense_date);
+    'INSERT INTO expenses (id, category, amount, description, vendor, expense_date, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, validation.category, validation.amount, validation.description || null, validation.vendor || null, validation.expense_date, validation.payment_method);
   const expense = await db.prepare('SELECT * FROM expenses WHERE id = ?').get(id);
   await logAudit((req as any).user?.id || null, 'create', 'expense', id, `${validation.category} — ${validation.amount}`, null, expense);
   res.status(201).json(expense);
@@ -118,8 +121,8 @@ router.put('/:id', async (req: Request, res: Response) => {
     return;
   }
   await db.prepare(
-    'UPDATE expenses SET category=?, amount=?, description=?, vendor=?, expense_date=? WHERE id=?'
-  ).run(validation.category, validation.amount, validation.description || null, validation.vendor || null, validation.expense_date, req.params.id);
+    'UPDATE expenses SET category=?, amount=?, description=?, vendor=?, expense_date=?, payment_method=? WHERE id=?'
+  ).run(validation.category, validation.amount, validation.description || null, validation.vendor || null, validation.expense_date, validation.payment_method, req.params.id);
   const updated = await db.prepare('SELECT * FROM expenses WHERE id = ?').get(req.params.id);
   await logAudit((req as any).user?.id || null, 'update', 'expense', req.params.id as string, undefined, existing, updated);
   res.json(updated);

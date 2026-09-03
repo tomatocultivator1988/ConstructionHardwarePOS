@@ -38,6 +38,7 @@ export interface Payment {
   id: string;
   invoice_id: string;
   amount: number;
+  payment_method: string;
   method: string;
   payment_date: string;
   notes: string | null;

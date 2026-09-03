@@ -12,6 +12,7 @@ router.get('/', async (req: Request, res: Response) => {
   const baseQuery = `
     SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name, c.address AS customer_address, c.tin AS customer_tin,
       i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) AS adjusted_total,
+      i.tax_amount - COALESCE((SELECT SUM(tax_amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - CASE WHEN i.tax_rate > 0 THEN COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) * i.tax_rate / (1+i.tax_rate) ELSE 0 END AS adjusted_tax,
       COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0) AS net_paid
     FROM invoices i
     LEFT JOIN customers c ON c.id = i.customer_id
@@ -32,6 +33,7 @@ router.get('/:id', async (req: Request, res: Response) => {
   const invoice = await db.prepare(`
     SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name, c.address AS customer_address, c.tin AS customer_tin,
       i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) AS adjusted_total,
+      i.tax_amount - COALESCE((SELECT SUM(tax_amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - CASE WHEN i.tax_rate > 0 THEN COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) * i.tax_rate / (1+i.tax_rate) ELSE 0 END AS adjusted_tax,
       COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0) AS net_paid
     FROM invoices i
     LEFT JOIN customers c ON c.id = i.customer_id
@@ -281,9 +283,15 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
   const refunded = (await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id = ?').get(invoice.id) as any).total;
   const availableRefund = Number(paid) - Number(refunded);
   if (amount > availableRefund) { res.status(400).json({ error: 'Refund exceeds unapplied payments' }); return; }
+  let shiftId: string | null = null;
+  if (method.toLowerCase() === 'cash') {
+    const shift = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1").get((req as any).user?.id) as any;
+    if (!shift) { res.status(409).json({ error: 'Open cashier shift required for cash refunds' }); return; }
+    shiftId = shift.id;
+  }
   const id = uuidv4();
-  await db.prepare('INSERT INTO refunds (id, invoice_id, amount, method, reference, created_by) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(id, invoice.id, amount, method, req.body?.reference || null, (req as any).user?.id || null);
+  await db.prepare('INSERT INTO refunds (id, invoice_id, amount, method, reference, created_by, shift_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(id, invoice.id, amount, method, req.body?.reference || null, (req as any).user?.id || null, shiftId);
   await logAudit((req as any).user?.id || null, 'create', 'refund', id, `Refund ${amount} via ${method} for ${invoice.invoice_number}`, null, { invoice_id: invoice.id, amount, method });
   res.status(201).json(await db.prepare('SELECT * FROM refunds WHERE id = ?').get(id));
 });

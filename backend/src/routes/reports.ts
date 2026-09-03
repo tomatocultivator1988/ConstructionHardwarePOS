@@ -14,9 +14,9 @@ router.get('/export', async (req: Request, res: Response) => {
   const from = (req.query.from as string) || businessDate();
   const to = (req.query.to as string) || from;
   const rows = await db.prepare(`SELECT i.invoice_number, i.issued_date, COALESCE(c.name,'Walk-in') customer_name,
-    COALESCE(c.tin,'') customer_tin, i.subtotal, i.tax_rate, i.tax_amount, i.total, i.status,
-    COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) paid
-    FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id
+    COALESCE(c.tin,'') customer_tin, f.subtotal, f.tax_rate, f.adjusted_tax tax_amount, f.adjusted_total total, f.status,
+    f.net_collections paid
+    FROM v_invoice_financials f JOIN invoices i ON i.id=f.invoice_id LEFT JOIN customers c ON c.id=i.customer_id
     WHERE date(i.issued_date) BETWEEN ? AND ? ORDER BY i.issued_date, i.invoice_number`).all(from, to) as any[];
   const cell = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const csv = ['Invoice Number,Date,Buyer,Buyer TIN,Subtotal,Tax Rate,Tax Amount,Total,Status,Paid', ...rows.map(r =>
@@ -32,10 +32,10 @@ router.get('/books', async (req: Request, res: Response) => {
   const from = (req.query.from as string) || businessDate();
   const to = (req.query.to as string) || from;
   const [sales, receipts, expenses, receivables] = await Promise.all([
-    db.prepare(`SELECT i.invoice_number, i.issued_date, COALESCE(c.name,'Walk-in') buyer, i.subtotal, i.tax_amount, i.total, i.status FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE date(i.issued_date) BETWEEN ? AND ? ORDER BY i.issued_date`).all(from,to),
-    db.prepare(`SELECT p.payment_date, i.invoice_number, p.method, p.amount FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE date(p.payment_date) BETWEEN ? AND ? ORDER BY p.payment_date`).all(from,to),
-    db.prepare(`SELECT expense_date, category, vendor, description, amount FROM expenses WHERE date(expense_date) BETWEEN ? AND ? ORDER BY expense_date`).all(from,to),
-    db.prepare(`SELECT i.invoice_number, COALESCE(c.name,'Walk-in') buyer, i.total, COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) paid, i.total-COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) balance FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE i.status <> 'voided' AND i.total > COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) ORDER BY i.issued_date`).all(),
+    db.prepare(`SELECT f.invoice_number, f.issued_date, COALESCE(c.name,'Walk-in') buyer, f.net_sales, f.adjusted_tax, f.adjusted_total, f.status FROM v_invoice_financials f LEFT JOIN customers c ON c.id=f.customer_id WHERE date(f.issued_date) BETWEEN ? AND ? ORDER BY f.issued_date`).all(from,to),
+    db.prepare(`SELECT p.payment_date, i.invoice_number, p.method, p.amount FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE i.status <> 'voided' AND date(p.payment_date) BETWEEN ? AND ? ORDER BY p.payment_date`).all(from,to),
+    db.prepare(`SELECT expense_date, category, vendor, description, amount, payment_method FROM expenses WHERE date(expense_date) BETWEEN ? AND ? ORDER BY expense_date`).all(from,to),
+    db.prepare(`SELECT f.invoice_number, COALESCE(c.name,'Walk-in') buyer, f.adjusted_total, f.net_collections paid, f.adjusted_total-f.net_collections balance FROM v_invoice_financials f LEFT JOIN customers c ON c.id=f.customer_id WHERE f.status <> 'voided' AND f.adjusted_total > f.net_collections ORDER BY f.issued_date`).all(),
   ]);
   res.json({ from, to, sales, receipts, expenses, receivables });
 });
@@ -45,9 +45,9 @@ router.get('/cash-flow', async (req: Request, res: Response) => {
   const from = (req.query.from as string) || businessDate();
   const to = (req.query.to as string) || from;
   const [receipts, refunds, expenses] = await Promise.all([
-    db.prepare("SELECT COALESCE(SUM(amount),0) total FROM payments WHERE method='cash' AND date(payment_date) BETWEEN ? AND ?").get(from,to),
-    db.prepare("SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE method='cash' AND date(created_at) BETWEEN ? AND ?").get(from,to),
-    db.prepare("SELECT COALESCE(SUM(amount),0) total FROM expenses WHERE date(expense_date) BETWEEN ? AND ?").get(from,to),
+    db.prepare("SELECT COALESCE(SUM(p.amount),0) total FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE p.method='cash' AND i.status <> 'voided' AND date(p.payment_date) BETWEEN ? AND ?").get(from,to),
+    db.prepare("SELECT COALESCE(SUM(r.amount),0) total FROM refunds r JOIN invoices i ON i.id=r.invoice_id WHERE r.method='cash' AND i.status <> 'voided' AND date(r.created_at) BETWEEN ? AND ?").get(from,to),
+    db.prepare("SELECT COALESCE(SUM(amount),0) total FROM expenses WHERE payment_method='cash' AND date(expense_date) BETWEEN ? AND ?").get(from,to),
   ]);
   const cashReceipts = Number((receipts as any).total || 0);
   const cashRefunds = Number((refunds as any).total || 0);
@@ -97,15 +97,13 @@ router.get('/daily', async (req: Request, res: Response) => {
       FROM invoices i WHERE date(i.issued_date) = ?
     `).get(date) as Promise<any>,
     db.prepare(`
-      SELECT COALESCE(SUM(ii.total - (ii.quantity * COALESCE(ii.cost_price, m.cost_price, 0))), 0) AS profit
-      FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
-      LEFT JOIN materials m ON m.id = ii.material_id
-      WHERE date(i.issued_date) = ?
-    `).get(date) as Promise<any>,
+      SELECT COALESCE(SUM(f.net_sales),0) - COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price, m.cost_price, 0)) FROM invoice_items ii JOIN invoices i2 ON i2.id=ii.invoice_id LEFT JOIN materials m ON m.id=ii.material_id WHERE i2.status <> 'voided' AND date(i2.issued_date)=?),0) AS profit
+      FROM v_invoice_financials f WHERE f.status <> 'voided' AND date(f.issued_date)=?
+    `).get(date, date) as Promise<any>,
     db.prepare(`
       SELECT p.method, SUM(p.amount) AS total
       FROM payments p JOIN invoices i ON i.id = p.invoice_id
-      WHERE date(p.payment_date) = ?
+      WHERE i.status <> 'voided' AND date(p.payment_date) = ?
       GROUP BY p.method ORDER BY total DESC
     `).all(date) as Promise<any[]>,
   ]);

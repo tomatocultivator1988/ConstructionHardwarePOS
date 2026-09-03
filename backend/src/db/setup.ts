@@ -98,6 +98,7 @@ async function initTables() {
       id TEXT PRIMARY KEY,
       invoice_id TEXT NOT NULL,
       amount REAL NOT NULL,
+      payment_method TEXT NOT NULL DEFAULT 'cash',
       method TEXT NOT NULL,
       payment_date TEXT DEFAULT (datetime('now')),
       notes TEXT,
@@ -241,6 +242,7 @@ async function initTables() {
       id TEXT PRIMARY KEY,
       invoice_id TEXT NOT NULL,
       credit_memo_id TEXT,
+      shift_id TEXT,
       amount REAL NOT NULL CHECK (amount > 0),
       method TEXT NOT NULL,
       reference TEXT,
@@ -303,6 +305,10 @@ async function migrateSchema() {
   if (!invoiceCols.includes('void_reason')) await db.exec("ALTER TABLE invoices ADD COLUMN void_reason TEXT");
   const paymentInfo = (await db.prepare("PRAGMA table_info('payments')").all()) as any[];
   if (!paymentInfo.some((r: any) => r.name === 'shift_id')) await db.exec("ALTER TABLE payments ADD COLUMN shift_id TEXT");
+  const expenseInfo = (await db.prepare("PRAGMA table_info('expenses')").all()) as any[];
+  if (!expenseInfo.some((r: any) => r.name === 'payment_method')) await db.exec("ALTER TABLE expenses ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'cash'");
+  const refundInfo = (await db.prepare("PRAGMA table_info('refunds')").all()) as any[];
+  if (!refundInfo.some((r: any) => r.name === 'shift_id')) await db.exec("ALTER TABLE refunds ADD COLUMN shift_id TEXT");
   const creditInfo = (await db.prepare("PRAGMA table_info('credit_memos')").all()) as any[];
   if (!creditInfo.some((r: any) => r.name === 'tax_amount')) await db.exec("ALTER TABLE credit_memos ADD COLUMN tax_amount REAL NOT NULL DEFAULT 0");
   const returnInfo = (await db.prepare("PRAGMA table_info('invoice_returns')").all()) as any[];
@@ -362,6 +368,7 @@ async function migrateSchema() {
   await db.exec('CREATE INDEX IF NOT EXISTS idx_shifts_status ON cashier_shifts(status)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_cash_events_shift ON cash_drawer_events(shift_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_payments_shift ON payments(shift_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_refunds_shift ON refunds(shift_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_credit_memos_invoice ON credit_memos(invoice_id)');
 
   await db.exec('DROP VIEW IF EXISTS v_invoice_profit_margin');
