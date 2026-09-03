@@ -859,6 +859,10 @@ body.show-install #install-prompt { display: flex; }
 
 .mobile-details-btn { display: none; }
 
+@media (max-width: 680px) {
+  .mobile-details-btn { display: inline-flex; }
+}
+
 /* Small phones */
 @media (max-width: 480px) {
   #bottom-nav .nav-btn span { display: block; }
