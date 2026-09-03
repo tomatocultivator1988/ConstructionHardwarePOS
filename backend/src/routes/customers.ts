@@ -46,7 +46,7 @@ router.get('/:id/statement', async (req: Request, res: Response) => {
       i.status, i.issued_date, i.due_date,
       COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) - COALESCE((SELECT SUM(amount) FROM refunds WHERE invoice_id=i.id),0) AS paid
     FROM invoices i
-    WHERE i.customer_id = ?
+    WHERE i.customer_id = ? AND i.status <> 'voided'
   `;
   const params: any[] = [req.params.id];
 

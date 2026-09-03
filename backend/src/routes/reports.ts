@@ -87,14 +87,14 @@ router.get('/daily', async (req: Request, res: Response) => {
         COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) - COALESCE((SELECT SUM(amount) FROM refunds WHERE invoice_id=i.id),0) AS paid
       FROM invoices i
       LEFT JOIN customers c ON c.id = i.customer_id
-      WHERE date(i.issued_date) = ?
+      WHERE i.status <> 'voided' AND date(i.issued_date) = ?
       ORDER BY i.created_at DESC
     `).all(date) as Promise<any[]>,
     db.prepare(`
       SELECT COALESCE(SUM(i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0)), 0) AS gross_sales,
         COALESCE(SUM(i.tax_amount - COALESCE((SELECT SUM(tax_amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - CASE WHEN i.tax_rate > 0 THEN COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) * i.tax_rate / (1+i.tax_rate) ELSE 0 END), 0) AS tax_collected,
         COUNT(*) AS invoice_count
-      FROM invoices i WHERE date(i.issued_date) = ?
+      FROM invoices i WHERE i.status <> 'voided' AND date(i.issued_date) = ?
     `).get(date) as Promise<any>,
     db.prepare(`
       SELECT COALESCE(SUM(f.net_sales),0) - COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price, m.cost_price, 0)) FROM invoice_items ii JOIN invoices i2 ON i2.id=ii.invoice_id LEFT JOIN materials m ON m.id=ii.material_id WHERE i2.status <> 'voided' AND date(i2.issued_date)=?),0) AS profit
