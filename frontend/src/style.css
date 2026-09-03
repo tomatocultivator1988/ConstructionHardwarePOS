@@ -852,7 +852,12 @@ body.show-install #install-prompt { display: flex; }
   }
   .table-wrap td.actions::before { display: none; }
   td.actions { justify-content: flex-end; }
+  .mobile-details-btn { display: inline-flex; }
+  .material-secondary, .customer-secondary { display: none !important; }
+  .material-row.expanded .material-secondary, .customer-row.expanded .customer-secondary { display: flex !important; }
 }
+
+.mobile-details-btn { display: none; }
 
 /* Small phones */
 @media (max-width: 480px) {

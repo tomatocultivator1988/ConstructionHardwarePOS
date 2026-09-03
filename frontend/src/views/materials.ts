@@ -39,16 +39,17 @@ export async function renderMaterials(): Promise<string> {
             const isLow = m.stock <= m.reorder_point;
             const profit = m.price_per_unit - (m.cost_price || 0);
             const margin = m.price_per_unit > 0 ? (profit / m.price_per_unit * 100) : 0;
-            return `<tr class="${isLow ? 'low-stock' : ''}">
+            return `<tr class="material-row ${isLow ? 'low-stock' : ''}" data-material-row="${m.id}">
               <td data-label="Name" style="font-weight:600">${esc(m.name)}</td>
-              <td data-label="Category"><span style="font-size:var(--fs-xs);color:var(--c-text-muted)">${esc(m.category || '-')}</span></td>
-              <td data-label="Unit">${esc(m.unit)}</td>
+              <td class="material-secondary" data-label="Category"><span style="font-size:var(--fs-xs);color:var(--c-text-muted)">${esc(m.category || '-')}</span></td>
+              <td class="material-secondary" data-label="Unit">${esc(m.unit)}</td>
               <td data-label="Stock">${m.stock}${isLow ? ' ⚠' : ''}</td>
-              <td data-label="Cost">₱${(m.cost_price || 0).toFixed(2)}</td>
+              <td class="material-secondary" data-label="Cost">₱${(m.cost_price || 0).toFixed(2)}</td>
               <td data-label="Retail">₱${m.price_per_unit.toFixed(2)}</td>
-              <td data-label="Profit" style="color:${profit > 0 ? 'var(--c-success)' : profit < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">₱${profit.toFixed(2)}</td>
-              <td data-label="Margin" style="color:${margin > 0 ? 'var(--c-success)' : margin < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${margin.toFixed(1)}%</td>
+              <td class="material-secondary" data-label="Profit" style="color:${profit > 0 ? 'var(--c-success)' : profit < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">₱${profit.toFixed(2)}</td>
+              <td class="material-secondary" data-label="Margin" style="color:${margin > 0 ? 'var(--c-success)' : margin < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${margin.toFixed(1)}%</td>
               <td data-label="" class="actions">
+                <button class="btn btn-sm mobile-details-btn" onclick="toggleMobileDetails('${m.id}')">Details</button>
                 <button class="btn btn-primary btn-sm" onclick="editMaterial('${m.id}')">Edit</button>
                 <button class="btn btn-sm" onclick="showStockHistory('${m.id}')">History</button>
                 <button class="btn btn-danger btn-sm" onclick="delMaterial('${m.id}')">Delete</button>
@@ -209,4 +210,8 @@ export async function filterMaterials() {
       </td>
     </tr>`;
   }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--c-text-muted);padding:2rem">No materials found</td></tr>';
+}
+
+export function toggleMobileDetails(id: string) {
+  document.querySelector(`[data-material-row="${id}"]`)?.classList.toggle('expanded');
 }

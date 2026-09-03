@@ -20,12 +20,13 @@ export async function renderCustomers(): Promise<string> {
         <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Type</th><th class="actions">Actions</th></tr></thead>
         <tbody>
           ${customers.length ? customers.map((c: Customer) => `
-            <tr>
+            <tr class="customer-row" data-customer-row="${c.id}">
               <td data-label="Name" style="font-weight:600">${esc(c.name)}</td>
               <td data-label="Phone">${esc(c.phone || '-')}</td>
-              <td data-label="Email">${esc(c.email || '-')}</td>
+              <td class="customer-secondary" data-label="Email">${esc(c.email || '-')}</td>
               <td data-label="Type">${c.is_wholesale ? '<span class="status-badge" style="background:var(--c-primary-bg);color:var(--c-primary)">Wholesale</span>' : '<span style="color:var(--c-text-muted);font-size:var(--fs-xs)">Retail</span>'}</td>
               <td data-label="" class="actions">
+                <button class="btn btn-sm mobile-details-btn" onclick="toggleCustomerDetails('${c.id}')">Details</button>
                 <button class="btn btn-primary btn-sm" onclick="editCustomer('${c.id}')">Edit</button>
                 <button class="btn btn-sm" onclick="showCustomerStatement('${c.id}')">SOA</button>
                 <button class="btn btn-danger btn-sm" onclick="delCustomer('${c.id}')">Delete</button>
@@ -36,6 +37,10 @@ export async function renderCustomers(): Promise<string> {
       </table>
     </div>
   `;
+}
+
+export function toggleCustomerDetails(id: string) {
+  document.querySelector(`[data-customer-row="${id}"]`)?.classList.toggle('expanded');
 }
 
 export function showCustomerModal(data?: Customer) {
