@@ -7,21 +7,28 @@ import { clearCache } from '../lib/cache';
 
 const router = Router();
 
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
   const db = getDb();
-  const invoices = await db.prepare(`
-    SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name
+  const baseQuery = `
+    SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name, c.address AS customer_address, c.tin AS customer_tin
     FROM invoices i
     LEFT JOIN customers c ON c.id = i.customer_id
-    ORDER BY i.created_at DESC
-  `).all();
-  res.json(invoices);
+    ORDER BY i.created_at DESC`;
+  if (req.query.page !== undefined) {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 15));
+    const total = Number((await db.prepare('SELECT COUNT(*) total FROM invoices').get() as any).total);
+    const data = await db.prepare(`${baseQuery} LIMIT ? OFFSET ?`).all(pageSize, (page - 1) * pageSize);
+    res.json({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+    return;
+  }
+  res.json(await db.prepare(baseQuery).all());
 });
 
 router.get('/:id', async (req: Request, res: Response) => {
   const db = getDb();
   const invoice = await db.prepare(`
-    SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name
+    SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name, c.address AS customer_address, c.tin AS customer_tin
     FROM invoices i
     LEFT JOIN customers c ON c.id = i.customer_id
     WHERE i.id = ?

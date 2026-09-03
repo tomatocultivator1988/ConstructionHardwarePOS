@@ -26,6 +26,20 @@ router.get('/export', async (req: Request, res: Response) => {
   res.send('\ufeff' + csv);
 });
 
+// Books-oriented summaries: sales journal, cash receipts, purchases/expenses and receivables.
+router.get('/books', async (req: Request, res: Response) => {
+  const db = getDb();
+  const from = (req.query.from as string) || businessDate();
+  const to = (req.query.to as string) || from;
+  const [sales, receipts, expenses, receivables] = await Promise.all([
+    db.prepare(`SELECT i.invoice_number, i.issued_date, COALESCE(c.name,'Walk-in') buyer, i.subtotal, i.tax_amount, i.total, i.status FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE date(i.issued_date) BETWEEN ? AND ? ORDER BY i.issued_date`).all(from,to),
+    db.prepare(`SELECT p.payment_date, i.invoice_number, p.method, p.amount FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE date(p.payment_date) BETWEEN ? AND ? ORDER BY p.payment_date`).all(from,to),
+    db.prepare(`SELECT expense_date, category, vendor, description, amount FROM expenses WHERE date(expense_date) BETWEEN ? AND ? ORDER BY expense_date`).all(from,to),
+    db.prepare(`SELECT i.invoice_number, COALESCE(c.name,'Walk-in') buyer, i.total, COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) paid, i.total-COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) balance FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE i.status <> 'voided' AND i.total > COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) ORDER BY i.issued_date`).all(),
+  ]);
+  res.json({ from, to, sales, receipts, expenses, receivables });
+});
+
 // ─── Daily Sales Report ───
 router.get('/daily', async (req: Request, res: Response) => {
   const db = getDb();

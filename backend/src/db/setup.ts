@@ -190,6 +190,9 @@ async function initTables() {
       entity TEXT NOT NULL,
       entity_id TEXT,
       details TEXT,
+      old_values TEXT,
+      new_values TEXT,
+      ip_address TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -283,6 +286,11 @@ async function migrateSchema() {
   if (!invoiceCols.includes('voided_at')) await db.exec("ALTER TABLE invoices ADD COLUMN voided_at TEXT");
   if (!invoiceCols.includes('voided_by')) await db.exec("ALTER TABLE invoices ADD COLUMN voided_by TEXT");
   if (!invoiceCols.includes('void_reason')) await db.exec("ALTER TABLE invoices ADD COLUMN void_reason TEXT");
+  const auditInfo = (await db.prepare("PRAGMA table_info('audit_log')").all()) as any[];
+  const auditCols = auditInfo.map((r: any) => r.name);
+  if (!auditCols.includes('old_values')) await db.exec("ALTER TABLE audit_log ADD COLUMN old_values TEXT");
+  if (!auditCols.includes('new_values')) await db.exec("ALTER TABLE audit_log ADD COLUMN new_values TEXT");
+  if (!auditCols.includes('ip_address')) await db.exec("ALTER TABLE audit_log ADD COLUMN ip_address TEXT");
 
   const existingIndexes = (await db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all()) as any[];
   const indexNames = existingIndexes.map((r: any) => r.name);

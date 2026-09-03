@@ -6,6 +6,8 @@ import type { Invoice } from '../lib/types';
 export async function printReceipt(id: string) {
   try {
     const inv = await apiGet<Invoice>(`/invoices/${id}`);
+    const business = await Promise.all(['business_name','business_address','business_tin','business_rdo','vat_registered'].map(async key => [key, (await apiGet<{ value: string }>(`/settings/${key}`)).value || '']));
+    const businessSettings = Object.fromEntries(business);
     const totalPaid = inv.payments.reduce((s: number, p: any) => s + p.amount, 0);
     const balance = inv.total - totalPaid;
 
@@ -17,7 +19,7 @@ export async function printReceipt(id: string) {
     const timeStr = issuedDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
     const cashier = 'Admin';
 
-    const isVat = Number(inv.tax_rate) > 0;
+    const isVat = businessSettings.vat_registered === '1' || Number(inv.tax_rate) > 0;
     const vatRate = isVat ? Number(inv.tax_rate) : 0;
     const vatableSales = Number(inv.subtotal);
     const vatAmount = Number(inv.tax_amount);
@@ -80,10 +82,10 @@ export async function printReceipt(id: string) {
         <div class="receipt" style="position:relative">
           ${inv.status === 'paid' ? '<div class="status-stamp" style="border-color:#2e7d32;color:#2e7d32">PAID</div>' : inv.status === 'partial' ? '<div class="status-stamp" style="border-color:#e65100;color:#e65100">PARTIAL</div>' : ''}
           <div class="brand">
-            <div class="name">BuildPro Construction Supply</div>
+            <div class="name">${esc(businessSettings.business_name || 'BuildPro Construction Supply')}</div>
             <div class="nature">Hardware &amp; Building Materials Dealer</div>
-            <div class="addr">123 Rizal Avenue, San Miguel, Manila 1001<br>Tel: (02) 8123-4567 &bull; Email: info@buildpro.com</div>
-            <div class="bir-line">VAT Reg. TIN: 123-456-789-000 &bull; BIR ATP No. R1-12345-2026</div>
+            <div class="addr">${esc(businessSettings.business_address || 'Business address not configured')}</div>
+            <div class="bir-line">${isVat ? 'VAT Reg.' : 'Non-VAT'} TIN: ${esc(businessSettings.business_tin || 'Not configured')} &bull; RDO/Branch: ${esc(businessSettings.business_rdo || 'Not configured')}</div>
           </div>
           <div class="or-title">SALES INVOICE / OFFICIAL RECEIPT</div>
           <table class="info-grid">
@@ -92,8 +94,8 @@ export async function printReceipt(id: string) {
             <tr><td class="lbl">Time</td><td class="val" colspan="3">${esc(timeStr)}</td></tr>
             <tr><td class="lbl bdr-b" colspan="4"></td></tr>
             <tr><td class="lbl">Sold To</td><td class="val" colspan="3">${esc(inv.customer_name)}</td></tr>
-            <tr><td class="lbl">Address</td><td class="val" colspan="3">${esc(inv.customer_name === 'Walk-in' ? 'N/A' : 'Per Customer Record')}</td></tr>
-            <tr><td class="lbl">TIN</td><td class="val" colspan="3">Not Provided</td></tr>
+            <tr><td class="lbl">Address</td><td class="val" colspan="3">${esc((inv as any).customer_address || (inv.customer_name === 'Walk-in' ? 'N/A' : 'Not Provided'))}</td></tr>
+            <tr><td class="lbl">TIN</td><td class="val" colspan="3">${esc((inv as any).customer_tin || 'Not Provided')}</td></tr>
             <tr><td class="lbl">Cashier</td><td class="val" colspan="3">${esc(cashier)}</td></tr>
           </table>
           <table class="items-table">
@@ -121,11 +123,11 @@ export async function printReceipt(id: string) {
             <div><div class="bar">_________________________</div><div>Customer Signature</div></div>
           </div>
           <div class="bir-footer">
-            <b>BUILDPRO CONSTRUCTION SUPPLY</b><br>
-            123 Rizal Avenue, San Miguel, Manila &bull; VAT Reg. TIN: 123-456-789-000<br>
-            BIR ATP No. R1-12345-2026 &bull; Serial No. ${esc(inv.invoice_number)}<br>
-            This document is NOT valid for claim of input tax if issued by Non-VAT registered entity.<br>
-            This serves as your official receipt for the transaction herein described.<br>
+            <b>${esc(businessSettings.business_name || 'BuildPro Construction Supply')}</b><br>
+            ${esc(businessSettings.business_address || 'Business address not configured')} &bull; TIN: ${esc(businessSettings.business_tin || 'Not configured')}<br>
+            RDO/Branch: ${esc(businessSettings.business_rdo || 'Not configured')} &bull; Serial No. ${esc(inv.invoice_number)}<br>
+            ${isVat ? 'VAT invoice — retain this document for your records.' : 'Non-VAT invoice — not valid for input tax credit.'}<br>
+            This document is subject to the taxpayer\'s approved BIR registration details.<br>
             Issued ${esc(dateStr)} at ${esc(timeStr)}
           </div>
         </div>

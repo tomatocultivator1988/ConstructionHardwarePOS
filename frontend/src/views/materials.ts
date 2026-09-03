@@ -20,7 +20,9 @@ function catOptions(selected?: string) {
 }
 
 export async function renderMaterials(): Promise<string> {
-  const materials = await apiGet<Material[]>('/materials');
+  const response = await apiGet<Material[] | { data: Material[]; total: number }>(`/materials?page=${materialPage}&pageSize=${MATERIAL_PAGE_SIZE}`);
+  const materials = Array.isArray(response) ? response : response.data;
+  const totalMaterials = Array.isArray(response) ? response.length : response.total;
   (window as any).__materialNames = Object.fromEntries(materials.map((m: Material) => [m.id, m.name]));
   return `
     <div class="page-header">
@@ -37,7 +39,7 @@ export async function renderMaterials(): Promise<string> {
       <table>
         <thead><tr><th>Name</th><th>Category</th><th>Unit</th><th>Stock</th><th>Cost</th><th>Retail</th><th>Profit</th><th>Margin</th><th class="actions">Actions</th></tr></thead>
         <tbody>
-          ${materials.length ? materials.slice((materialPage - 1) * MATERIAL_PAGE_SIZE, materialPage * MATERIAL_PAGE_SIZE).map((m: Material) => {
+          ${materials.length ? materials.map((m: Material) => {
             const isLow = m.stock <= m.reorder_point;
             const profit = m.price_per_unit - (m.cost_price || 0);
             const margin = m.price_per_unit > 0 ? (profit / m.price_per_unit * 100) : 0;
@@ -61,7 +63,7 @@ export async function renderMaterials(): Promise<string> {
         </tbody>
       </table>
     </div>
-    <div id="materials-pagination">${materials.length > MATERIAL_PAGE_SIZE ? paginationMarkup(materials.length) : ''}</div>
+    <div id="materials-pagination">${totalMaterials > MATERIAL_PAGE_SIZE ? paginationMarkup(totalMaterials) : ''}</div>
   `;
 }
 

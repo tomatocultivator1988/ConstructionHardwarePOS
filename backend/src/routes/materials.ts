@@ -43,8 +43,17 @@ router.get('/', async (req: Request, res: Response) => {
   }
   if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
   query += ' ORDER BY created_at DESC';
-  const materials = await db.prepare(query).all(...params);
-  res.json(materials);
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 15));
+  if (req.query.page !== undefined) {
+    const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) AS total');
+    const total = Number((await db.prepare(countQuery).get(...params) as any).total);
+    query += ' LIMIT ? OFFSET ?';
+    const rows = await db.prepare(query).all(...params, pageSize, (page - 1) * pageSize);
+    res.json({ data: rows, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+    return;
+  }
+  res.json(await db.prepare(query).all(...params));
 });
 
 router.get('/:id', async (req: Request, res: Response) => {

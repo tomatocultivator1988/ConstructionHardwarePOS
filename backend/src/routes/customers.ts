@@ -10,8 +10,15 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 router.get('/', async (_req: Request, res: Response) => {
   const db = getDb();
-  const customers = await db.prepare('SELECT * FROM customers ORDER BY created_at DESC').all();
-  res.json(customers);
+  const page = Math.max(1, Number((_req as any).query.page) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number((_req as any).query.pageSize) || 15));
+  if ((_req as any).query.page !== undefined) {
+    const total = Number((await db.prepare('SELECT COUNT(*) total FROM customers').get() as any).total);
+    const data = await db.prepare('SELECT * FROM customers ORDER BY created_at DESC LIMIT ? OFFSET ?').all(pageSize, (page - 1) * pageSize);
+    res.json({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+    return;
+  }
+  res.json(await db.prepare('SELECT * FROM customers ORDER BY created_at DESC').all());
 });
 
 router.get('/:id', async (req: Request, res: Response) => {

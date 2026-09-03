@@ -170,7 +170,7 @@ async function loadAuditTab() {
     <h3>Audit Log</h3>
     <div class="table-wrap" style="margin-top:var(--space-4)">
       <table>
-        <thead><tr><th>Date</th><th>User</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead>
+        <thead><tr><th>Date</th><th>User</th><th>Action</th><th>Entity</th><th>Details</th><th>Change</th></tr></thead>
         <tbody>
           ${logs.length ? logs.map((l: any) => `
             <tr>
@@ -179,8 +179,9 @@ async function loadAuditTab() {
               <td data-label="Action"><span class="status-badge" style="background:${l.action==='delete'?'var(--c-danger-bg)':l.action==='update'?'var(--c-warning-bg)':'var(--c-success-bg)'};color:${l.action==='delete'?'var(--c-danger)':l.action==='update'?'var(--c-warning)':'var(--c-success)'}">${l.action}</span></td>
               <td data-label="Entity">${esc(l.entity)}</td>
               <td data-label="Details" style="font-size:var(--fs-xs);color:var(--c-text-muted)">${esc(l.details || '-')}</td>
+              <td data-label="Change" style="font-size:var(--fs-xs);color:var(--c-text-muted)">${l.new_values ? 'Updated values recorded' : '-'}</td>
             </tr>
-          `).join('') : '<tr><td colspan="5" style="text-align:center;padding:2rem;color:var(--c-text-muted)">No audit entries yet</td></tr>'}
+          `).join('') : '<tr><td colspan="6" style="text-align:center;padding:2rem;color:var(--c-text-muted)">No audit entries yet</td></tr>'}
         </tbody>
       </table>
     </div>

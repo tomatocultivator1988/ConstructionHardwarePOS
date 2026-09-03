@@ -9,7 +9,9 @@ let customerPage = 1;
 const PAGE_SIZE = 15;
 
 export async function renderCustomers(): Promise<string> {
-  const customers = await apiGet<Customer[]>('/customers');
+  const response = await apiGet<Customer[] | { data: Customer[]; total: number }>(`/customers?page=${customerPage}&pageSize=${PAGE_SIZE}`);
+  const customers = Array.isArray(response) ? response : response.data;
+  const totalCustomers = Array.isArray(response) ? response.length : response.total;
   customerNames = Object.fromEntries(customers.map((c: Customer) => [c.id, c.name]));
   (window as any).__customerNames = customerNames;
   return `
@@ -21,7 +23,7 @@ export async function renderCustomers(): Promise<string> {
       <table>
         <thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Type</th><th class="actions">Actions</th></tr></thead>
         <tbody>
-          ${customers.length ? customers.slice((customerPage - 1) * PAGE_SIZE, customerPage * PAGE_SIZE).map((c: Customer) => `
+          ${customers.length ? customers.map((c: Customer) => `
             <tr class="customer-row" data-customer-row="${c.id}">
               <td data-label="Name" style="font-weight:600">${esc(c.name)}</td>
               <td data-label="Phone">${esc(c.phone || '-')}</td>
@@ -38,7 +40,7 @@ export async function renderCustomers(): Promise<string> {
         </tbody>
       </table>
     </div>
-    ${customers.length > PAGE_SIZE ? `<div class="pagination"><span>Showing ${(customerPage-1)*PAGE_SIZE+1}–${Math.min(customerPage*PAGE_SIZE, customers.length)} of ${customers.length}</span><button class="btn btn-sm" ${customerPage===1?'disabled':''} onclick="changeCustomerPage(${customerPage-1})">Previous</button><strong>Page ${customerPage} of ${Math.ceil(customers.length/PAGE_SIZE)}</strong><button class="btn btn-sm" ${customerPage>=Math.ceil(customers.length/PAGE_SIZE)?'disabled':''} onclick="changeCustomerPage(${customerPage+1})">Next</button></div>` : ''}
+    ${totalCustomers > PAGE_SIZE ? `<div class="pagination"><span>Showing ${(customerPage-1)*PAGE_SIZE+1}–${Math.min(customerPage*PAGE_SIZE, totalCustomers)} of ${totalCustomers}</span><button class="btn btn-sm" ${customerPage===1?'disabled':''} onclick="changeCustomerPage(${customerPage-1})">Previous</button><strong>Page ${customerPage} of ${Math.ceil(totalCustomers/PAGE_SIZE)}</strong><button class="btn btn-sm" ${customerPage>=Math.ceil(totalCustomers/PAGE_SIZE)?'disabled':''} onclick="changeCustomerPage(${customerPage+1})">Next</button></div>` : ''}
   `;
 }
 
