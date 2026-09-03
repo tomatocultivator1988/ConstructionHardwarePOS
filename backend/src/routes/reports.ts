@@ -40,6 +40,21 @@ router.get('/books', async (req: Request, res: Response) => {
   res.json({ from, to, sales, receipts, expenses, receivables });
 });
 
+router.get('/cash-flow', async (req: Request, res: Response) => {
+  const db = getDb();
+  const from = (req.query.from as string) || businessDate();
+  const to = (req.query.to as string) || from;
+  const [receipts, refunds, expenses] = await Promise.all([
+    db.prepare("SELECT COALESCE(SUM(amount),0) total FROM payments WHERE method='cash' AND date(payment_date) BETWEEN ? AND ?").get(from,to),
+    db.prepare("SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE method='cash' AND date(created_at) BETWEEN ? AND ?").get(from,to),
+    db.prepare("SELECT COALESCE(SUM(amount),0) total FROM expenses WHERE date(expense_date) BETWEEN ? AND ?").get(from,to),
+  ]);
+  const cashReceipts = Number((receipts as any).total || 0);
+  const cashRefunds = Number((refunds as any).total || 0);
+  const cashExpenses = Number((expenses as any).total || 0);
+  res.json({ from, to, cash_receipts: cashReceipts, cash_refunds: cashRefunds, cash_expenses: cashExpenses, net_cash_change: cashReceipts - cashRefunds - cashExpenses });
+});
+
 // ─── Daily Sales Report ───
 router.get('/daily', async (req: Request, res: Response) => {
   const db = getDb();
@@ -95,8 +110,8 @@ router.get('/monthly', async (req: Request, res: Response) => {
 
   const [revenue, cogs, expenses, expenseByCategory, lastMonth] = await Promise.all([
     db.prepare(`
-      SELECT COALESCE(SUM(p.amount), 0) AS total
-      FROM payments p WHERE strftime('%Y-%m', p.payment_date) = ?
+      SELECT COALESCE(SUM(adjusted_total), 0) AS total
+      FROM v_invoice_financials WHERE status <> 'voided' AND strftime('%Y-%m', issued_date) = ?
     `).get(month) as Promise<any>,
     db.prepare(`
       SELECT COALESCE(SUM(ii.quantity * COALESCE(ii.cost_price, m.cost_price, 0)), 0) AS total
@@ -114,8 +129,8 @@ router.get('/monthly', async (req: Request, res: Response) => {
       GROUP BY category ORDER BY total DESC
     `).all(month) as Promise<any[]>,
     db.prepare(`
-      SELECT COALESCE(SUM(p.amount), 0) AS total
-      FROM payments p WHERE strftime('%Y-%m', p.payment_date, '+8 hours') = strftime('%Y-%m', 'now', '+8 hours', '-1 month')
+      SELECT COALESCE(SUM(adjusted_total), 0) AS total
+      FROM v_invoice_financials WHERE status <> 'voided' AND strftime('%Y-%m', issued_date, '+8 hours') = strftime('%Y-%m', 'now', '+8 hours', '-1 month')
     `).get() as Promise<any>,
   ]);
 

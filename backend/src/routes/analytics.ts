@@ -30,10 +30,10 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
         SELECT ii.material_id, m.name, m.unit, m.cost_price,
           SUM(ii.quantity) AS total_qty,
           SUM(ii.total) AS total_revenue,
-          SUM(ii.quantity * COALESCE(m.cost_price, 0)) AS total_cost
+          SUM(ii.quantity * COALESCE(ii.cost_price, m.cost_price, 0)) AS total_cost
         FROM invoice_items ii
         JOIN materials m ON m.id = ii.material_id
-        WHERE ii.material_id IS NOT NULL
+        WHERE ii.material_id IS NOT NULL AND EXISTS (SELECT 1 FROM invoices i WHERE i.id=ii.invoice_id AND i.status <> 'voided')
         GROUP BY ii.material_id
         ORDER BY total_qty DESC
         LIMIT 5
@@ -44,11 +44,11 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
           FROM (SELECT 0 AS t UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6)
         )
         SELECT dates.d AS date,
-          COALESCE(SUM(p.amount), 0) AS revenue,
-          COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
+          COALESCE(SUM(f.adjusted_total), 0) AS revenue,
+          COALESCE(SUM(f.adjusted_total * COALESCE(v.profit_ratio, 0)), 0) AS profit
         FROM dates
-        LEFT JOIN payments p ON date(p.payment_date, '+8 hours') = dates.d
-        LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = p.invoice_id
+        LEFT JOIN v_invoice_financials f ON date(f.issued_date, '+8 hours') = dates.d AND f.status <> 'voided'
+        LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
         GROUP BY dates.d
         ORDER BY dates.d
       `).all() as Promise<any[]>,
@@ -67,36 +67,37 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
         FROM materials ORDER BY margin_pct DESC
       `).all() as Promise<any[]>,
       db.prepare(`
-        SELECT COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
-        FROM payments p LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = p.invoice_id
-        WHERE date(p.payment_date, '+8 hours') = date('now', '+8 hours')
+        SELECT COALESCE(SUM(f.adjusted_total * COALESCE(v.profit_ratio, 0)), 0) AS profit
+        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
+        WHERE f.status <> 'voided' AND date(f.issued_date, '+8 hours') = date('now', '+8 hours')
       `).get() as Promise<any>,
       db.prepare(`
         SELECT COALESCE(SUM(amount), 0) AS total
         FROM payments WHERE payment_date >= datetime('now', '-7 days')
       `).get() as Promise<any>,
       db.prepare(`
-        SELECT COALESCE(SUM(p.amount), 0) AS revenue,
-          COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
-        FROM payments p LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = p.invoice_id
-        WHERE strftime('%Y-%m', p.payment_date, '+8 hours') = strftime('%Y-%m', 'now', '+8 hours')
+        SELECT COALESCE(SUM(f.adjusted_total), 0) AS revenue,
+          COALESCE(SUM(f.adjusted_total * COALESCE(v.profit_ratio, 0)), 0) AS profit
+        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
+        WHERE f.status <> 'voided' AND strftime('%Y-%m', f.issued_date, '+8 hours') = strftime('%Y-%m', 'now', '+8 hours')
       `).get() as Promise<any>,
       db.prepare(`
-        SELECT COALESCE(SUM(p.amount), 0) AS revenue,
-          COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
-        FROM payments p LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = p.invoice_id
-        WHERE strftime('%Y-%m', p.payment_date, '+8 hours') = strftime('%Y-%m', 'now', '+8 hours', '-1 month')
+        SELECT COALESCE(SUM(f.adjusted_total), 0) AS revenue,
+          COALESCE(SUM(f.adjusted_total * COALESCE(v.profit_ratio, 0)), 0) AS profit
+        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
+        WHERE f.status <> 'voided' AND strftime('%Y-%m', f.issued_date, '+8 hours') = strftime('%Y-%m', 'now', '+8 hours', '-1 month')
       `).get() as Promise<any>,
       db.prepare(`
-        SELECT COALESCE(SUM(p.amount), 0) AS revenue,
-          COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
-        FROM payments p LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = p.invoice_id
-        WHERE strftime('%Y', p.payment_date, '+8 hours') = strftime('%Y', 'now', '+8 hours')
+        SELECT COALESCE(SUM(f.adjusted_total), 0) AS revenue,
+          COALESCE(SUM(f.adjusted_total * COALESCE(v.profit_ratio, 0)), 0) AS profit
+        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
+        WHERE f.status <> 'voided' AND strftime('%Y', f.issued_date, '+8 hours') = strftime('%Y', 'now', '+8 hours')
       `).get() as Promise<any>,
       db.prepare(`
-        SELECT COALESCE(SUM(p.amount), 0) AS revenue,
-          COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
-        FROM payments p LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = p.invoice_id
+        SELECT COALESCE(SUM(f.adjusted_total), 0) AS revenue,
+          COALESCE(SUM(f.adjusted_total * COALESCE(v.profit_ratio, 0)), 0) AS profit
+        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
+        WHERE f.status <> 'voided'
       `).get() as Promise<any>,
       db.prepare(`
         WITH months AS (
@@ -106,8 +107,8 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
         SELECT months.m AS month,
           COALESCE(SUM(p.amount), 0) AS revenue,
           COALESCE(SUM(p.amount * COALESCE(v.profit_ratio, 0)), 0) AS profit
-        FROM months LEFT JOIN payments p ON strftime('%Y-%m', p.payment_date, '+8 hours') = months.m
-        LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = p.invoice_id
+        FROM months LEFT JOIN v_invoice_financials f ON strftime('%Y-%m', f.issued_date, '+8 hours') = months.m AND f.status <> 'voided'
+        LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
         GROUP BY months.m ORDER BY months.m
       `).all() as Promise<any[]>,
       db.prepare(`

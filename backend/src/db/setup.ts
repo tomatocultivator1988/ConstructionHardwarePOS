@@ -348,11 +348,24 @@ async function migrateSchema() {
   await db.exec('CREATE INDEX IF NOT EXISTS idx_credit_memos_invoice ON credit_memos(invoice_id)');
 
   await db.exec('DROP VIEW IF EXISTS v_invoice_profit_margin');
+  await db.exec('DROP VIEW IF EXISTS v_invoice_financials');
+  await db.exec(`
+    CREATE VIEW v_invoice_financials AS
+    SELECT i.id AS invoice_id, i.customer_id, i.invoice_number, i.issued_date, i.status,
+      i.subtotal, i.tax_rate, i.tax_amount, i.total,
+      i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0)
+        - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) AS adjusted_total,
+      COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) AS payments_total,
+      COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0) AS refunds_total,
+      COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0)
+        - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0) AS net_collections
+    FROM invoices i
+  `);
   await db.exec(`
     CREATE VIEW IF NOT EXISTS v_invoice_profit_margin AS
     SELECT ii.invoice_id,
       CASE WHEN SUM(ii.total) > 0
-        THEN 1 - (SUM(ii.quantity * COALESCE(m.cost_price, 0)) / SUM(ii.total))
+        THEN 1 - (SUM(ii.quantity * COALESCE(ii.cost_price, m.cost_price, 0)) / SUM(ii.total))
         ELSE 0 END AS profit_ratio
     FROM invoice_items ii
     LEFT JOIN materials m ON m.id = ii.material_id

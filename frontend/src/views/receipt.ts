@@ -8,8 +8,9 @@ export async function printReceipt(id: string) {
     const inv = await apiGet<Invoice>(`/invoices/${id}`);
     const business = await Promise.all(['business_name','business_address','business_tin','business_rdo','vat_registered'].map(async key => [key, (await apiGet<{ value: string }>(`/settings/${key}`)).value || '']));
     const businessSettings = Object.fromEntries(business);
-    const totalPaid = inv.payments.reduce((s: number, p: any) => s + p.amount, 0);
-    const balance = inv.total - totalPaid;
+    const totalPaid = inv.payments.reduce((s: number, p: any) => s + p.amount, 0) - ((inv as any).refunds || []).reduce((s: number, r: any) => s + r.amount, 0);
+    const adjustedTotal = Number((inv as any).adjusted_total ?? inv.total);
+    const balance = adjustedTotal - totalPaid;
 
     const printWin = window.open('', '_blank');
     if (!printWin) { showToast('Please allow pop-ups to print receipts'); return; }
@@ -109,9 +110,9 @@ export async function printReceipt(id: string) {
             <div class="row"><span class="lbl">VATable Sales</span><span>${fmtPeso(vatableSales)}</span></div>
             <div class="row"><span class="lbl">VAT (${(vatRate*100).toFixed(0)}%)</span><span>${fmtPeso(vatAmount)}</span></div>
             ` : '<div class="row"><span class="lbl">Non-VAT Transaction</span><span></span></div>'}
-            <div class="row total-row"><span>TOTAL AMOUNT DUE</span><span>${fmtPeso(inv.total)}</span></div>
+            <div class="row total-row"><span>TOTAL AMOUNT DUE</span><span>${fmtPeso(adjustedTotal)}</span></div>
           </div>
-          <div class="words-box">Amount in Words: <strong>${esc(numberToWords(inv.total))}</strong></div>
+          <div class="words-box">Amount in Words: <strong>${esc(numberToWords(adjustedTotal))}</strong></div>
           <div class="payment-section">
             <div class="row"><span>Payment Received</span><span>${fmtPeso(totalPaid)}</span></div>
             <div class="row" style="font-weight:700;font-size:10px"><span>Outstanding Balance</span><span>${fmtPeso(balance)}</span></div>
