@@ -31,12 +31,29 @@ router.post('/:id/close', async (req: Request, res: Response) => {
   const shift = await db.prepare("SELECT * FROM cashier_shifts WHERE id = ? AND status = 'open'").get(req.params.id) as any;
   if (!shift) { res.status(404).json({ error: 'Open shift not found' }); return; }
   if (shift.user_id !== req.user!.id && req.user!.role !== 'admin') { res.status(403).json({ error: 'You can only close your own shift' }); return; }
-  const cash = await db.prepare("SELECT COALESCE(SUM(p.amount),0) total FROM payments p WHERE p.payment_date >= ? AND p.method = 'cash' AND NOT EXISTS (SELECT 1 FROM cashier_shifts s WHERE s.id = ? AND s.opened_at > p.payment_date)").get(shift.opened_at, shift.id) as any;
-  const expected = Number(shift.opening_cash) + Number(cash.total || 0);
+  const cash = await db.prepare("SELECT COALESCE(SUM(p.amount),0) total FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE p.shift_id=? AND p.method = 'cash' AND i.status <> 'voided'").get(shift.id) as any;
+  const refunds = await db.prepare("SELECT COALESCE(SUM(r.amount),0) total FROM refunds r JOIN invoices i ON i.id=r.invoice_id WHERE r.method='cash' AND r.created_at >= ? AND r.created_at <= datetime('now') AND i.status <> 'voided'").get(shift.opened_at) as any;
+  const events = await db.prepare("SELECT COALESCE(SUM(CASE WHEN type='cash_in' THEN amount ELSE -amount END),0) total FROM cash_drawer_events WHERE shift_id=?").get(shift.id) as any;
+  const expected = Number(shift.opening_cash) + Number(cash.total || 0) - Number(refunds.total || 0) + Number(events.total || 0);
   await db.prepare("UPDATE cashier_shifts SET closed_at = datetime('now'), expected_cash = ?, closing_cash = ?, variance = ?, status = 'closed', notes = ? WHERE id = ?")
     .run(expected, closingCash, closingCash - expected, req.body?.notes || null, shift.id);
   await logAudit(req.user!.id, 'close', 'cashier_shift', shift.id, `Expected ${expected}; counted ${closingCash}`);
   res.json(await db.prepare('SELECT * FROM cashier_shifts WHERE id = ?').get(shift.id));
+});
+
+router.post('/:id/event', async (req: Request, res: Response) => {
+  const db = getDb();
+  const shift = await db.prepare("SELECT * FROM cashier_shifts WHERE id=? AND status='open'").get(req.params.id) as any;
+  const amount = Number(req.body?.amount);
+  const type = req.body?.type;
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+  if (!shift) { res.status(404).json({ error: 'Open shift not found' }); return; }
+  if (shift.user_id !== req.user!.id && req.user!.role !== 'admin') { res.status(403).json({ error: 'You can only change your own shift' }); return; }
+  if (!['cash_in','cash_out'].includes(type) || !Number.isFinite(amount) || amount <= 0 || reason.length < 3) { res.status(400).json({ error: 'Type, positive amount, and reason are required' }); return; }
+  const id = uuidv4();
+  await db.prepare('INSERT INTO cash_drawer_events (id, shift_id, user_id, type, amount, reason) VALUES (?, ?, ?, ?, ?, ?)').run(id, shift.id, req.user!.id, type, amount, reason);
+  await logAudit(req.user!.id, type, 'cash_drawer_event', id, reason, null, { shift_id: shift.id, type, amount, reason });
+  res.status(201).json(await db.prepare('SELECT * FROM cash_drawer_events WHERE id=?').get(id));
 });
 
 router.get('/', requireAdmin, async (_req: Request, res: Response) => {

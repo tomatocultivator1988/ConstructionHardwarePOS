@@ -169,7 +169,7 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
   }
 
   const insertPayment = db.prepare(
-    'INSERT INTO payments (id, invoice_id, amount, method, notes) VALUES (?, ?, ?, ?, ?)'
+    'INSERT INTO payments (id, invoice_id, amount, method, notes, shift_id) VALUES (?, ?, ?, ?, ?, ?)'
   );
   const getTotalPaid = db.prepare(
     'SELECT COALESCE(SUM(amount), 0) as paid FROM payments WHERE invoice_id = ?'
@@ -189,6 +189,8 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
       const invoice = await getInvoice.get(req.params.id) as any;
       if (!invoice) throw new Error('Invoice not found');
       if (invoice.status === 'voided') throw new Error('Cannot pay a voided invoice');
+      const activeShift = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1").get((req as any).user?.id) as any;
+      if (!activeShift) throw new Error('Open a cashier shift before recording a payment');
 
       const credits = (await db.prepare("SELECT COALESCE(SUM(amount),0) total FROM credit_memos WHERE invoice_id=? AND status='issued'").get(req.params.id) as any).total;
       const returnsCredit = (await db.prepare('SELECT COALESCE(SUM(total_credit),0) total FROM invoice_returns WHERE invoice_id=?').get(req.params.id) as any).total;
@@ -198,7 +200,7 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
         throw new Error(`Payment of ${amount} exceeds remaining balance of ${remainingBalance}`);
       }
 
-      await insertPayment.run(paymentId, req.params.id, amount, method, notes || null);
+      await insertPayment.run(paymentId, req.params.id, amount, method, notes || null, activeShift.id);
       const totalPaid = existingPaid + amount;
 
       if (totalPaid >= Number(invoice.total) - Number(credits) - Number(returnsCredit)) {

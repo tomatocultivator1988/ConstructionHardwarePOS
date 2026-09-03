@@ -94,6 +94,7 @@ interface Window {
   saveSettings: () => void;
   openCashierShift: () => void;
   closeCashierShift: (id: string) => void;
+  recordCashEvent: (id: string, type: string) => void;
   __customerNames: Record<string, string>;
   __materialNames: Record<string, string>;
   __invCustomers: any[];

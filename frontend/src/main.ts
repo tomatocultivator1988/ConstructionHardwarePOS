@@ -75,6 +75,7 @@ Object.assign(window, {
   saveSettings: settings.saveSettings,
   openCashierShift: settings.openCashierShift,
   closeCashierShift: settings.closeCashierShift,
+  recordCashEvent: settings.recordCashEvent,
   showUserModal: settings.showUserModal,
   createUser: settings.createUser,
   updateUser: settings.updateUser,

@@ -24,6 +24,7 @@ const post = (path, body) => call(path, { method: 'POST', body: JSON.stringify(b
 const put = (path, body) => call(path, { method: 'PUT', body: JSON.stringify(body) });
 
 const marker = `QA-${Date.now()}`;
+const shift = await post('/shifts/open', { opening_cash: 100 });
 const material = await post('/materials', { name: `${marker} Material`, unit: 'Piece', stock: 20, cost_price: 10, price_per_unit: 25, wholesale_price: 20, reorder_point: 2, category: 'Other' });
 const customer = await post('/customers', { name: `${marker} Customer`, address: 'QA Test Address', tin: '000-000-000-000' });
 const invoice = await post('/invoices', { customer_id: customer.id, tax_rate: 0, items: [{ material_id: material.id, description: material.name, quantity: 2, unit_price: 25 }] });
@@ -38,7 +39,6 @@ await post(`/invoices/${invoice.id}/refund`, { amount: 25, method: 'cash', refer
 await post(`/invoices/${invoice.id}/credit-memo`, { amount: 10, reason: 'QA adjustment' });
 const adjusted = await call(`/invoices/${invoice.id}`);
 assert.equal(Number(adjusted.adjusted_total), 15);
-const shift = await post('/shifts/open', { opening_cash: 100 });
 const closed = await post(`/shifts/${shift.id}/close`, { closing_cash: 100 });
 assert.equal(closed.status, 'closed');
 await put(`/invoices/${invoice.id}/void`, { reason: 'QA cleanup' });
