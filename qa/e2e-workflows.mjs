@@ -7,7 +7,10 @@
 import assert from 'node:assert/strict';
 
 const base = process.env.QA_BASE_URL;
-if (process.env.QA_ALLOW_MUTATION !== 'true' || !base || !process.env.QA_TOKEN) {
+const normalizedBase = (base || '').replace(/\/$/, '').toLowerCase();
+const knownProductionHosts = ['buildpro-pos.vercel.app', 'construction-pos1-6ufbc6iaf-huhus-projects-444565d7.vercel.app'];
+const isKnownProduction = knownProductionHosts.some((host) => normalizedBase.includes(host));
+if (process.env.QA_ALLOW_MUTATION !== 'true' || !base || !process.env.QA_TOKEN || isKnownProduction) {
   console.error('Refusing to run: set QA_BASE_URL, QA_TOKEN, and QA_ALLOW_MUTATION=true against a disposable QA database.');
   process.exit(2);
 }
