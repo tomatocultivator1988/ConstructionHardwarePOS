@@ -25,6 +25,8 @@ const put = (path, body) => call(path, { method: 'PUT', body: JSON.stringify(bod
 
 const marker = `QA-${Date.now()}`;
 const shift = await post('/shifts/open', { opening_cash: 100 });
+const rejectedCashOut = await fetch(`${base.replace(/\/$/, '')}/api/shifts/${shift.id}/event`, { method: 'POST', headers, body: JSON.stringify({ type: 'cash_out', amount: 101, reason: 'Too much' }) });
+assert.equal(rejectedCashOut.status, 400, 'cash-out above drawer balance must be rejected');
 const material = await post('/materials', { name: `${marker} Material`, unit: 'Piece', stock: 20, cost_price: 10, price_per_unit: 25, wholesale_price: 20, reorder_point: 2, category: 'Other' });
 const customer = await post('/customers', { name: `${marker} Customer`, address: 'QA Test Address', tin: '000-000-000-000' });
 const invoice = await post('/invoices', { customer_id: customer.id, tax_rate: 0, items: [{ material_id: material.id, description: material.name, quantity: 2, unit_price: 25 }] });
