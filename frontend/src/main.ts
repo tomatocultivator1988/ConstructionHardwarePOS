@@ -12,6 +12,7 @@ import * as login from './views/login';
 import * as settings from './views/settings';
 import { printReceipt } from './views/receipt';
 import * as receipts from './views/receipts';
+import { openHelp } from './lib/help';
 
 Object.assign(window, {
   loadView,
@@ -90,6 +91,7 @@ Object.assign(window, {
   printReceipt,
   checkLowStock: () => checkLowStock(),
   openMobileMore,
+  openHelp,
 });
 
 // Navigation — desktop
@@ -118,6 +120,8 @@ document.querySelectorAll('#bottom-nav .nav-btn').forEach(btn => {
 function updateOnlineStatus() {
   document.body.classList.toggle('offline', !navigator.onLine);
 }
+
+document.getElementById('help-button')?.addEventListener('click', openHelp);
 window.addEventListener('online', updateOnlineStatus);
 window.addEventListener('offline', updateOnlineStatus);
 updateOnlineStatus();

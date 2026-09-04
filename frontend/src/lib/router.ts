@@ -31,6 +31,8 @@ export { isLoggedIn };
 let chartInstances: any[] = [];
 let currentView = '';
 
+export function getCurrentView() { return currentView; }
+
 function destroyCharts() {
   chartInstances.forEach(c => { try { c.destroy(); } catch {} });
   chartInstances = [];
