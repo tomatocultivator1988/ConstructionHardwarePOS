@@ -79,6 +79,10 @@ export function showInvoiceModal() {
       </select>
       <div class="field-error" id="inv-customer-err"></div>
     </div>
+    <div class="form-group">
+      <label>Delivery Person <span style="color:var(--c-text-muted);font-weight:normal">(optional)</span></label>
+      <input id="inv-delivery-person" maxlength="100" placeholder="Name of delivery person" />
+    </div>
 
     <h4>Line Items</h4>
     <div id="line-items">
@@ -174,6 +178,7 @@ export async function createInvoice() {
   const total = Math.round((roundedSubtotal + taxAmount) * 100) / 100;
   const customerSel = document.getElementById('inv-customer') as HTMLSelectElement;
   const customerName = isWalkin ? 'Walk-in / Cash Sale' : (customerSel?.selectedOptions?.[0]?.text || 'Unknown');
+  const delivery_person = val('inv-delivery-person').trim();
 
   const confirmHtml = `
     <h3>Confirm Invoice</h3>
@@ -188,7 +193,7 @@ export async function createInvoice() {
 
   disableBtn('inv-create-btn', true);
   try {
-    await apiPost('/invoices', { customer_id, due_date: null, tax_rate, items });
+    await apiPost('/invoices', { customer_id, due_date: null, tax_rate, delivery_person: delivery_person || null, items });
     closeModal();
     loadView('invoices');
   } catch (e: any) { showToast(e.message); }
@@ -211,6 +216,7 @@ export async function showInvoiceDetail(id: string) {
     <h3>Invoice ${esc(inv.invoice_number)}</h3>
     <div style="display:flex;gap:var(--space-4);align-items:center;margin-bottom:var(--space-4);flex-wrap:wrap">
       <span style="color:var(--c-text-secondary)">${esc(inv.customer_name)}</span>
+      <span style="font-size:var(--fs-xs);color:var(--c-text-muted)">Delivery: ${esc((inv as any).delivery_person || 'Not assigned')}</span>
       <span class="status-badge ${inv.status}">${inv.status}</span>
       <span style="font-size:var(--fs-xs);color:var(--c-text-muted)">Issued: ${fmtDate(inv.issued_date)}</span>
       ${inv.paid_date ? `<span style="font-size:var(--fs-xs);color:var(--c-success)">Paid: ${fmtDate(inv.paid_date)}</span>` : ''}

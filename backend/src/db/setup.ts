@@ -63,6 +63,7 @@ async function initTables() {
       status TEXT DEFAULT 'pending',
       issued_date TEXT DEFAULT (datetime('now')),
       due_date TEXT,
+      delivery_person TEXT,
       paid_date TEXT,
       user_id TEXT,
       created_at TEXT DEFAULT (datetime('now')),
@@ -287,6 +288,7 @@ async function migrateSchema() {
 
   const invoiceInfo = (await db.prepare("PRAGMA table_info('invoices')").all()) as any[];
   const invoiceCols = invoiceInfo.map((r: any) => r.name);
+  if (!invoiceCols.includes('delivery_person')) await db.exec("ALTER TABLE invoices ADD COLUMN delivery_person TEXT");
 
   if (!invoiceCols.includes('subtotal')) {
     await db.exec("ALTER TABLE invoices ADD COLUMN subtotal REAL DEFAULT 0");

@@ -50,11 +50,15 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 router.post('/', async (req: Request, res: Response) => {
   const db = getDb();
-  const { customer_id, items, due_date, tax_rate, issued_date } = req.body;
+  const { customer_id, items, due_date, tax_rate, issued_date, delivery_person } = req.body;
 
   if (!items || !items.length) {
     res.status(400).json({ error: 'At least one line item is required' });
     return;
+  }
+
+  if (delivery_person !== undefined && delivery_person !== null && (typeof delivery_person !== 'string' || delivery_person.trim().length > 100)) {
+    res.status(400).json({ error: 'Delivery person must be 100 characters or fewer' }); return;
   }
 
   const usedMaterialIds = new Set<string>();
@@ -114,8 +118,8 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     await     db.prepare(
-      'INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(invoiceId, customer_id || null, invoice_number, 0, tax_rate ?? 0, 0, due_date || null, issued_date || null, (req as any).user?.id || null);
+      'INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, delivery_person, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(invoiceId, customer_id || null, invoice_number, 0, tax_rate ?? 0, 0, due_date || null, delivery_person?.trim() || null, issued_date || null, (req as any).user?.id || null);
 
     let subtotal = 0;
     for (const item of items) {
@@ -170,7 +174,6 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
     res.status(400).json({ error: 'Payment method is required' });
     return;
   }
-
   const insertPayment = db.prepare(
     'INSERT INTO payments (id, invoice_id, amount, method, notes, shift_id) VALUES (?, ?, ?, ?, ?, ?)'
   );

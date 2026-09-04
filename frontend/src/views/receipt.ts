@@ -130,6 +130,7 @@ export async function printReceipt(id: string) {
             <b>${esc(businessSettings.business_name || 'BuildPro Construction Supply')}</b><br>
             ${esc(businessSettings.business_address || 'Business address not configured')} &bull; TIN: ${esc(businessSettings.business_tin || 'Not configured')}<br>
             RDO/Branch: ${esc(businessSettings.business_rdo || 'Not configured')} &bull; Serial No. ${esc(inv.invoice_number)}<br>
+            Delivery Person: ${esc((inv as any).delivery_person || 'Not assigned')}<br>
             ${isVat ? 'VAT invoice — retain this document for your records.' : 'Non-VAT invoice — not valid for input tax credit.'}<br>
             This document is subject to the taxpayer\'s approved BIR registration details.<br>
             Issued ${esc(dateStr)} at ${esc(timeStr)}
