@@ -35,11 +35,30 @@ async function handleResponse(res: Response) {
 export async function apiGet<T = any>(path: string): Promise<T> {
   const cached = cache.get(path);
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data;
-  const res = await fetch(API + path, { headers: apiHeaders() });
-  await handleResponse(res);
-  const data = await res.json();
-  cache.set(path, { data, ts: Date.now() });
-  return data;
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let transientResponse = false;
+    try {
+      const res = await fetch(API + path, { headers: apiHeaders() });
+      transientResponse = [500, 502, 503, 504].includes(res.status);
+      if (transientResponse && attempt < 2) {
+        await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+        continue;
+      }
+      await handleResponse(res);
+      const data = await res.json();
+      cache.set(path, { data, ts: Date.now() });
+      return data;
+    } catch (e: any) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      if (!transientResponse && !/failed to fetch|networkerror|network error/i.test(lastError.message)) throw lastError;
+      if (attempt < 2) {
+        await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+        continue;
+      }
+    }
+  }
+  throw lastError || new Error('Request failed');
 }
 
 async function mutate(method: string, path: string, body?: any): Promise<any> {

@@ -31,15 +31,15 @@ const NODE_ENV = process.env.NODE_ENV || ((process as any).pkg ? 'production' : 
 // Trust Vercel's proxy headers (X-Forwarded-For, etc)
 app.set('trust proxy', 1);
 
-let dbInitialized = false;
-
 // Lazy init DB on first request (needed for Vercel serverless)
-app.use(async (_req, _res, next) => {
-  if (!dbInitialized) {
+app.use(async (_req, res, next) => {
+  try {
     await initDb();
-    dbInitialized = true;
+    next();
+  } catch (e: any) {
+    console.error('Request database initialization failed:', e.message);
+    res.status(503).json({ error: 'Database temporarily unavailable. Please retry.', retryable: true });
   }
-  next();
 });
 
 // Request logging

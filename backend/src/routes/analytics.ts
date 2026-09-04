@@ -9,9 +9,8 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
   const cached = getCached<any>(CACHE_KEY);
   if (cached) { res.json(cached); return; }
 
-  const db = getDb();
-
   try {
+    const db = getDb();
     const [
       topMaterials,
       profitTrend,
@@ -223,7 +222,8 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       monthlyTrend: [], topCustomers: [],
       expenseByCategory: [], pnlTrend: [], paymentMethodTotals: [],
       invoiceSummary: { total: 0, paid: 0, partial: 0, pending: 0, outstanding: 0 }, lowStockItems: [], lowStockCount: 0, averageMargin: 0,
-      error: e.message
+      error: 'Analytics temporarily unavailable',
+      retryable: true,
     });
   }
 });

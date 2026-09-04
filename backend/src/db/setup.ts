@@ -3,17 +3,28 @@ import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 
 let db: Database;
+let dbInitPromise: Promise<void> | null = null;
 
 export async function initDb(): Promise<void> {
   if (db) return;
+  if (dbInitPromise) return dbInitPromise;
+  dbInitPromise = (async () => {
+    try {
+      await initDatabase();
+      db = new Database();
+      await initTables();
+      await migrateSchema();
+    } catch (err) {
+      db = undefined as any;
+      console.error('Failed to open database:', err);
+      throw new Error('Database unavailable');
+    }
+  })();
   try {
-    await initDatabase();
-    db = new Database();
-    await initTables();
-    await migrateSchema();
+    await dbInitPromise;
   } catch (err) {
-    console.error('Failed to open database:', err);
-    throw new Error('Database unavailable');
+    dbInitPromise = null;
+    throw err;
   }
 }
 
