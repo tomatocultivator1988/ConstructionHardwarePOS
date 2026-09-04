@@ -32,7 +32,7 @@ export async function renderDashboard(): Promise<string> {
 
   const outstanding = invoices
     .filter((i: Invoice) => i.status === 'pending' || i.status === 'partial')
-    .reduce((s: number, i: Invoice) => s + (i.total || 0), 0);
+    .reduce((s: number, i: Invoice) => s + Number((i as any).adjusted_total ?? i.total ?? 0), 0);
 
   const lowStockMats = materials.filter((m: any) => m.stock <= m.reorder_point);
 
@@ -150,7 +150,7 @@ export async function renderDashboard(): Promise<string> {
   return `
     <div class="dashboard-grid dashboard-summary-grid">
       <div class="dashboard-card card-success">
-        <div class="card-label">Today's Sales</div>
+        <div class="card-label">Today's Collections</div>
         <div class="card-value">${fmtPeso(todaySales)}</div>
         <div class="card-sub">${today}</div>
       </div>
@@ -259,7 +259,7 @@ export async function renderDashboard(): Promise<string> {
             <tr>
               <td data-label="#" style="font-weight:600">${esc(inv.invoice_number)}</td>
               <td data-label="Customer">${esc(inv.customer_name)}</td>
-              <td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(inv.total)}</td>
+              <td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(Number((inv as any).adjusted_total ?? inv.total))}</td>
               <td data-label="Status"><span class="status-badge ${inv.status}">${inv.status}</span></td>
               <td data-label="Date">${fmtDate(inv.issued_date)}</td>
             </tr>
