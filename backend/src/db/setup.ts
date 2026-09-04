@@ -6,8 +6,8 @@ let db: Database;
 let dbInitPromise: Promise<void> | null = null;
 
 export async function initDb(): Promise<void> {
-  if (db) return;
   if (dbInitPromise) return dbInitPromise;
+  if (db) return;
   dbInitPromise = (async () => {
     try {
       await initDatabase();
@@ -384,10 +384,11 @@ async function migrateSchema() {
   await db.exec('CREATE INDEX IF NOT EXISTS idx_refunds_shift ON refunds(shift_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_credit_memos_invoice ON credit_memos(invoice_id)');
 
-  await db.exec('DROP VIEW IF EXISTS v_invoice_profit_margin');
-  await db.exec('DROP VIEW IF EXISTS v_invoice_financials');
+  // Views are created idempotently. Dropping and recreating them on every
+  // serverless cold start creates a race when multiple Vercel instances
+  // initialize against the same Turso database.
   await db.exec(`
-    CREATE VIEW v_invoice_financials AS
+    CREATE VIEW IF NOT EXISTS v_invoice_financials AS
     SELECT i.id AS invoice_id, i.customer_id, i.invoice_number, i.issued_date, i.status,
       i.subtotal, i.tax_rate, i.tax_amount, i.total,
       i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0)
