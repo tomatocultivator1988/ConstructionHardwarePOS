@@ -6,13 +6,15 @@ import { logAudit } from '../lib/audit';
 const router = Router();
 
 router.get('/:key', async (req: Request, res: Response) => {
-  const db = getDb();
-  const row = await db.prepare('SELECT value FROM settings WHERE key = ?').get(req.params.key) as any;
-  if (!row) {
+  try {
+    const db = getDb();
+    const row = await db.prepare('SELECT value FROM settings WHERE key = ?').get(req.params.key) as any;
+    res.json({ key: req.params.key, value: row?.value ?? null });
+  } catch (e: any) {
+    // Optional profile fields must not prevent receipts or the app shell from loading.
+    console.error(`Settings read failed for ${req.params.key}:`, e.message);
     res.json({ key: req.params.key, value: null });
-    return;
   }
-  res.json({ key: req.params.key, value: row.value });
 });
 
 router.put('/:key', requireAdmin, async (req: Request, res: Response) => {
