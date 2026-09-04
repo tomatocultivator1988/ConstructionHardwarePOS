@@ -98,6 +98,7 @@ router.post('/', async (req: Request, res: Response) => {
   const insertMovement = db.prepare(
     'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );
+  let materialMap = new Map<string, any>();
 
   const txn = db.transaction(async () => {
     const seq = await getSeq.get() as any;
@@ -107,10 +108,10 @@ router.post('/', async (req: Request, res: Response) => {
 
     if (usedMaterialIds.size > 0) {
       const placeholders = Array.from(usedMaterialIds).map(() => '?').join(',');
-      const mats = await db.prepare(`SELECT id, name, stock, unit FROM materials WHERE id IN (${placeholders})`).all(...usedMaterialIds) as any[];
-      const matMap = new Map(mats.map((m: any) => [m.id, m]));
+      const mats = await db.prepare(`SELECT id, name, stock, unit, cost_price FROM materials WHERE id IN (${placeholders})`).all(...usedMaterialIds) as any[];
+      materialMap = new Map(mats.map((m: any) => [m.id, m]));
       for (const materialId of usedMaterialIds) {
-        const mat = matMap.get(materialId);
+        const mat = materialMap.get(materialId);
         if (!mat) throw new Error(`Material ${materialId} not found`);
         const qtyNeeded = items.filter((it: any) => it.material_id === materialId).reduce((s: number, it: any) => s + it.quantity, 0);
         if (mat.stock < qtyNeeded) throw new Error(`Insufficient stock for ${mat.name}: have ${mat.stock} ${mat.unit}, need ${qtyNeeded} ${mat.unit}`);
@@ -125,7 +126,7 @@ router.post('/', async (req: Request, res: Response) => {
     for (const item of items) {
       const lineTotal = item.quantity * item.unit_price;
       subtotal += lineTotal;
-      const cost = item.material_id ? Number((await db.prepare('SELECT cost_price FROM materials WHERE id = ?').get(item.material_id) as any)?.cost_price || 0) : 0;
+      const cost = item.material_id ? Number(materialMap.get(item.material_id)?.cost_price || 0) : 0;
       await insertItem.run(uuidv4(), invoiceId, item.material_id || null, item.description.trim(), item.quantity, item.unit_price, cost, Math.round(lineTotal * 100) / 100);
     }
 

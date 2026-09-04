@@ -196,16 +196,16 @@ function showUserHeader() {
 
 async function checkLowStock() {
   try {
-    const materials = await apiGet<any[]>('/materials');
-    const low = materials.filter((m: any) => m.stock <= m.reorder_point);
+    const result = await apiGet<any>('/materials?lowStock=1&page=1&pageSize=1');
+    const lowCount = Array.isArray(result) ? result.length : Number(result.total || 0);
     const badge = document.querySelector('[data-view="materials"]');
     if (badge) {
       const existing = badge.querySelector('.nav-badge');
       if (existing) existing.remove();
-      if (low.length > 0) {
+      if (lowCount > 0) {
         const b = document.createElement('span');
         b.className = 'nav-badge';
-        b.textContent = String(low.length);
+        b.textContent = String(lowCount);
         badge.appendChild(b);
         // showToast is used here but was never imported in original — leaving as-is
       }

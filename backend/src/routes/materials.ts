@@ -41,6 +41,7 @@ router.get('/', async (req: Request, res: Response) => {
     conditions.push('category = ?');
     params.push(req.query.category);
   }
+  if (req.query.lowStock === '1' || req.query.lowStock === 'true') conditions.push('stock <= reorder_point');
   if (conditions.length) query += ' WHERE ' + conditions.join(' AND ');
   query += ' ORDER BY created_at DESC';
   const page = Math.max(1, Number(req.query.page) || 1);

@@ -28,6 +28,9 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       expenseByCategory,
       pnlTrend,
       paymentMethodTotals,
+      invoiceSummary,
+      lowStockItems,
+      averageMargin,
     ] = await Promise.all([
       db.prepare(`
         SELECT ii.material_id, m.name, m.unit, m.cost_price,
@@ -67,7 +70,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
           CASE WHEN price_per_unit > 0
             THEN ROUND(((price_per_unit - cost_price) / price_per_unit) * 100, 1)
             ELSE 0 END AS margin_pct
-        FROM materials ORDER BY margin_pct DESC
+        FROM materials ORDER BY margin_pct DESC LIMIT 12
       `).all() as Promise<any[]>,
       db.prepare(`
         SELECT COALESCE(SUM(f.net_sales * COALESCE(v.profit_ratio, 0)), 0) AS profit
@@ -138,6 +141,22 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
         FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE i.status <> 'voided'
         GROUP BY p.method ORDER BY total DESC
       `).all() as Promise<any[]>,
+      db.prepare(`
+        SELECT COUNT(*) AS total,
+          SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) AS paid,
+          SUM(CASE WHEN status='partial' THEN 1 ELSE 0 END) AS partial,
+          SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending,
+          COALESCE(SUM(CASE WHEN status IN ('pending','partial') THEN adjusted_total - net_collections ELSE 0 END), 0) AS outstanding
+        FROM v_invoice_financials WHERE status <> 'voided'
+      `).get() as Promise<any>,
+      db.prepare(`
+        SELECT name, unit, stock, reorder_point FROM materials
+        WHERE stock <= reorder_point ORDER BY (stock - reorder_point) ASC, name ASC LIMIT 25
+      `).all() as Promise<any[]>,
+      db.prepare(`
+        SELECT COALESCE(AVG(CASE WHEN price_per_unit > 0 THEN ((price_per_unit - COALESCE(cost_price,0)) / price_per_unit) * 100 END), 0) AS value
+        FROM materials
+      `).get() as Promise<any>,
     ]);
 
     const result = {
@@ -177,6 +196,16 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       expenseByCategory,
       pnlTrend,
       paymentMethodTotals,
+      invoiceSummary: {
+        total: Number(invoiceSummary.total || 0),
+        paid: Number(invoiceSummary.paid || 0),
+        partial: Number(invoiceSummary.partial || 0),
+        pending: Number(invoiceSummary.pending || 0),
+        outstanding: Math.round(Number(invoiceSummary.outstanding || 0) * 100) / 100,
+      },
+      lowStockItems,
+      lowStockCount: Number((await db.prepare('SELECT COUNT(*) AS total FROM materials WHERE stock <= reorder_point').get() as any).total || 0),
+      averageMargin: Number(averageMargin.value || 0),
     };
 
     setCache(CACHE_KEY, result);
@@ -193,6 +222,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       overallRevenue: { revenue: 0, profit: 0 },
       monthlyTrend: [], topCustomers: [],
       expenseByCategory: [], pnlTrend: [], paymentMethodTotals: [],
+      invoiceSummary: { total: 0, paid: 0, partial: 0, pending: 0, outstanding: 0 }, lowStockItems: [], lowStockCount: 0, averageMargin: 0,
       error: e.message
     });
   }

@@ -59,8 +59,11 @@ router.post('/', async (req: Request, res: Response) => {
 
   const itemError = validateItems(items);
   if (itemError) { res.status(400).json({ error: itemError }); return; }
-  for (const item of items) if (item.material_id && !await db.prepare('SELECT id FROM materials WHERE id = ?').get(item.material_id)) {
-    res.status(400).json({ error: 'One or more materials do not exist' }); return;
+  const materialIds = [...new Set(items.filter((item: any) => item.material_id).map((item: any) => item.material_id))];
+  if (materialIds.length) {
+    const placeholders = materialIds.map(() => '?').join(',');
+    const existingMaterials = await db.prepare(`SELECT id FROM materials WHERE id IN (${placeholders})`).all(...materialIds) as any[];
+    if (existingMaterials.length !== materialIds.length) { res.status(400).json({ error: 'One or more materials do not exist' }); return; }
   }
 
   const poId = uuidv4();
@@ -159,7 +162,12 @@ router.put('/:id/receive', requireAdmin, async (req: Request, res: Response) => 
   }
 
   const poItems = await db.prepare('SELECT * FROM po_items WHERE po_id = ?').all(req.params.id) as any[];
-  for (const item of poItems) if (item.material_id && !await db.prepare('SELECT id FROM materials WHERE id = ?').get(item.material_id)) { res.status(409).json({ error: 'Purchase order contains a missing material' }); return; }
+  const materialIds = [...new Set(poItems.filter((item: any) => item.material_id).map((item: any) => item.material_id))];
+  if (materialIds.length) {
+    const placeholders = materialIds.map(() => '?').join(',');
+    const existingMaterials = await db.prepare(`SELECT id FROM materials WHERE id IN (${placeholders})`).all(...materialIds) as any[];
+    if (existingMaterials.length !== materialIds.length) { res.status(409).json({ error: 'Purchase order contains a missing material' }); return; }
+  }
   const updateStock = db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?');
   const insertMovement = db.prepare(
     'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'

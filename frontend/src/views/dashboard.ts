@@ -4,12 +4,12 @@ import { getChartInstances } from '../lib/router';
 import type { Invoice, Analytics, PaySummary } from '../lib/types';
 
 export async function renderDashboard(): Promise<string> {
-  const [invoices, materials, paySummary, analytics] = await Promise.all([
-    apiGet<Invoice[]>('/invoices'),
-    apiGet<any[]>('/materials'),
+  const [invoicePage, paySummary, analytics] = await Promise.all([
+    apiGet<{ data: Invoice[]; total: number }>('/invoices?page=1&pageSize=5'),
     apiGet<PaySummary>('/payments/summary'),
     apiGet<Analytics>('/analytics/dashboard'),
   ]);
+  const invoices = invoicePage.data || [];
 
   const now = new Date();
   const today = businessDate();
@@ -30,22 +30,13 @@ export async function renderDashboard(): Promise<string> {
     });
   }
 
-  const outstanding = invoices
-    .filter((i: Invoice) => i.status === 'pending' || i.status === 'partial')
-    .reduce((s: number, i: Invoice) => s + Number((i as any).adjusted_total ?? i.total ?? 0), 0);
-
-  const lowStockMats = materials.filter((m: any) => m.stock <= m.reorder_point);
-
-  const avgMargin = materials.length > 0
-    ? materials.reduce((sum: number, m: any) => {
-        const margin = m.price_per_unit > 0 ? ((m.price_per_unit - (m.cost_price || 0)) / m.price_per_unit) * 100 : 0;
-        return sum + margin;
-      }, 0) / materials.length
-    : 0;
-
-  const pendingCount = invoices.filter((i: Invoice) => i.status === 'pending').length;
-  const partialCount = invoices.filter((i: Invoice) => i.status === 'partial').length;
-  const paidCount = invoices.filter((i: Invoice) => i.status === 'paid').length;
+  const invoiceSummary = analytics.invoiceSummary || { total: invoicePage.total || 0, paid: 0, partial: 0, pending: 0, outstanding: 0 };
+  const outstanding = Number(invoiceSummary.outstanding || 0);
+  const lowStockMats = analytics.lowStockItems || [];
+  const avgMargin = Number(analytics.averageMargin || 0);
+  const pendingCount = Number(invoiceSummary.pending || 0);
+  const partialCount = Number(invoiceSummary.partial || 0);
+  const paidCount = Number(invoiceSummary.paid || 0);
 
   const recentInvoices = invoices.slice(0, 5);
 
@@ -222,7 +213,7 @@ export async function renderDashboard(): Promise<string> {
       <div class="period-divider"></div>
       <div class="period-item">
         <span class="period-label">Total Invoices</span>
-        <span class="period-value">${invoices.length}</span>
+        <span class="period-value">${invoiceSummary.total}</span>
         <span class="period-sub">${paidCount} paid, ${pendingCount} pending</span>
       </div>
     </div>

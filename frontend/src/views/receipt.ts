@@ -9,11 +9,10 @@ export async function printReceipt(id: string) {
   if (!printWin) { showToast('Please allow pop-ups to print receipts'); return; }
   try {
     const inv = await apiGet<Invoice>(`/invoices/${id}`);
-    const business = await Promise.all(['business_name','business_address','business_tin','business_rdo','vat_registered'].map(async key => {
-      try { return [key, (await apiGet<{ value: string }>(`/settings/${key}`)).value || '']; }
-      catch { return [key, '']; }
-    }));
-    const businessSettings = Object.fromEntries(business);
+    let businessSettings: Record<string, string> = {};
+    try {
+      businessSettings = await apiGet<Record<string, string | null>>('/settings?keys=business_name,business_address,business_tin,business_rdo,vat_registered') as Record<string, string>;
+    } catch { businessSettings = {}; }
     const totalPaid = inv.payments.reduce((s: number, p: any) => s + p.amount, 0) - ((inv as any).refunds || []).reduce((s: number, r: any) => s + r.amount, 0);
     const adjustedTotal = Number((inv as any).adjusted_total ?? inv.total);
     const balance = adjustedTotal - totalPaid;

@@ -5,6 +5,22 @@ import { logAudit } from '../lib/audit';
 
 const router = Router();
 
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const keys = String(req.query.keys || '').split(',').map(k => k.trim()).filter(Boolean).slice(0, 50);
+    const db = getDb();
+    if (!keys.length) { res.json({}); return; }
+    const placeholders = keys.map(() => '?').join(',');
+    const rows = await db.prepare(`SELECT key, value FROM settings WHERE key IN (${placeholders})`).all(...keys) as any[];
+    const values: Record<string, string | null> = Object.fromEntries(keys.map(key => [key, null]));
+    for (const row of rows) values[row.key] = row.value ?? null;
+    res.json(values);
+  } catch (e: any) {
+    console.error('Settings batch read failed:', e.message);
+    res.json({});
+  }
+});
+
 router.get('/:key', async (req: Request, res: Response) => {
   try {
     const db = getDb();
