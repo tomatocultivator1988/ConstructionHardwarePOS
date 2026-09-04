@@ -2,7 +2,7 @@ import { apiGet, apiPost, apiPut, apiDel } from '../lib/api';
 import { esc, val, fmtDate, fmtPeso, setErr, clearErr, disableBtn, isAdmin } from '../lib/helpers';
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
 import { loadView } from '../lib/router';
-import { printReceipt } from './receipt';
+import { showReceiptPreview } from './receipt';
 import type { Invoice, Material, Customer } from '../lib/types';
 
 let invoicePage = 1;
@@ -294,7 +294,7 @@ export async function showInvoiceDetail(id: string) {
     ` : ''}
 
     <div class="modal-actions">
-      <button class="btn btn-primary" onclick="printReceipt('${inv.id}')">Print Receipt</button>
+      <button class="btn btn-primary" onclick="showReceiptPreview('${inv.id}')">Print Receipt</button>
       ${isAdmin() && inv.status !== 'voided' ? `<button class="btn btn-warning" onclick="voidInvoice('${inv.id}')">Void Invoice</button><button class="btn" onclick="issueCreditMemo('${inv.id}')">Credit Memo</button>${totalPaid > 0 ? `<button class="btn" onclick="recordRefund('${inv.id}')">Refund</button>` : ''}` : ''}
       <button class="btn" onclick="closeModal();loadView('invoices')">Close</button>
     </div>
