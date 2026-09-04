@@ -80,11 +80,12 @@ const GUIDE: Record<string, { title: string; intro: string; sections: HelpSectio
   },
   reports: {
     title: 'Reports',
-    intro: 'Reports turn recorded sales, payments, expenses, inventory, and adjustments into operational and financial views.',
+    intro: 'Reports turn recorded sales, payments, expenses, inventory, and adjustments into operational and financial views. Start with the report that matches the question you are asking.',
     sections: [
-      { title: 'Available reports', body: '<strong>Daily Sales</strong> summarizes daily activity. <strong>P&L</strong> compares income, cost/profit, and expenses. <strong>Tax Summary</strong> groups tax-related figures. <strong>Date Range</strong> filters activity. <strong>Books</strong> provides books-oriented outputs. <strong>Financial Summary</strong> and cash-flow views help compare sales, collections, expenses, and balances.' },
-      { title: 'How to use dates', body: 'Choose the correct business date or date range before interpreting totals. Sales/invoices and actual payments answer different questions: an invoice may be recorded before it is collected.' },
-      { title: 'Reconciliation', body: 'Compare payment totals with receipts and cashier shift totals. Investigate refunds, credit memos, voids, cash-in, and cash-out when totals do not match.' },
+      { title: 'Choose the right report', body: '<strong>Daily Sales</strong>: one day\'s invoices, payment methods, tax, profit, and paid amounts. <strong>P&L</strong>: monthly net sales, cost of goods, gross profit, expenses, and net profit. <strong>Tax Summary</strong>: monthly invoice count, VATable sales, VAT, exempt sales, and tax-rate breakdown. <strong>Date Range</strong>: sales or profit between two dates. <strong>Books</strong>: sales journal, cash receipts, expenses/purchases, accounts receivable, and cash-flow summary. <strong>Financial Summary</strong>: net sales, COGS, gross profit, expenses, tax payable, collections, receivables, and net profit.' },
+      { title: 'How to run one', body: '1. Tap the report tab. 2. Select the date, month, or From/To range. 3. Tap <strong>Load</strong> or <strong>Generate</strong>. 4. Read the summary cards first. 5. Review the detailed table below. 6. Use <strong>Print</strong> when you need a paper/PDF copy.' },
+      { title: 'How to read the money', body: '<strong>Sales/invoices</strong> show what was recorded as sold. <strong>Collections/payments</strong> show money actually received. An account invoice can increase sales while remaining unpaid. <strong>COGS</strong> is the recorded cost of sold materials. <strong>Net cash change</strong> is cash receipts minus cash refunds and cash expenses.' },
+      { title: 'Reconciliation', body: 'Compare Daily Sales payment totals with Receipts, then compare cash payments with the Cashier Shift closing amount. Investigate refunds, credit memos, voids, cash-in, and cash-out when totals do not match. If a number looks wrong, check the transaction date and the original invoice first.' },
     ],
   },
   settings: {

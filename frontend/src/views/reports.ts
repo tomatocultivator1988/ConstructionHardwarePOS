@@ -9,7 +9,7 @@ export async function renderReports(): Promise<string> {
     <div class="page-header">
       <h2>Reports</h2>
     </div>
-    <div style="display:flex;gap:2px;background:var(--c-bg);padding:3px;border-radius:var(--radius-md);margin-bottom:var(--space-5);width:fit-content">
+    <div class="report-tabs" role="tablist" aria-label="Report types">
       <button class="nav-btn ${currentSubTab === 'daily' ? 'active' : ''}" onclick="switchReportTab('daily')" style="font-size:var(--fs-sm)">Daily Sales</button>
       <button class="nav-btn ${currentSubTab === 'monthly' ? 'active' : ''}" onclick="switchReportTab('monthly')" style="font-size:var(--fs-sm)">P&L</button>
       <button class="nav-btn ${currentSubTab === 'tax' ? 'active' : ''}" onclick="switchReportTab('tax')" style="font-size:var(--fs-sm)">Tax Summary</button>
@@ -45,8 +45,8 @@ async function loadFinancialSummary(from?: string, to?: string) {
   const start = from || businessDate(); const end = to || start;
   const data = await apiGet<any>(`/reports/financial-summary?from=${start}&to=${end}`);
   const profitColor = data.net_profit >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
-  return `<div style="display:flex;gap:var(--space-3);align-items:center;margin-bottom:var(--space-4);flex-wrap:wrap"><label>From</label><input id="rpt-summary-from" type="date" value="${start}" /><label>To</label><input id="rpt-summary-to" type="date" value="${end}" /><button class="btn btn-primary btn-sm" onclick="reloadFinancialSummary()">Load</button></div>
-    <div class="dashboard-grid" style="grid-template-columns:repeat(4,1fr)">
+  return `<div class="report-filters"><label>From</label><input id="rpt-summary-from" type="date" value="${start}" /><label>To</label><input id="rpt-summary-to" type="date" value="${end}" /><button class="btn btn-primary btn-sm" onclick="reloadFinancialSummary()">Load</button></div>
+    <div class="dashboard-grid report-metrics report-metrics-4">
       <div class="dashboard-card card-success"><div class="card-label">Net Sales</div><div class="card-value">${fmtPeso(data.net_sales)}</div><div class="card-sub">Accrual basis</div></div>
       <div class="dashboard-card card-warning"><div class="card-label">COGS</div><div class="card-value">${fmtPeso(data.cogs)}</div></div>
       <div class="dashboard-card card-success"><div class="card-label">Gross Profit</div><div class="card-value">${fmtPeso(data.gross_profit)}</div></div>
@@ -71,7 +71,7 @@ async function loadBooksReport(from?: string, to?: string) {
   const start = from || businessDate(); const end = to || start;
   const [data, cash] = await Promise.all([apiGet<any>(`/reports/books?from=${start}&to=${end}`), apiGet<any>(`/reports/cash-flow?from=${start}&to=${end}`)]);
   const rows = (items: any[], fields: string[]) => items.length ? items.map((r: any) => `<tr>${fields.map(f => `<td data-label="${esc(f)}">${esc(String(r[f] ?? ''))}</td>`).join('')}</tr>`).join('') : '<tr><td colspan="6">No entries</td></tr>';
-  return `<div style="display:flex;gap:var(--space-3);align-items:center;margin-bottom:var(--space-4)"><input id="rpt-books-from" type="date" value="${start}" /><input id="rpt-books-to" type="date" value="${end}" /><button class="btn btn-primary btn-sm" onclick="reloadBooks()">Load</button><button class="btn btn-primary btn-sm" onclick="printReport('books','${start} to ${end}')">Print</button></div>
+  return `<div class="report-filters"><label>From</label><input id="rpt-books-from" type="date" value="${start}" /><label>To</label><input id="rpt-books-to" type="date" value="${end}" /><button class="btn btn-primary btn-sm" onclick="reloadBooks()">Load</button><button class="btn btn-primary btn-sm" onclick="printReport('books','${start} to ${end}')">Print</button></div>
     <h3>Sales Journal</h3><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Buyer</th><th>Net Sales</th><th>Tax</th><th>Adjusted Total</th></tr></thead><tbody>${rows(data.sales,['invoice_number','issued_date','buyer','net_sales','adjusted_tax','adjusted_total'])}</tbody></table></div>
     <h3>Cash Receipts Journal</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Invoice</th><th>Method</th><th>Amount</th></tr></thead><tbody>${rows(data.receipts,['payment_date','invoice_number','method','amount'])}</tbody></table></div>
     <h3>Expenses / Purchases</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Category</th><th>Vendor</th><th>Payment</th><th>Description</th><th>Amount</th></tr></thead><tbody>${rows(data.expenses,['expense_date','category','vendor','payment_method','description','amount'])}</tbody></table></div>
@@ -89,18 +89,18 @@ async function loadDailyReport(date?: string) {
   const d = date || businessDate();
   const data = await apiGet<any>(`/reports/daily?date=${d}`);
   return `
-    <div style="display:flex;gap:var(--space-4);margin-bottom:var(--space-5);align-items:center">
+    <div class="report-filters">
       <input type="date" id="rpt-daily-date" value="${d}" onchange="reloadDaily()" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
       <button class="btn btn-primary btn-sm" onclick="printReport('daily', '${d}')">Print</button>
     </div>
-    <div class="dashboard-grid" style="grid-template-columns:repeat(4,1fr)">
+    <div class="dashboard-grid report-metrics report-metrics-4">
       <div class="dashboard-card card-success"><div class="card-label">Gross Sales</div><div class="card-value">${fmtPeso(data.totals.gross_sales)}</div></div>
       <div class="dashboard-card card-success"><div class="card-label">Profit</div><div class="card-value">${fmtPeso(data.totals.profit)}</div></div>
       <div class="dashboard-card card-info"><div class="card-label">Tax Collected</div><div class="card-value">${fmtPeso(data.totals.tax_collected)}</div></div>
       <div class="dashboard-card card-info"><div class="card-label">Invoices</div><div class="card-value" style="font-size:var(--fs-2xl)">${data.totals.invoice_count}</div></div>
     </div>
     ${data.paymentMethods?.length ? `
-    <div style="display:flex;gap:var(--space-6);margin-bottom:var(--space-4);padding:var(--space-3) var(--space-4);background:var(--c-surface);border-radius:var(--radius-md);border:1px solid var(--c-border)">
+    <div class="report-payment-methods">
       <span style="font-weight:600;color:var(--c-text-muted);font-size:var(--fs-xs)">PAYMENT METHODS:</span>
       ${data.paymentMethods.map((m: any) => `<span style="font-size:var(--fs-sm)"><strong>${esc(m.method)}</strong> ${fmtPeso(m.total)}</span>`).join(' | ')}
     </div>` : ''}
@@ -129,11 +129,11 @@ async function loadMonthlyReport(month?: string) {
   const netColor = data.net_profit >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
   const momColor = data.mom_change >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
   return `
-    <div style="display:flex;gap:var(--space-4);margin-bottom:var(--space-5);align-items:center">
+    <div class="report-filters">
       <input type="month" id="rpt-month" value="${m}" onchange="reloadMonthly()" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
       <button class="btn btn-primary btn-sm" onclick="printReport('monthly', '${m}')">Print</button>
     </div>
-    <div class="dashboard-grid" style="grid-template-columns:repeat(5,1fr)">
+    <div class="dashboard-grid report-metrics report-metrics-5">
       <div class="dashboard-card card-success"><div class="card-label">Net Sales</div><div class="card-value">${fmtPeso(data.revenue)}</div><div class="card-sub">Accrual basis</div></div>
       <div class="dashboard-card card-warning"><div class="card-label">COGS</div><div class="card-value">${fmtPeso(data.cogs)}</div></div>
       <div class="dashboard-card card-success"><div class="card-label">Gross Profit</div><div class="card-value">${fmtPeso(data.gross_profit)}</div></div>
@@ -169,11 +169,11 @@ async function loadTaxReport(month?: string) {
   const m = month || businessMonth();
   const data = await apiGet<any>(`/reports/tax?month=${m}`);
   return `
-    <div style="display:flex;gap:var(--space-4);margin-bottom:var(--space-5);align-items:center">
+    <div class="report-filters">
       <input type="month" id="rpt-tax-month" value="${m}" onchange="reloadTax()" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
       <button class="btn btn-primary btn-sm" onclick="printReport('tax', '${m}')">Print</button>
     </div>
-    <div class="dashboard-grid" style="grid-template-columns:repeat(4,1fr)">
+    <div class="dashboard-grid report-metrics report-metrics-4">
       <div class="dashboard-card card-info"><div class="card-label">Total Invoices</div><div class="card-value">${data.invoice_count}</div></div>
       <div class="dashboard-card card-success"><div class="card-label">VATable Sales</div><div class="card-value">${fmtPeso(data.vatable_sales)}</div></div>
       <div class="dashboard-card card-warning"><div class="card-label">VAT Collected</div><div class="card-value">${fmtPeso(data.vat_collected)}</div></div>
@@ -202,7 +202,7 @@ async function loadRangeForm() {
   const from = businessDate();
   const to = businessDate();
   return `
-    <div style="display:flex;gap:var(--space-4);margin-bottom:var(--space-5);align-items:center;flex-wrap:wrap">
+    <div class="report-filters">
       <label style="font-size:var(--fs-sm);color:var(--c-text-secondary)">From</label>
       <input type="date" id="rpt-from" value="${from}" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
       <label style="font-size:var(--fs-sm);color:var(--c-text-secondary)">To</label>
@@ -229,7 +229,7 @@ export async function loadRangeReport() {
 
   if (type === 'sales') {
     el.innerHTML = `
-      <div class="dashboard-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:var(--space-4)">
+      <div class="dashboard-grid report-metrics report-metrics-4" style="margin-bottom:var(--space-4)">
         <div class="dashboard-card card-success"><div class="card-label">Gross Sales</div><div class="card-value">${fmtPeso(data.totals.gross_sales)}</div></div>
         <div class="dashboard-card card-success"><div class="card-label">Profit</div><div class="card-value">${fmtPeso(data.totals.profit)}</div></div>
         <div class="dashboard-card card-info"><div class="card-label">Tax Collected</div><div class="card-value">${fmtPeso(data.totals.tax_collected)}</div></div>
@@ -255,7 +255,7 @@ export async function loadRangeReport() {
   } else {
     const netColor = data.net_profit >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
     el.innerHTML = `
-      <div class="dashboard-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:var(--space-4)">
+      <div class="dashboard-grid report-metrics report-metrics-4" style="margin-bottom:var(--space-4)">
         <div class="dashboard-card card-success"><div class="card-label">Revenue</div><div class="card-value">${fmtPeso(data.revenue)}</div></div>
         <div class="dashboard-card card-warning"><div class="card-label">COGS</div><div class="card-value">${fmtPeso(data.cogs)}</div></div>
         <div class="dashboard-card card-success"><div class="card-label">Gross Profit</div><div class="card-value">${fmtPeso(data.gross_profit)}</div></div>

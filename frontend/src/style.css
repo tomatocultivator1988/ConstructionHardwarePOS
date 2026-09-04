@@ -860,6 +860,27 @@ body.show-install #install-prompt { display: flex; }
   .help-drawer { padding:1rem; }
 }
 
+/* Reports use compact, wrapping controls and metric cards on small screens. */
+.report-tabs { display:flex; flex-wrap:wrap; gap:3px; width:100%; margin-bottom:var(--space-5); padding:3px; border-radius:var(--radius-md); background:var(--c-bg); }
+.report-tabs .nav-btn { flex:0 1 auto; min-height:36px; }
+.report-filters { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-3); margin-bottom:var(--space-5); }
+.report-filters input, .report-filters select { min-height:36px; min-width:140px; max-width:100%; }
+.report-metrics { min-width:0; }
+.report-payment-methods { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-3); margin-bottom:var(--space-4); padding:var(--space-3) var(--space-4); background:var(--c-surface); border-radius:var(--radius-md); border:1px solid var(--c-border); }
+@media (max-width: 680px) {
+  .report-tabs { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:4px; }
+  .report-tabs .nav-btn { width:100%; min-width:0; padding-inline:6px; font-size:.7rem !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .report-filters { align-items:stretch; gap:8px; }
+  .report-filters label { flex:0 0 auto; align-self:center; font-size:var(--fs-xs); }
+  .report-filters input, .report-filters select, .report-filters .btn { flex:1 1 calc(50% - 8px); min-width:0; width:100%; }
+  .report-filters .btn { flex-basis:100%; }
+  .report-metrics-4, .report-metrics-5 { grid-template-columns:repeat(2, minmax(0, 1fr)) !important; gap:8px; }
+  .report-metrics .dashboard-card { min-width:0; padding:12px 10px; }
+  .report-metrics .card-label, .report-metrics .card-value { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .report-payment-methods { align-items:flex-start; flex-direction:column; gap:6px; }
+  .report-payment-methods > span { max-width:100%; }
+}
+
 .mobile-more-menu { display: grid; gap: var(--space-2); }
 .mobile-more-option { width: 100%; justify-content: space-between; text-align: left; min-height: 46px; }
 .mobile-more-option span { font-size: 1.4rem; color: var(--c-text-muted); }
