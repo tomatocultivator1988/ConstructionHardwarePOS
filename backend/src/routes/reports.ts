@@ -180,8 +180,8 @@ router.get('/tax', async (req: Request, res: Response) => {
 
   const [summary, taxRates] = await Promise.all([
     db.prepare(`
-      SELECT COUNT(*) AS invoice_count,
-        COALESCE(SUM(net_sales), 0) AS vatable_sales,
+        SELECT COUNT(*) AS invoice_count,
+        COALESCE(SUM(CASE WHEN tax_rate > 0 THEN net_sales ELSE 0 END), 0) AS vatable_sales,
         COALESCE(SUM(adjusted_tax), 0) AS vat_collected,
         COALESCE(SUM(CASE WHEN tax_rate > 0 THEN net_sales ELSE 0 END), 0) AS taxable_amount,
         COALESCE(SUM(CASE WHEN tax_rate = 0 THEN net_sales ELSE 0 END), 0) AS exempt_sales
@@ -224,7 +224,7 @@ router.get('/range', async (req: Request, res: Response) => {
           COALESCE(c.name, 'Walk-in') AS customer_name,
           COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) - COALESCE((SELECT SUM(amount) FROM refunds WHERE invoice_id=i.id),0) AS paid
         FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id
-        WHERE date(i.issued_date) >= ? AND date(i.issued_date) <= ?
+        WHERE i.status <> 'voided' AND date(i.issued_date) >= ? AND date(i.issued_date) <= ?
         ORDER BY i.issued_date DESC
       `).all(from, to) as Promise<any[]>,
       db.prepare(`

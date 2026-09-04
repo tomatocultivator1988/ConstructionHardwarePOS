@@ -77,6 +77,7 @@ Object.assign(window, {
   loadRangeReport: reports.loadRangeReport,
   printReport: reports.printReport,
   reloadBooks: reports.reloadBooks,
+  reloadFinancialSummary: reports.reloadFinancialSummary,
   switchSettingsTab: settings.switchSettingsTab,
   saveSettings: settings.saveSettings,
   openCashierShift: settings.openCashierShift,

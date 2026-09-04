@@ -15,6 +15,7 @@ export async function renderReports(): Promise<string> {
       <button class="nav-btn ${currentSubTab === 'tax' ? 'active' : ''}" onclick="switchReportTab('tax')" style="font-size:var(--fs-sm)">Tax Summary</button>
       <button class="nav-btn ${currentSubTab === 'range' ? 'active' : ''}" onclick="switchReportTab('range')" style="font-size:var(--fs-sm)">Date Range</button>
       <button class="nav-btn ${currentSubTab === 'books' ? 'active' : ''}" onclick="switchReportTab('books')" style="font-size:var(--fs-sm)">Books</button>
+      <button class="nav-btn ${currentSubTab === 'summary' ? 'active' : ''}" onclick="switchReportTab('summary')" style="font-size:var(--fs-sm)">Financial Summary</button>
     </div>
     <div id="report-content">
       ${await loadDailyReport()}
@@ -33,10 +34,37 @@ export async function switchReportTab(tab: string) {
     else if (tab === 'tax') el.innerHTML = await loadTaxReport();
     else if (tab === 'range') el.innerHTML = await loadRangeForm();
     else if (tab === 'books') el.innerHTML = await loadBooksReport();
+    else if (tab === 'summary') el.innerHTML = await loadFinancialSummary();
     document.querySelectorAll('#report-content .nav-btn').forEach((b, i) => {
-      b.classList.toggle('active', (['daily','monthly','tax','range'][i] === tab));
+      b.classList.toggle('active', (['daily','monthly','tax','range','books','summary'][i] === tab));
     });
   } catch (e: any) { showToast(e.message); }
+}
+
+async function loadFinancialSummary(from?: string, to?: string) {
+  const start = from || businessDate(); const end = to || start;
+  const data = await apiGet<any>(`/reports/financial-summary?from=${start}&to=${end}`);
+  const profitColor = data.net_profit >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
+  return `<div style="display:flex;gap:var(--space-3);align-items:center;margin-bottom:var(--space-4);flex-wrap:wrap"><label>From</label><input id="rpt-summary-from" type="date" value="${start}" /><label>To</label><input id="rpt-summary-to" type="date" value="${end}" /><button class="btn btn-primary btn-sm" onclick="reloadFinancialSummary()">Load</button></div>
+    <div class="dashboard-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="dashboard-card card-success"><div class="card-label">Net Sales</div><div class="card-value">${fmtPeso(data.net_sales)}</div><div class="card-sub">Accrual basis</div></div>
+      <div class="dashboard-card card-warning"><div class="card-label">COGS</div><div class="card-value">${fmtPeso(data.cogs)}</div></div>
+      <div class="dashboard-card card-success"><div class="card-label">Gross Profit</div><div class="card-value">${fmtPeso(data.gross_profit)}</div></div>
+      <div class="dashboard-card card-danger"><div class="card-label">Operating Expenses</div><div class="card-value">${fmtPeso(data.expenses)}</div></div>
+    </div>
+    <div class="chart-card" style="margin-top:var(--space-4);background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-lg);padding:var(--space-5)">
+      <div class="chart-title">Financial Reconciliation</div>
+      <div class="summary-line"><span>Tax payable</span><b>${fmtPeso(data.tax_payable)}</b></div>
+      <div class="summary-line"><span>Collections (payments less refunds)</span><b>${fmtPeso(data.collections - data.refunds)}</b></div>
+      <div class="summary-line"><span>Accounts receivable</span><b>${fmtPeso(data.accounts_receivable)}</b></div>
+      <div class="summary-line total"><span>Net Profit</span><b style="color:${profitColor}">${fmtPeso(data.net_profit)}</b></div>
+    </div>`;
+}
+
+export async function reloadFinancialSummary() {
+  const from = (document.getElementById('rpt-summary-from') as HTMLInputElement)?.value;
+  const to = (document.getElementById('rpt-summary-to') as HTMLInputElement)?.value;
+  const el = document.getElementById('report-content'); if (el) el.innerHTML = await loadFinancialSummary(from, to);
 }
 
 async function loadBooksReport(from?: string, to?: string) {
@@ -44,9 +72,9 @@ async function loadBooksReport(from?: string, to?: string) {
   const [data, cash] = await Promise.all([apiGet<any>(`/reports/books?from=${start}&to=${end}`), apiGet<any>(`/reports/cash-flow?from=${start}&to=${end}`)]);
   const rows = (items: any[], fields: string[]) => items.length ? items.map((r: any) => `<tr>${fields.map(f => `<td data-label="${esc(f)}">${esc(String(r[f] ?? ''))}</td>`).join('')}</tr>`).join('') : '<tr><td colspan="6">No entries</td></tr>';
   return `<div style="display:flex;gap:var(--space-3);align-items:center;margin-bottom:var(--space-4)"><input id="rpt-books-from" type="date" value="${start}" /><input id="rpt-books-to" type="date" value="${end}" /><button class="btn btn-primary btn-sm" onclick="reloadBooks()">Load</button><button class="btn btn-primary btn-sm" onclick="printReport('books','${start} to ${end}')">Print</button></div>
-    <h3>Sales Journal</h3><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Buyer</th><th>Subtotal</th><th>Tax</th><th>Total</th></tr></thead><tbody>${rows(data.sales,['invoice_number','issued_date','buyer','subtotal','tax_amount','total'])}</tbody></table></div>
+    <h3>Sales Journal</h3><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Buyer</th><th>Net Sales</th><th>Tax</th><th>Adjusted Total</th></tr></thead><tbody>${rows(data.sales,['invoice_number','issued_date','buyer','net_sales','adjusted_tax','adjusted_total'])}</tbody></table></div>
     <h3>Cash Receipts Journal</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Invoice</th><th>Method</th><th>Amount</th></tr></thead><tbody>${rows(data.receipts,['payment_date','invoice_number','method','amount'])}</tbody></table></div>
-    <h3>Expenses / Purchases</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Category</th><th>Vendor</th><th>Description</th><th>Amount</th></tr></thead><tbody>${rows(data.expenses,['expense_date','category','vendor','description','amount'])}</tbody></table></div>
+    <h3>Expenses / Purchases</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Category</th><th>Vendor</th><th>Payment</th><th>Description</th><th>Amount</th></tr></thead><tbody>${rows(data.expenses,['expense_date','category','vendor','payment_method','description','amount'])}</tbody></table></div>
     <h3>Accounts Receivable</h3><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Buyer</th><th>Total</th><th>Paid</th><th>Balance</th></tr></thead><tbody>${rows(data.receivables,['invoice_number','buyer','total','paid','balance'])}</tbody></table></div>
     <h3>Cash Flow Summary</h3><div class="summary-line"><span>Cash receipts</span><b>${fmtPeso(cash.cash_receipts)}</b></div><div class="summary-line"><span>Cash refunds</span><b>${fmtPeso(cash.cash_refunds)}</b></div><div class="summary-line"><span>Cash expenses</span><b>${fmtPeso(cash.cash_expenses)}</b></div><div class="summary-line total"><span>Net cash change</span><b>${fmtPeso(cash.net_cash_change)}</b></div>`;
 }
