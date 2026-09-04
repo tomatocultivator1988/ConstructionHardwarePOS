@@ -11,8 +11,10 @@ import * as reports from './views/reports';
 import * as login from './views/login';
 import * as settings from './views/settings';
 import { printReceipt } from './views/receipt';
+import * as receipts from './views/receipts';
 
 Object.assign(window, {
+  loadView,
   closeModal,
   logout: login.logout,
   doLogin: login.doLogin,
@@ -25,6 +27,7 @@ Object.assign(window, {
   changeCustomerPage: customers.changeCustomerPage,
   toggleCustomerDetails: customers.toggleCustomerDetails,
   showMaterialModal: materials.showMaterialModal,
+  toggleCustomUnit: materials.toggleCustomUnit,
   createMaterial: materials.createMaterial,
   updateMaterial: materials.updateMaterial,
   editMaterial: materials.editMaterial,
@@ -45,6 +48,9 @@ Object.assign(window, {
   voidInvoice: invoices.voidInvoice,
   issueCreditMemo: invoices.issueCreditMemo,
   recordRefund: invoices.recordRefund,
+  filterReceipts: receipts.filterReceipts,
+  changeReceiptPage: receipts.changeReceiptPage,
+  viewReceipt: receipts.viewReceipt,
   showExpenseModal: expenses.showExpenseModal,
   createExpense: expenses.createExpense,
   updateExpense: expenses.updateExpense,
@@ -156,7 +162,7 @@ export function applyRoleUI() {
 }
 
 function openMobileMore() {
-  const options = [['expenses', 'Expenses'], ['suppliers', 'Suppliers'], ['purchase-orders', 'Purchase Orders'], ...(isAdmin() ? [['reports', 'Reports'], ['settings', 'Settings']] : [])];
+  const options = [['receipts', 'Receipts'], ['expenses', 'Expenses'], ['suppliers', 'Suppliers'], ['purchase-orders', 'Purchase Orders'], ...(isAdmin() ? [['reports', 'Reports'], ['settings', 'Settings']] : [])];
   const modal = document.createElement('div');
   modal.className = 'modal'; modal.id = 'mobile-more-modal';
   modal.innerHTML = `<div class="modal-content"><h3>More</h3><div class="mobile-more-menu">${options.map(([view, label]) => `<button class="btn mobile-more-option" onclick="closeModal();loadView('${view}')">${label}<span>›</span></button>`).join('')}</div><div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button></div></div>`;

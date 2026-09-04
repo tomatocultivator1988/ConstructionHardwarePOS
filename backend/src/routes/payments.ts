@@ -3,6 +3,26 @@ import { getDb } from '../db/setup';
 
 const router = Router();
 
+router.get('/receipts', async (req: Request, res: Response) => {
+  const db = getDb();
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 15));
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+  const from = typeof req.query.from === 'string' ? req.query.from : '';
+  const to = typeof req.query.to === 'string' ? req.query.to : '';
+  const conditions = ["i.status <> 'voided'"];
+  const params: any[] = [];
+  if (search) { conditions.push('(i.invoice_number LIKE ? OR COALESCE(c.name, \'Walk-in\') LIKE ?)'); params.push(`%${search}%`, `%${search}%`); }
+  if (from) { conditions.push('date(p.payment_date) >= ?'); params.push(from); }
+  if (to) { conditions.push('date(p.payment_date) <= ?'); params.push(to); }
+  const where = conditions.join(' AND ');
+  const total = Number((await db.prepare(`SELECT COUNT(*) total FROM payments p JOIN invoices i ON i.id=p.invoice_id LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}`).get(...params) as any).total);
+  const data = await db.prepare(`SELECT p.id, p.invoice_id, p.payment_date, p.amount, p.method, p.notes, i.invoice_number, COALESCE(c.name,'Walk-in') customer_name
+    FROM payments p JOIN invoices i ON i.id=p.invoice_id LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}
+    ORDER BY p.payment_date DESC LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize);
+  res.json({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+});
+
 router.get('/summary', async (_req: Request, res: Response) => {
   const db = getDb();
   try {

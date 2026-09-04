@@ -13,8 +13,18 @@ let materialSearch = '';
 let materialCategory = '';
 
 function unitOptions(selected?: string) {
-  const all = selected && !UNIT_OPTIONS.includes(selected) ? [selected, ...UNIT_OPTIONS] : UNIT_OPTIONS;
-  return all.map(u => `<option value="${esc(u)}"${u === selected ? ' selected' : ''}>${esc(u)}</option>`).join('');
+  const isCustom = !!selected && !UNIT_OPTIONS.includes(selected);
+  return UNIT_OPTIONS.map(u => `<option value="${esc(u)}"${u === selected ? ' selected' : ''}>${esc(u)}</option>`).join('') + `<option value="__custom__"${isCustom ? ' selected' : ''}>Custom unit…</option>`;
+}
+
+export function toggleCustomUnit() {
+  const select = document.getElementById('mf-unit') as HTMLSelectElement | null;
+  const input = document.getElementById('mf-custom-unit') as HTMLInputElement | null;
+  if (!select || !input) return;
+  const custom = select.value === '__custom__';
+  input.style.display = custom ? '' : 'none';
+  input.required = custom;
+  if (custom) input.focus();
 }
 
 function catOptions(selected?: string) {
@@ -91,7 +101,8 @@ export function showMaterialModal(data?: Material) {
     </div>
     <div class="form-row">
       <div class="form-group"><label>Unit *</label>
-        <select id="mf-unit"><option value="">Select unit...</option>${unitOptions(data?.unit)}</select>
+        <select id="mf-unit" onchange="toggleCustomUnit()"><option value="">Select unit...</option>${unitOptions(data?.unit)}</select>
+        <input id="mf-custom-unit" maxlength="30" value="${data?.unit && !UNIT_OPTIONS.includes(data.unit) ? esc(data.unit) : ''}" placeholder="e.g. Bundle, Sheet, Truckload" style="margin-top:6px;display:${data?.unit && !UNIT_OPTIONS.includes(data.unit) ? '' : 'none'}" />
         <div class="field-error" id="mf-unit-err"></div>
       </div>
       <div class="form-group"><label>Stock</label><input id="mf-stock" type="number" min="0" value="${data?.stock ?? 0}" /><div class="field-error" id="mf-stock-err"></div></div>
@@ -113,7 +124,7 @@ export function showMaterialModal(data?: Material) {
 
 export async function createMaterial() {
   ['mf-name','mf-unit','mf-price','mf-cost','mf-stock','mf-reorder'].forEach(id => clearErr(id + '-err'));
-  const name = val('mf-name').trim(); const unit = val('mf-unit');
+  const name = val('mf-name').trim(); const selectedUnit = val('mf-unit'); const unit = selectedUnit === '__custom__' ? val('mf-custom-unit').trim() : selectedUnit;
   const price = parseFloat(val('mf-price')); const cost = parseFloat(val('mf-cost'));
   const wpriceRaw = parseFloat(val('mf-wprice')); const wprice = isNaN(wpriceRaw) ? 0 : wpriceRaw;
   const stockRaw = val('mf-stock'); const reorderRaw = val('mf-reorder');
@@ -136,7 +147,7 @@ export async function createMaterial() {
 
 export async function updateMaterial(id: string) {
   ['mf-name','mf-unit','mf-price','mf-cost','mf-stock','mf-reorder'].forEach(i => clearErr(i + '-err'));
-  const name = val('mf-name').trim(); const unit = val('mf-unit');
+  const name = val('mf-name').trim(); const selectedUnit = val('mf-unit'); const unit = selectedUnit === '__custom__' ? val('mf-custom-unit').trim() : selectedUnit;
   const price = parseFloat(val('mf-price')); const cost = parseFloat(val('mf-cost'));
   const wpriceRaw = parseFloat(val('mf-wprice')); const wprice = isNaN(wpriceRaw) ? 0 : wpriceRaw;
   const stockRaw = val('mf-stock'); const reorderRaw = val('mf-reorder');

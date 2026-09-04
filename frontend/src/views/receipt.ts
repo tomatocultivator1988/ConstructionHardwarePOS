@@ -4,6 +4,9 @@ import { showToast } from '../lib/helpers';
 import type { Invoice } from '../lib/types';
 
 export async function printReceipt(id: string) {
+  // Open from the original click before awaiting API calls so popup blockers allow it.
+  const printWin = window.open('', '_blank');
+  if (!printWin) { showToast('Please allow pop-ups to print receipts'); return; }
   try {
     const inv = await apiGet<Invoice>(`/invoices/${id}`);
     const business = await Promise.all(['business_name','business_address','business_tin','business_rdo','vat_registered'].map(async key => [key, (await apiGet<{ value: string }>(`/settings/${key}`)).value || '']));
@@ -11,9 +14,6 @@ export async function printReceipt(id: string) {
     const totalPaid = inv.payments.reduce((s: number, p: any) => s + p.amount, 0) - ((inv as any).refunds || []).reduce((s: number, r: any) => s + r.amount, 0);
     const adjustedTotal = Number((inv as any).adjusted_total ?? inv.total);
     const balance = adjustedTotal - totalPaid;
-
-    const printWin = window.open('', '_blank');
-    if (!printWin) { showToast('Please allow pop-ups to print receipts'); return; }
 
     const issuedDate = new Date(inv.issued_date.replace(' ', 'T'));
     const dateStr = issuedDate.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -142,6 +142,7 @@ export async function printReceipt(id: string) {
     `);
     printWin.document.close();
   } catch (e: any) {
+    printWin.close();
     showToast(e.message);
   }
 }
