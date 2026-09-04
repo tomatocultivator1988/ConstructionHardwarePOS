@@ -3,6 +3,19 @@ import { esc, fmtDate, fmtPeso, numberToWords } from '../lib/helpers';
 import { showToast } from '../lib/helpers';
 import type { Invoice } from '../lib/types';
 
+type ReceiptContext = {
+  inv: Invoice;
+  settings: Record<string, string>;
+  dateStr: string;
+  timeStr: string;
+  totalPaid: number;
+  adjustedTotal: number;
+  balance: number;
+  isVat: boolean;
+  vatRate: number;
+  vatAmount: number;
+};
+
 export async function printReceipt(id: string) {
   try {
     const bluetooth = (navigator as any).bluetooth;
@@ -26,30 +39,44 @@ export async function printReceipt(id: string) {
     const characteristic = await findPrinterCharacteristic(server);
     if (!characteristic) throw new Error('Could not find a writable printer characteristic. Check that the printer is BLE/ESC-POS compatible.');
 
-    const inv = await apiGet<Invoice>(`/invoices/${id}`);
-    let businessSettings: Record<string, string> = {};
-    try {
-      businessSettings = await apiGet<Record<string, string | null>>('/settings?keys=business_name,business_address,business_tin,business_rdo,vat_registered') as Record<string, string>;
-    } catch { businessSettings = {}; }
-    const totalPaid = inv.payments.reduce((s: number, p: any) => s + p.amount, 0) - ((inv as any).refunds || []).reduce((s: number, r: any) => s + r.amount, 0);
-    const adjustedTotal = Number((inv as any).adjusted_total ?? inv.total);
-    const balance = adjustedTotal - totalPaid;
-
-    const issuedDate = new Date(String(inv.issued_date || new Date().toISOString()).replace(' ', 'T'));
-    const dateStr = issuedDate.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' });
-    const timeStr = issuedDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
-    const cashier = 'Admin';
-
-    const isVat = businessSettings.vat_registered === '1' || Number(inv.tax_rate) > 0;
-    const vatRate = isVat ? Number(inv.tax_rate) : 0;
-    const vatAmount = Number((inv as any).adjusted_tax ?? inv.tax_amount);
-    const vatableSales = Math.max(0, adjustedTotal - vatAmount);
-    await writeThermalReceipt(characteristic, buildThermalReceipt(inv, businessSettings, dateStr, timeStr, totalPaid, adjustedTotal, balance, isVat, vatRate, vatAmount));
+    const receipt = await loadReceiptContext(id);
+    await writeThermalReceipt(characteristic, buildThermalReceipt(receipt));
     showToast(`Receipt sent to ${device.name || 'thermal printer'}`, 'success');
   } catch (e: any) {
     if (e?.name === 'NotFoundError') showToast('No Bluetooth printer was selected');
     else showToast(e?.message || 'Unable to print receipt');
   }
+}
+
+async function loadReceiptContext(id: string): Promise<ReceiptContext> {
+  const inv = await apiGet<Invoice>(`/invoices/${id}`);
+  let settings: Record<string, string> = {};
+  try { settings = await apiGet<Record<string, string | null>>('/settings?keys=business_name,business_address,business_tin,business_rdo,vat_registered') as Record<string, string>; } catch { /* Defaults are shown in the preview/printout. */ }
+  const totalPaid = (inv.payments || []).reduce((s: number, p: any) => s + Number(p.amount || 0), 0) - ((inv as any).refunds || []).reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
+  const adjustedTotal = Number((inv as any).adjusted_total ?? inv.total ?? 0);
+  const balance = adjustedTotal - totalPaid;
+  const issuedDate = new Date(String(inv.issued_date || new Date().toISOString()).replace(' ', 'T'));
+  const isVat = settings.vat_registered === '1' || Number(inv.tax_rate) > 0;
+  return { inv, settings, dateStr: issuedDate.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }), timeStr: issuedDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), totalPaid, adjustedTotal, balance, isVat, vatRate: isVat ? Number(inv.tax_rate) : 0, vatAmount: Number((inv as any).adjusted_tax ?? inv.tax_amount ?? 0) };
+}
+
+export async function showReceiptPreview(id: string) {
+  try {
+    const receipt = await loadReceiptContext(id);
+    document.getElementById('receipt-preview-modal')?.remove();
+    const modal = document.createElement('div');
+    modal.className = 'modal receipt-preview-modal';
+    modal.id = 'receipt-preview-modal';
+    modal.innerHTML = `<div class="modal-content receipt-preview-content">
+      <div class="receipt-preview-heading"><div><span class="help-eyebrow">Receipt Preview</span><h3>${esc(receipt.inv.invoice_number)}</h3></div><button class="help-close" aria-label="Close receipt preview">×</button></div>
+      <p class="receipt-preview-note">This white paper preview represents the monochrome receipt sent to the Bluetooth thermal printer.</p>
+      <div class="receipt-paper">${receiptPreviewHtml(receipt)}</div>
+      <div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="printReceipt('${id}')">Send to Bluetooth Printer</button></div>
+    </div>`;
+    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    modal.querySelector('.help-close')?.addEventListener('click', () => modal.remove());
+    document.body.appendChild(modal);
+  } catch (e: any) { showToast(e?.message || 'Unable to load receipt preview'); }
 }
 
 const PRINTER_SERVICES = [
@@ -79,7 +106,7 @@ async function writeThermalReceipt(characteristic: any, text: Uint8Array) {
   }
 }
 
-function buildThermalReceipt(inv: Invoice, settings: Record<string, string>, dateStr: string, timeStr: string, totalPaid: number, adjustedTotal: number, balance: number, isVat: boolean, vatRate: number, vatAmount: number): Uint8Array {
+function buildThermalReceipt({ inv, settings, dateStr, timeStr, totalPaid, adjustedTotal, balance, isVat, vatRate, vatAmount }: ReceiptContext): Uint8Array {
   const encoder = new TextEncoder();
   const width = 42;
   const line = '-'.repeat(width);
@@ -108,4 +135,18 @@ function buildThermalReceipt(inv: Invoice, settings: Record<string, string>, dat
     '', 'Thank you for your purchase!', '\x1b\x64\x04', '\x1d\x56\x00',
   ].filter(Boolean).join('\n') + '\n';
   return encoder.encode(content);
+}
+
+function receiptPreviewHtml({ inv, settings, dateStr, timeStr, totalPaid, adjustedTotal, balance, isVat, vatRate, vatAmount }: ReceiptContext): string {
+  const safe = (value: any, fallback = '') => esc(String(value ?? fallback));
+  const rows = (inv.items || []).map((item: any) => `<tr><td>${safe(item.description, 'Item')}</td><td>${safe(item.quantity)}</td><td>${fmtPeso(item.unit_price)}</td><td>${fmtPeso(item.total)}</td></tr>`).join('');
+  const methods = (inv.payments || []).map((p: any) => safe(p.method)).join(', ') || '—';
+  return `<div class="receipt-paper-header"><strong>${safe(settings.business_name, 'BuildPro Construction Supply')}</strong><span>Hardware &amp; Building Materials Dealer</span><span>${safe(settings.business_address, 'Business address not configured')}</span><span>${isVat ? 'VAT Reg.' : 'Non-VAT'} TIN: ${safe(settings.business_tin, 'Not configured')} · RDO/Branch: ${safe(settings.business_rdo, 'Not configured')}</span></div>
+    <h4>SALES INVOICE / OFFICIAL RECEIPT</h4>
+    <dl class="receipt-paper-info"><dt>Document No.</dt><dd>${safe(inv.invoice_number)}</dd><dt>Date</dt><dd>${safe(dateStr)}</dd><dt>Time</dt><dd>${safe(timeStr)}</dd><dt>Sold To</dt><dd>${safe((inv as any).customer_name, 'Walk-in')}</dd><dt>Delivery</dt><dd>${safe((inv as any).delivery_person, 'Not assigned')}</dd></dl>
+    <table><thead><tr><th>Particulars</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="receipt-paper-total">${isVat ? `<div><span>VATable Sales</span><span>${fmtPeso(Math.max(0, adjustedTotal - vatAmount))}</span></div><div><span>VAT (${(vatRate * 100).toFixed(0)}%)</span><span>${fmtPeso(vatAmount)}</span></div>` : '<div><span>Non-VAT Transaction</span><span></span></div>'}<div class="grand"><span>TOTAL AMOUNT DUE</span><span>${fmtPeso(adjustedTotal)}</span></div></div>
+    <p class="receipt-paper-words">Amount in Words: <strong>${safe(numberToWords(adjustedTotal))}</strong></p>
+    <div class="receipt-paper-payments"><div><span>Payment Received</span><span>${fmtPeso(totalPaid)}</span></div><div><span>Outstanding Balance</span><span>${fmtPeso(balance)}</span></div><div><span>Mode of Payment</span><span>${methods}</span></div></div>
+    <div class="receipt-paper-footer">Thank you for your purchase!<br><small>Delivery Person: ${safe((inv as any).delivery_person, 'Not assigned')}</small></div>`;
 }

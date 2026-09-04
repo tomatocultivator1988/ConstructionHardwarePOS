@@ -10,7 +10,7 @@ import * as purchaseOrders from './views/purchase-orders';
 import * as reports from './views/reports';
 import * as login from './views/login';
 import * as settings from './views/settings';
-import { printReceipt } from './views/receipt';
+import { printReceipt, showReceiptPreview } from './views/receipt';
 import * as receipts from './views/receipts';
 import { openHelp } from './lib/help';
 
@@ -89,6 +89,7 @@ Object.assign(window, {
   updateUser: settings.updateUser,
   delUser: settings.delUser,
   printReceipt,
+  showReceiptPreview,
   checkLowStock: () => checkLowStock(),
   openMobileMore,
   openHelp,

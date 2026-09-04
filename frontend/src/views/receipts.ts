@@ -1,7 +1,7 @@
 import { apiGet } from '../lib/api';
 import { esc, fmtDate, fmtPeso } from '../lib/helpers';
 import { loadView } from '../lib/router';
-import { printReceipt } from './receipt';
+import { printReceipt, showReceiptPreview } from './receipt';
 
 let page = 1;
 const PAGE_SIZE = 15;
@@ -21,4 +21,4 @@ export async function renderReceipts(): Promise<string> {
 
 export function filterReceipts() { search = (document.getElementById('receipt-search') as HTMLInputElement)?.value.trim() || ''; page = 1; loadView('receipts'); }
 export function changeReceiptPage(next: number) { page = Math.max(1, next); loadView('receipts'); }
-export async function viewReceipt(id: string) { const { showInvoiceDetail } = await import('./invoices'); showInvoiceDetail(id); }
+export async function viewReceipt(id: string) { showReceiptPreview(id); }
