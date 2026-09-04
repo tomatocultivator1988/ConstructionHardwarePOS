@@ -73,6 +73,13 @@ export async function renderDashboard(): Promise<string> {
   const lowNames = JSON.stringify(lowStockMats.map((m: any) => m.name.length > 18 ? m.name.slice(0, 15) + '...' : m.name));
   const lowStockData = JSON.stringify(lowStockMats.map((m: any) => m.stock));
   const lowReorderData = JSON.stringify(lowStockMats.map((m: any) => m.reorder_point));
+  const expenseLabels = JSON.stringify((analytics.expenseByCategory || []).map((e: any) => e.category));
+  const expenseData = JSON.stringify((analytics.expenseByCategory || []).map((e: any) => e.total));
+  const pnlLabels = JSON.stringify((analytics.pnlTrend || []).map((e: any) => e.month));
+  const pnlIncome = JSON.stringify((analytics.pnlTrend || []).map((e: any) => e.income));
+  const pnlExpenses = JSON.stringify((analytics.pnlTrend || []).map((e: any) => e.expenses));
+  const methodLabels = JSON.stringify((analytics.paymentMethodTotals || []).map((e: any) => e.method));
+  const methodData = JSON.stringify((analytics.paymentMethodTotals || []).map((e: any) => e.total));
 
   setTimeout(() => {
     const chartInstances = getChartInstances();
@@ -144,6 +151,19 @@ export async function renderDashboard(): Promise<string> {
         ]},
         options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { color: '#a09e9a', padding: 16, font: { size: 11 }, usePointStyle: true, pointStyle: 'rectRounded' } } }, scales: { x: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#6b6a66', font: { size: 10 } } }, y: { grid: { display: false }, ticks: { color: '#a09e9a', font: { size: 10 } } } } }
       }));
+    }
+
+    const ctx6 = (document.getElementById('chart-expenses') as HTMLCanvasElement)?.getContext('2d');
+    if (ctx6 && (analytics.expenseByCategory || []).length) {
+      chartInstances.push(new (window as any).Chart(ctx6, { type: 'doughnut', data: { labels: JSON.parse(expenseLabels), datasets: [{ data: JSON.parse(expenseData), backgroundColor: ['#ef4444','#8b5cf6','#06b6d4','#22c55e','#f0b429','#94a3b8','#ec4899'], borderColor: '#1a1b1e', borderWidth: 3 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: { legend: { position: 'right', labels: { color: '#a09e9a', font: { size: 10 }, usePointStyle: true } } } } }));
+    }
+    const ctx7 = (document.getElementById('chart-pnl') as HTMLCanvasElement)?.getContext('2d');
+    if (ctx7) {
+      chartInstances.push(new (window as any).Chart(ctx7, { type: 'line', data: { labels: JSON.parse(pnlLabels), datasets: [{ label: 'Income', data: JSON.parse(pnlIncome), borderColor: '#06b6d4', backgroundColor: 'rgba(6,182,212,.12)', fill: true, tension: .3 }, { label: 'Expenses', data: JSON.parse(pnlExpenses), borderColor: '#ef654a', backgroundColor: 'rgba(239,101,74,.08)', fill: true, tension: .3 }] }, options: { responsive: true, maintainAspectRatio: false, interaction: { intersect: false, mode: 'index' }, scales: { y: { beginAtZero: true, ticks: { color: '#6b6a66', callback: (v: any) => '₱' + v.toFixed(0) }, grid: { color: 'rgba(255,255,255,.05)' } }, x: { ticks: { color: '#6b6a66' }, grid: { display: false } } }, plugins: { legend: { position: 'bottom', labels: { color: '#a09e9a', usePointStyle: true } } } } }));
+    }
+    const ctx8 = (document.getElementById('chart-payment-methods') as HTMLCanvasElement)?.getContext('2d');
+    if (ctx8 && (analytics.paymentMethodTotals || []).length) {
+      chartInstances.push(new (window as any).Chart(ctx8, { type: 'bar', data: { labels: JSON.parse(methodLabels), datasets: [{ label: 'Collected', data: JSON.parse(methodData), backgroundColor: ['#f0b429','#06b6d4','#8b5cf6','#22c55e','#94a3b8'], borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { color: '#6b6a66', callback: (v: any) => '₱' + v.toFixed(0) }, grid: { color: 'rgba(255,255,255,.05)' } }, x: { ticks: { color: '#6b6a66' }, grid: { display: false } } }, plugins: { legend: { display: false } } } }));
     }
   }, 50);
 
@@ -230,6 +250,14 @@ export async function renderDashboard(): Promise<string> {
         <div class="chart-title">Invoice Status</div>
         <canvas id="chart-status" height="200"></canvas>
       </div>
+    </div>
+
+    <div class="chart-grid">
+      <div class="chart-card"><div class="chart-title">Expenses by Category</div><canvas id="chart-expenses" height="200"></canvas></div>
+      <div class="chart-card"><div class="chart-title">Profit &amp; Loss — Last 6 Months</div><canvas id="chart-pnl" height="200"></canvas></div>
+    </div>
+    <div class="chart-grid">
+      <div class="chart-card"><div class="chart-title">Collections by Payment Method</div><canvas id="chart-payment-methods" height="200"></canvas><div class="card-sub" style="margin-top:8px">Payment-method totals are not bank-account balances.</div></div>
     </div>
 
     <div class="chart-grid">

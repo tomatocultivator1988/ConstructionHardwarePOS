@@ -25,6 +25,9 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       overallRevenue,
       monthlyTrend,
       topCustomers,
+      expenseByCategory,
+      pnlTrend,
+      paymentMethodTotals,
     ] = await Promise.all([
       db.prepare(`
         SELECT ii.material_id, m.name, m.unit, m.cost_price,
@@ -115,9 +118,25 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
         SELECT COALESCE(c.name, 'Walk-in') AS name,
           COUNT(DISTINCT i.id) AS invoice_count, SUM(p.amount) - COALESCE(SUM((SELECT COALESCE(SUM(r.amount),0) FROM refunds r WHERE r.invoice_id=i.id)),0) AS total_paid
         FROM payments p JOIN invoices i ON i.id = p.invoice_id
-        WHERE i.status <> 'voided'
         LEFT JOIN customers c ON c.id = i.customer_id
+        WHERE i.status <> 'voided'
         GROUP BY i.customer_id ORDER BY total_paid DESC LIMIT 5
+      `).all() as Promise<any[]>,
+      db.prepare(`SELECT category, COALESCE(SUM(amount),0) total FROM expenses GROUP BY category ORDER BY total DESC`).all() as Promise<any[]>,
+      db.prepare(`
+        WITH months AS (
+          SELECT strftime('%Y-%m', 'now', '+8 hours', '-' || (5 - t) || ' months') AS month
+          FROM (SELECT 0 AS t UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5)
+        )
+        SELECT months.month,
+          COALESCE((SELECT SUM(f.net_sales) FROM v_invoice_financials f WHERE f.status <> 'voided' AND strftime('%Y-%m', f.issued_date, '+8 hours')=months.month),0) income,
+          COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE strftime('%Y-%m', e.expense_date)=months.month),0) expenses
+        FROM months ORDER BY months.month
+      `).all() as Promise<any[]>,
+      db.prepare(`
+        SELECT p.method, COALESCE(SUM(p.amount),0) total
+        FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE i.status <> 'voided'
+        GROUP BY p.method ORDER BY total DESC
       `).all() as Promise<any[]>,
     ]);
 
@@ -155,6 +174,9 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       },
       monthlyTrend,
       topCustomers,
+      expenseByCategory,
+      pnlTrend,
+      paymentMethodTotals,
     };
 
     setCache(CACHE_KEY, result);
@@ -170,6 +192,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       yearRevenue: { revenue: 0, profit: 0 },
       overallRevenue: { revenue: 0, profit: 0 },
       monthlyTrend: [], topCustomers: [],
+      expenseByCategory: [], pnlTrend: [], paymentMethodTotals: [],
       error: e.message
     });
   }
