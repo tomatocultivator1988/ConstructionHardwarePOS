@@ -212,7 +212,7 @@ export async function showInvoiceDetail(id: string) {
   modal.id = modalId;
   modal.addEventListener('click', e => { if (e.target === modal) { modal.remove(); loadView('invoices'); } });
   document.body.appendChild(modal);
-  modal.innerHTML = `<div class="modal-content">
+  modal.innerHTML = `<div class="modal-content invoice-detail-modal-content"><div class="invoice-detail-scroll">
     <h3>Invoice ${esc(inv.invoice_number)}</h3>
     <div style="display:flex;gap:var(--space-4);align-items:center;margin-bottom:var(--space-4);flex-wrap:wrap">
       <span style="color:var(--c-text-secondary)">${esc(inv.customer_name)}</span>
@@ -298,7 +298,17 @@ export async function showInvoiceDetail(id: string) {
       ${isAdmin() && inv.status !== 'voided' ? `<button class="btn btn-warning" onclick="voidInvoice('${inv.id}')">Void Invoice</button><button class="btn" onclick="issueCreditMemo('${inv.id}')">Credit Memo</button>${totalPaid > 0 ? `<button class="btn" onclick="recordRefund('${inv.id}')">Refund</button>` : ''}` : ''}
       <button class="btn" onclick="closeModal();loadView('invoices')">Close</button>
     </div>
-  </div>`;
+  </div><div class="modal-scroll-hint" aria-hidden="true"><span>↓</span> More details below</div></div>`;
+  const detailScroll = modal.querySelector('.invoice-detail-scroll') as HTMLElement | null;
+  const scrollHint = modal.querySelector('.modal-scroll-hint') as HTMLElement | null;
+  const updateScrollHint = () => {
+    if (!detailScroll || !scrollHint) return;
+    const hasMore = detailScroll.scrollHeight > detailScroll.clientHeight + 8;
+    const atBottom = detailScroll.scrollTop + detailScroll.clientHeight >= detailScroll.scrollHeight - 8;
+    scrollHint.classList.toggle('is-hidden', !hasMore || atBottom);
+  };
+  detailScroll?.addEventListener('scroll', updateScrollHint, { passive: true });
+  requestAnimationFrame(updateScrollHint);
 }
 
 export async function voidInvoice(id: string) {
