@@ -12,7 +12,6 @@ export async function renderReports(): Promise<string> {
     <div class="report-tabs" role="tablist" aria-label="Report types">
       <button class="nav-btn ${currentSubTab === 'daily' ? 'active' : ''}" onclick="switchReportTab('daily')" style="font-size:var(--fs-sm)">Daily Sales</button>
       <button class="nav-btn ${currentSubTab === 'monthly' ? 'active' : ''}" onclick="switchReportTab('monthly')" style="font-size:var(--fs-sm)">P&L</button>
-      <button class="nav-btn ${currentSubTab === 'range' ? 'active' : ''}" onclick="switchReportTab('range')" style="font-size:var(--fs-sm)">Date Range</button>
       <button class="nav-btn ${currentSubTab === 'books' ? 'active' : ''}" onclick="switchReportTab('books')" style="font-size:var(--fs-sm)">Books</button>
     </div>
     <div id="report-content">
