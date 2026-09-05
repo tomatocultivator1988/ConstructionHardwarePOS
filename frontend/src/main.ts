@@ -11,6 +11,7 @@ import * as login from './views/login';
 import * as settings from './views/settings';
 import { printReceipt, showReceiptPreview } from './views/receipt';
 import * as receipts from './views/receipts';
+import * as productMix from './views/product-mix';
 import { openHelp } from './lib/help';
 
 Object.assign(window, {
@@ -29,6 +30,8 @@ Object.assign(window, {
   filterMaterials: materials.filterMaterials,
   showStockHistory: materials.showStockHistory,
   changeMaterialPage: materials.changeMaterialPage,
+  applyProductMixFilter: productMix.applyProductMixFilter,
+  clearProductMixFilter: productMix.clearProductMixFilter,
   toggleMobileDetails: materials.toggleMobileDetails,
   showInvoiceModal: invoices.showInvoiceModal,
   addLineItem: invoices.addLineItem,

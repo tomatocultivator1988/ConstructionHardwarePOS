@@ -6,27 +6,43 @@ const router = Router();
 
 // Product mix uses the cost captured on each invoice line. This keeps historical
 // gross profit stable when a product's current cost or selling price changes.
-router.get('/product-mix', async (_req: Request, res: Response) => {
+router.get('/product-mix', async (req: Request, res: Response) => {
   try {
+    const from = typeof req.query.from === 'string' && req.query.from ? req.query.from : '';
+    const to = typeof req.query.to === 'string' && req.query.to ? req.query.to : '';
+    const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
+    if ((from && !validDate(from)) || (to && !validDate(to))) {
+      res.status(400).json({ error: 'Dates must use YYYY-MM-DD format.' }); return;
+    }
+    if (from && to && from > to) {
+      res.status(400).json({ error: 'From date cannot be after To date.' }); return;
+    }
+    const periodClause = `${from ? " AND date(i.issued_date, '+8 hours') >= ?" : ''}${to ? " AND date(i.issued_date, '+8 hours') <= ?" : ''}`;
+    const periodParams = [from, to].filter(Boolean);
     const db = getDb();
     const rows = await db.prepare(`
-      SELECT m.id, m.name, m.unit, m.stock, m.reorder_point,
-        COALESCE(SUM(CASE WHEN i.id IS NOT NULL AND i.status <> 'voided'
-          THEN MAX(ii.quantity - COALESCE(r.returned_qty, 0), 0) ELSE 0 END), 0) AS quantity_sold,
-        COALESCE(SUM(CASE WHEN i.id IS NOT NULL AND i.status <> 'voided'
-          THEN MAX(ii.total - COALESCE(r.returned_credit, 0), 0) ELSE 0 END), 0) AS revenue,
-        COALESCE(SUM(CASE WHEN i.id IS NOT NULL AND i.status <> 'voided'
-          THEN MAX(ii.quantity - COALESCE(r.returned_qty, 0), 0) * COALESCE(ii.cost_price, 0) ELSE 0 END), 0) AS cogs
-      FROM materials m
-      LEFT JOIN invoice_items ii ON ii.material_id = m.id
-      LEFT JOIN invoices i ON i.id = ii.invoice_id
-      LEFT JOIN (
+      WITH returned AS (
         SELECT invoice_item_id, SUM(quantity) AS returned_qty, SUM(total_credit) AS returned_credit
         FROM invoice_returns GROUP BY invoice_item_id
-      ) r ON r.invoice_item_id = ii.id
+      ), sales_lines AS (
+        SELECT ii.material_id,
+          MAX(ii.quantity - COALESCE(r.returned_qty, 0), 0) AS quantity_sold,
+          MAX(ii.total - COALESCE(r.returned_credit, 0), 0) AS revenue,
+          MAX(ii.quantity - COALESCE(r.returned_qty, 0), 0) * COALESCE(ii.cost_price, 0) AS cogs
+        FROM invoice_items ii
+        JOIN invoices i ON i.id = ii.invoice_id
+        LEFT JOIN returned r ON r.invoice_item_id = ii.id
+        WHERE i.status <> 'voided'${periodClause}
+      )
+      SELECT m.id, m.name, m.unit, m.stock, m.reorder_point,
+        COALESCE(SUM(sl.quantity_sold), 0) AS quantity_sold,
+        COALESCE(SUM(sl.revenue), 0) AS revenue,
+        COALESCE(SUM(sl.cogs), 0) AS cogs
+      FROM materials m
+      LEFT JOIN sales_lines sl ON sl.material_id = m.id
       GROUP BY m.id
       ORDER BY revenue DESC, m.name ASC
-    `).all();
+    `).all(...periodParams);
 
     const mapped = rows.map(row => {
       const revenue = Math.round(Number(row.revenue || 0) * 100) / 100;
