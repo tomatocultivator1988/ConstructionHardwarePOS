@@ -33,6 +33,14 @@ const GUIDE: Record<string, { title: string; intro: string; sections: HelpSectio
       { title: 'History and deletion', body: 'Use <strong>History</strong> to review stock movements. Do not delete an item that is referenced by sales or purchasing records; preserve the history and edit the current item details instead.' },
     ],
   },
+  'product-mix': {
+    title: 'Product Mix',
+    intro: 'See which products are selling and how each product contributes to revenue and gross profit.',
+    sections: [
+      { title: 'How to read it', body: '<strong>Revenue</strong> is recorded line revenue after returns. <strong>COGS</strong> uses the cost captured on each sale. <strong>Gross Profit</strong> is revenue less COGS. Margin and Share show the product contribution relative to its own revenue and total product revenue.' },
+      { title: 'Inventory decisions', body: '<strong>No sales</strong> identifies products with no completed, non-voided sales. The low-stock label is shown alongside it when stock is at or below the product reorder point. Use this page with Products before reordering or changing prices.' },
+    ],
+  },
   invoices: {
     title: 'Invoices / Sales',
     intro: 'This is BuildPro\'s selling screen. It creates the sale record, deducts stock, and connects the customer, payment, receipt, and reports.',

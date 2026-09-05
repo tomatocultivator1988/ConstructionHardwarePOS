@@ -4,6 +4,59 @@ import { getCached, setCache } from '../lib/cache';
 
 const router = Router();
 
+// Product mix uses the cost captured on each invoice line. This keeps historical
+// gross profit stable when a product's current cost or selling price changes.
+router.get('/product-mix', async (_req: Request, res: Response) => {
+  try {
+    const db = getDb();
+    const rows = await db.prepare(`
+      SELECT m.id, m.name, m.unit, m.stock, m.reorder_point,
+        COALESCE(SUM(CASE WHEN i.id IS NOT NULL AND i.status <> 'voided'
+          THEN MAX(ii.quantity - COALESCE(r.returned_qty, 0), 0) ELSE 0 END), 0) AS quantity_sold,
+        COALESCE(SUM(CASE WHEN i.id IS NOT NULL AND i.status <> 'voided'
+          THEN MAX(ii.total - COALESCE(r.returned_credit, 0), 0) ELSE 0 END), 0) AS revenue,
+        COALESCE(SUM(CASE WHEN i.id IS NOT NULL AND i.status <> 'voided'
+          THEN MAX(ii.quantity - COALESCE(r.returned_qty, 0), 0) * COALESCE(ii.cost_price, 0) ELSE 0 END), 0) AS cogs
+      FROM materials m
+      LEFT JOIN invoice_items ii ON ii.material_id = m.id
+      LEFT JOIN invoices i ON i.id = ii.invoice_id
+      LEFT JOIN (
+        SELECT invoice_item_id, SUM(quantity) AS returned_qty, SUM(total_credit) AS returned_credit
+        FROM invoice_returns GROUP BY invoice_item_id
+      ) r ON r.invoice_item_id = ii.id
+      GROUP BY m.id
+      ORDER BY revenue DESC, m.name ASC
+    `).all();
+
+    const mapped = rows.map(row => {
+      const revenue = Math.round(Number(row.revenue || 0) * 100) / 100;
+      const cogs = Math.round(Number(row.cogs || 0) * 100) / 100;
+      const gross_profit = Math.round((revenue - cogs) * 100) / 100;
+      return {
+        id: row.id, name: row.name, unit: row.unit, stock: Number(row.stock || 0),
+        reorder_point: Number(row.reorder_point || 0), quantity_sold: Number(row.quantity_sold || 0),
+        revenue, cogs, gross_profit,
+        margin_pct: revenue > 0 ? Math.round((gross_profit / revenue) * 1000) / 10 : 0,
+      };
+    });
+    const totalRevenue = mapped.reduce((sum, row) => sum + row.revenue, 0);
+    res.json({
+      products: mapped.map(row => ({ ...row, sales_share_pct: totalRevenue > 0 ? Math.round((row.revenue / totalRevenue) * 1000) / 10 : 0 })),
+      totals: {
+        products: mapped.length,
+        products_sold: mapped.filter(row => row.quantity_sold > 0).length,
+        no_sales: mapped.filter(row => row.quantity_sold <= 0).length,
+        revenue: Math.round(totalRevenue * 100) / 100,
+        cogs: Math.round(mapped.reduce((sum, row) => sum + row.cogs, 0) * 100) / 100,
+        gross_profit: Math.round(mapped.reduce((sum, row) => sum + row.gross_profit, 0) * 100) / 100,
+      },
+    });
+  } catch (e: any) {
+    console.error('Product mix error:', e.message);
+    res.status(500).json({ error: 'Product mix temporarily unavailable', retryable: true });
+  }
+});
+
 router.get('/dashboard', async (_req: Request, res: Response) => {
   const CACHE_KEY = 'analytics:dashboard';
   const cached = getCached<any>(CACHE_KEY);

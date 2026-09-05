@@ -306,6 +306,27 @@ tr.low-stock:hover { background: rgba(245, 158, 11, 0.2); }
 .status-badge.partial::before { background: var(--c-warning); }
 .status-badge.paid { background: var(--c-success-bg); color: var(--c-success); }
 .status-badge.paid::before { background: var(--c-success); }
+.status-badge.status-success { background: var(--c-success-bg); color: var(--c-success); }
+.status-badge.status-success::before { background: var(--c-success); }
+.status-badge.status-warning { background: var(--c-warning-bg); color: var(--c-warning); }
+.status-badge.status-warning::before { background: var(--c-warning); }
+
+/* Product Mix */
+.product-mix-card { overflow: hidden; }
+.product-mix-card .section-heading { display: flex; justify-content: space-between; align-items: flex-start; margin: 0; padding: var(--space-4); border-bottom: 1px solid var(--c-border-light); }
+.product-mix-card .section-heading h3 { margin: 0 0 4px; }
+.product-mix-card .section-heading .card-sub { margin: 0; }
+.product-mix-table small { display: block; color: var(--c-text-muted); font-size: var(--fs-xs); margin-top: 3px; }
+.product-mix-table .money { font-family: var(--ff-mono); white-space: nowrap; }
+.product-mix-table .positive { color: var(--c-success); font-weight: 600; }
+.product-mix-table .negative { color: var(--c-danger); font-weight: 600; }
+.product-mix-no-sales { opacity: 0.78; }
+
+@media (max-width: 700px) {
+  .product-mix-card .section-heading { padding: var(--space-3); }
+  .product-mix-table { min-width: 760px; }
+  .product-mix-card .table-wrap { overflow-x: auto; }
+}
 
 /* ── Buttons ── */
 .btn {

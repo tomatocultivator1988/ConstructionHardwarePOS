@@ -6,6 +6,7 @@ import { renderExpenses } from '../views/expenses';
 import { renderSupplierHub } from '../views/suppliers';
 import { renderReports } from '../views/reports';
 import { renderReceipts } from '../views/receipts';
+import { renderProductMix } from '../views/product-mix';
 import { showLogin } from '../views/login';
 import { isLoggedIn } from './api';
 import { showToast } from './helpers';
@@ -14,6 +15,7 @@ import { applyRoleUI } from '../main';
 const VIEWS: Record<string, () => Promise<string>> = {
   dashboard: renderDashboard,
   materials: renderMaterials,
+  'product-mix': renderProductMix,
   invoices: renderInvoices,
   receipts: renderReceipts,
   expenses: renderExpenses,
