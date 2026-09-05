@@ -77,7 +77,7 @@ Object.assign(window, {
   receivePO: purchaseOrders.receivePO,
   cancelPO: purchaseOrders.cancelPO,
   delPO: purchaseOrders.delPO,
-  switchPOTab: purchaseOrders.switchPOTab,
+  switchSupplierTab: suppliers.switchSupplierTab,
   switchReportTab: reports.switchReportTab,
   reloadDaily: reports.reloadDaily,
   reloadMonthly: reports.reloadMonthly,
@@ -175,7 +175,7 @@ export function applyRoleUI() {
 }
 
 function openMobileMore() {
-  const options = [['receipts', 'Receipts'], ['expenses', 'Expenses'], ['purchase-orders', 'Purchase Orders'], ...(isAdmin() ? [['reports', 'Reports'], ['settings', 'Settings']] : [])];
+  const options = [['receipts', 'Receipts'], ['expenses', 'Expenses'], ['suppliers', 'Suppliers'], ...(isAdmin() ? [['reports', 'Reports'], ['settings', 'Settings']] : [])];
   const modal = document.createElement('div');
   modal.className = 'modal'; modal.id = 'mobile-more-modal';
   modal.innerHTML = `<div class="modal-content"><h3>More</h3><div class="mobile-more-menu">${options.map(([view, label]) => `<button class="btn mobile-more-option" onclick="closeModal();loadView('${view}')">${label}<span>›</span></button>`).join('')}</div><div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button></div></div>`;

@@ -3,8 +3,7 @@ import { renderMaterials } from '../views/materials';
 import { renderInvoices } from '../views/invoices';
 import { renderSettings } from '../views/settings';
 import { renderExpenses } from '../views/expenses';
-import { renderSuppliers } from '../views/suppliers';
-import { renderPurchaseOrders } from '../views/purchase-orders';
+import { renderSupplierHub } from '../views/suppliers';
 import { renderReports } from '../views/reports';
 import { renderReceipts } from '../views/receipts';
 import { showLogin } from '../views/login';
@@ -18,8 +17,7 @@ const VIEWS: Record<string, () => Promise<string>> = {
   invoices: renderInvoices,
   receipts: renderReceipts,
   expenses: renderExpenses,
-  suppliers: renderSuppliers,
-  'purchase-orders': renderPurchaseOrders,
+  suppliers: renderSupplierHub,
   reports: renderReports,
   settings: renderSettings,
 };

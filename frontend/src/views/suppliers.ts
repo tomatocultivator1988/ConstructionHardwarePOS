@@ -2,7 +2,17 @@ import { apiGet, apiPost, apiPut, apiDel } from '../lib/api';
 import { esc, val, setErr, clearErr, disableBtn } from '../lib/helpers';
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
 import { loadView } from '../lib/router';
+import { renderPurchaseOrders } from './purchase-orders';
 import type { Supplier } from '../lib/types';
+
+let supplierTab: 'suppliers' | 'purchase-orders' = 'suppliers';
+
+export async function renderSupplierHub(): Promise<string> {
+  const content = supplierTab === 'suppliers' ? await renderSuppliers() : await renderPurchaseOrders();
+  return `<div class="supplier-hub"><div class="po-subtabs"><button class="nav-btn ${supplierTab === 'suppliers' ? 'active' : ''}" onclick="switchSupplierTab('suppliers')">Suppliers</button><button class="nav-btn ${supplierTab === 'purchase-orders' ? 'active' : ''}" onclick="switchSupplierTab('purchase-orders')">Purchase Orders</button></div>${content}</div>`;
+}
+
+export function switchSupplierTab(tab: 'suppliers' | 'purchase-orders') { supplierTab = tab; loadView('suppliers'); }
 
 export async function renderSuppliers(): Promise<string> {
   const suppliers = await apiGet<Supplier[]>('/suppliers');
