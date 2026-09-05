@@ -3,16 +3,21 @@ import { esc, val, fmtDate, fmtPeso, disableBtn } from '../lib/helpers';
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
 import { loadView } from '../lib/router';
 import type { PurchaseOrder, Supplier, Material } from '../lib/types';
+import { renderSuppliers } from './suppliers';
 
 let lineItemCount = 0;
+let poTab: 'orders' | 'suppliers' = 'orders';
 
 export async function renderPurchaseOrders(): Promise<string> {
+  if (poTab === 'suppliers') {
+    return `<div class="po-subtabs"><button class="nav-btn active" onclick="switchPOTab('orders')">Purchase Orders</button><button class="nav-btn" onclick="switchPOTab('suppliers')">Suppliers</button></div>${await renderSuppliers()}`;
+  }
   const pos = await apiGet<PurchaseOrder[]>('/purchase-orders');
   const materials = await apiGet<Material[]>('/materials');
   (window as any).__poMaterialNames = Object.fromEntries(materials.map((m: Material) => [m.id, `${m.name} (₱${(m.cost_price || 0).toFixed(2)})`]));
   return `
     <div class="page-header">
-      <h2>Purchase Orders</h2>
+      <div><h2>Purchase Orders</h2><div class="po-subtabs"><button class="nav-btn active" onclick="switchPOTab('orders')">Purchase Orders</button><button class="nav-btn" onclick="switchPOTab('suppliers')">Suppliers</button></div></div>
       <button class="btn btn-primary" onclick="showPOModal()">+ New PO</button>
     </div>
     <div class="table-wrap">
@@ -41,6 +46,8 @@ export async function renderPurchaseOrders(): Promise<string> {
     </div>
   `;
 }
+
+export function switchPOTab(tab: 'orders' | 'suppliers') { poTab = tab; loadView('purchase-orders'); }
 
 export async function showPOModal() {
   const suppliers = await apiGet<Supplier[]>('/suppliers');

@@ -819,6 +819,8 @@ body.show-install #install-prompt { display: flex; }
 .catalog-field { display:flex; align-items:center; gap:6px; }
 .catalog-field select { flex:1; min-width:0; }
 .catalog-field .btn { flex-shrink:0; white-space:nowrap; }
+.po-subtabs { display:flex; gap:4px; margin-top:var(--space-2); }
+.po-subtabs .nav-btn { min-height:32px; padding:.35rem .65rem; font-size:var(--fs-xs); }
 .invoice-detail-modal-content { display:flex; flex-direction:column; overflow:hidden; }
 .invoice-detail-scroll { min-height:0; overflow-y:auto; overscroll-behavior:contain; padding-right:2px; }
 .modal-scroll-hint { flex-shrink:0; margin:var(--space-2) auto 0; padding:5px 10px; border-radius:999px; color:var(--c-text-secondary); background:var(--c-bg); font-size:var(--fs-xs); box-shadow:0 -4px 12px rgba(0,0,0,.18); transition:opacity .2s, transform .2s; }
