@@ -7,6 +7,9 @@ import type { Invoice, Material, Customer } from '../lib/types';
 
 let invoicePage = 1;
 const INVOICE_PAGE_SIZE = 15;
+let posSearch = '';
+let posCategory = '';
+let posCart: Array<{ material: Material; quantity: number }> = [];
 
 export async function renderInvoices(): Promise<string> {
   const [invoices, customers, materials, settings] = await Promise.all([
@@ -20,36 +23,79 @@ export async function renderInvoices(): Promise<string> {
   (window as any).__invCustomers = customers;
   (window as any).__invMaterials = materials;
   (window as any).__invDefaultTax = settings.value || '0';
-  return `
-    <div class="page-header">
-      <h2>Invoices</h2>
-      <button class="btn btn-primary" onclick="showInvoiceModal()">+ New Invoice</button>
+  const categories = [...new Set(materials.map((m: Material) => m.category).filter(Boolean))];
+  const filteredMaterials = materials.filter((m: Material) => (!posCategory || m.category === posCategory) && (!posSearch || `${m.name} ${m.category} ${m.unit}`.toLowerCase().includes(posSearch.toLowerCase())));
+  const categoryButtons = categories.map(c => {
+    const safeCategory = c.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return `<button class="pos-category ${posCategory === c ? 'active' : ''}" onclick="setPOSCategory('${safeCategory}')">${esc(c)}</button>`;
+  }).join('');
+  const cartTotal = posCart.reduce((sum, item) => sum + item.quantity * Number(item.material.price_per_unit), 0);
+  const taxRate = Number(settings.value || 0);
+  const tax = Math.round(cartTotal * taxRate * 100) / 100;
+  const total = Math.round((cartTotal + tax) * 100) / 100;
+  (window as any).__posTotal = total;
+  return `<div class="pos-page">
+    <div class="pos-header"><div><div class="pos-kicker">BuildPro POS</div><h2>Point of Sale</h2></div><button class="btn btn-sm" onclick="showInvoiceModal()">Advanced Invoice Form</button></div>
+    <div class="pos-layout">
+      <aside class="pos-categories"><div class="pos-panel-title">Categories</div><button class="pos-category ${!posCategory ? 'active' : ''}" onclick="setPOSCategory('')">All Categories</button>${categoryButtons}</aside>
+      <section class="pos-products"><div class="pos-search"><input id="pos-search" type="search" value="${esc(posSearch)}" placeholder="Search material name, category, or unit..." oninput="filterPOSMaterials(this.value)" /><span>${filteredMaterials.length} item${filteredMaterials.length === 1 ? '' : 's'}</span></div><div class="pos-product-grid">${filteredMaterials.length ? filteredMaterials.map((m: Material) => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('') : '<div class="pos-empty">No materials match your search.</div>'}</div></section>
+      <aside class="pos-cart-panel"><div class="pos-panel-title">Current Sale</div><div class="pos-cart-items">${posCart.length ? posCart.map(item => `<div class="pos-cart-item"><div class="pos-cart-info"><strong>${esc(item.material.name)}</strong><span>${fmtPeso(item.material.price_per_unit)} · ${esc(item.material.unit)}</span></div><div class="pos-qty"><button onclick="changePOSQty('${item.material.id}',-1)">−</button><strong>${item.quantity}</strong><button onclick="changePOSQty('${item.material.id}',1)">+</button></div><strong class="pos-line-total">${fmtPeso(item.quantity * Number(item.material.price_per_unit))}</strong><button class="pos-remove" onclick="removePOSItem('${item.material.id}')" aria-label="Remove item">×</button></div>`).join('') : '<div class="pos-cart-empty">Select a material to start a sale.</div>'}</div>
+        <div class="pos-customer-box"><label>Customer</label><select id="pos-customer"><option value="">Walk-in Customer</option>${customers.map((c: Customer) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><label>Delivery Person <span>(optional)</span></label><input id="pos-delivery" maxlength="100" placeholder="Name for delivery" /></div>
+        <div class="pos-summary"><div><span>Subtotal</span><strong>${fmtPeso(cartTotal)}</strong></div>${taxRate > 0 ? `<div><span>Tax</span><strong>${fmtPeso(tax)}</strong></div>` : ''}<div class="pos-grand-total"><span>Total</span><strong>${fmtPeso(total)}</strong></div></div>
+        <div class="pos-payment"><label>Payment</label><select id="pos-method" onchange="updatePOSPayment()"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option><option value="check">Check</option><option value="credit">Credit / On Account</option></select><div id="pos-cash-fields"><label>Amount Received</label><input id="pos-received" type="number" min="0" step="0.01" value="${total.toFixed(2)}" oninput="updatePOSPayment()" /><div class="pos-change"><span>Change</span><strong id="pos-change-value">${fmtPeso(0)}</strong></div></div></div>
+        <button class="btn btn-primary pos-complete" id="pos-complete-btn" onclick="completePOSSale()" ${posCart.length ? '' : 'disabled'}>Complete Sale</button><button class="btn pos-clear" onclick="clearPOSCart()" ${posCart.length ? '' : 'disabled'}>Clear Cart</button>
+      </aside>
     </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>#</th><th>Customer</th><th>Total</th><th>Status</th><th>Issued</th><th class="actions">Actions</th></tr></thead>
-        <tbody>
-          ${invoiceData.length ? invoiceData.map((inv: Invoice) => `
-            <tr>
-              <td data-label="#" style="font-weight:600">${esc(inv.invoice_number)}</td>
-              <td data-label="Customer">${esc(inv.customer_name)}</td>
-              <td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(inv.total)}</td>
-              <td data-label="Status"><span class="status-badge ${inv.status}">${inv.status}</span></td>
-              <td data-label="Issued">${fmtDate(inv.issued_date)}</td>
-              <td data-label="" class="actions">
-                <button class="btn btn-success btn-sm" onclick="showInvoiceDetail('${inv.id}')">View</button>
-                <button class="btn btn-danger btn-sm" onclick="delInvoice('${inv.id}')">Delete</button>
-              </td>
-            </tr>
-          `).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--c-text-muted);padding:2rem">No invoices yet</td></tr>'}
-        </tbody>
-      </table>
-    </div>
-    ${totalInvoices > INVOICE_PAGE_SIZE ? `<div class="pagination"><span>Showing ${(invoicePage-1)*INVOICE_PAGE_SIZE+1}–${Math.min(invoicePage*INVOICE_PAGE_SIZE, totalInvoices)} of ${totalInvoices}</span><button class="btn btn-sm" ${invoicePage===1?'disabled':''} onclick="changeInvoicePage(${invoicePage-1})">Previous</button><strong>Page ${invoicePage} of ${Math.ceil(totalInvoices/INVOICE_PAGE_SIZE)}</strong><button class="btn btn-sm" ${invoicePage>=Math.ceil(totalInvoices/INVOICE_PAGE_SIZE)?'disabled':''} onclick="changeInvoicePage(${invoicePage+1})">Next</button></div>` : ''}
-  `;
+    <details class="pos-history"><summary>Sales History <span>${totalInvoices} invoice${totalInvoices === 1 ? '' : 's'}</span></summary><div class="table-wrap"><table><thead><tr><th>#</th><th>Customer</th><th>Total</th><th>Status</th><th>Issued</th><th class="actions">Actions</th></tr></thead><tbody>${invoiceData.length ? invoiceData.map((inv: Invoice) => `<tr><td data-label="#" style="font-weight:600">${esc(inv.invoice_number)}</td><td data-label="Customer">${esc(inv.customer_name)}</td><td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(inv.total)}</td><td data-label="Status"><span class="status-badge ${inv.status}">${inv.status}</span></td><td data-label="Issued">${fmtDate(inv.issued_date)}</td><td data-label="" class="actions"><button class="btn btn-success btn-sm" onclick="showInvoiceDetail('${inv.id}')">View</button><button class="btn btn-danger btn-sm" onclick="delInvoice('${inv.id}')">Delete</button></td></tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--c-text-muted);padding:2rem">No sales yet</td></tr>'}</tbody></table></div>${totalInvoices > INVOICE_PAGE_SIZE ? `<div class="pagination"><span>Showing ${(invoicePage-1)*INVOICE_PAGE_SIZE+1}–${Math.min(invoicePage*INVOICE_PAGE_SIZE, totalInvoices)} of ${totalInvoices}</span><button class="btn btn-sm" ${invoicePage===1?'disabled':''} onclick="changeInvoicePage(${invoicePage-1})">Previous</button><strong>Page ${invoicePage} of ${Math.ceil(totalInvoices/INVOICE_PAGE_SIZE)}</strong><button class="btn btn-sm" ${invoicePage>=Math.ceil(totalInvoices/INVOICE_PAGE_SIZE)?'disabled':''} onclick="changeInvoicePage(${invoicePage+1})">Next</button></div>` : ''}</details>
+  </div>`;
 }
 
 export function changeInvoicePage(page: number) { invoicePage = Math.max(1, page); loadView('invoices'); }
+
+export function setPOSCategory(category: string) { posCategory = category; loadView('invoices'); }
+export function filterPOSMaterials(value: string) { posSearch = value; renderPOSProductGrid(); }
+function renderPOSProductGrid() {
+  const grid = document.querySelector('.pos-product-grid');
+  const count = document.querySelector('.pos-search span');
+  const materials: Material[] = (window as any).__invMaterials || [];
+  const filtered = materials.filter(m => (!posCategory || m.category === posCategory) && (!posSearch || `${m.name} ${m.category} ${m.unit}`.toLowerCase().includes(posSearch.toLowerCase())));
+  if (count) count.textContent = `${filtered.length} item${filtered.length === 1 ? '' : 's'}`;
+  if (grid) grid.innerHTML = filtered.length ? filtered.map(m => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('') : '<div class="pos-empty">No materials match your search.</div>';
+}
+export function addPOSItem(id: string) {
+  const material = ((window as any).__invMaterials || []).find((m: Material) => m.id === id) as Material | undefined;
+  if (!material) return;
+  const existing = posCart.find(item => item.material.id === id);
+  if (existing) { if (existing.quantity < Number(material.stock)) existing.quantity += 1; else showToast(`Only ${material.stock} ${material.unit} available`); }
+  else if (Number(material.stock) > 0) posCart.push({ material, quantity: 1 });
+  else showToast(`${material.name} is out of stock`);
+  loadView('invoices');
+}
+export function changePOSQty(id: string, delta: number) { const item = posCart.find(i => i.material.id === id); if (!item) return; const next = item.quantity + delta; if (next <= 0) posCart = posCart.filter(i => i.material.id !== id); else if (next <= Number(item.material.stock)) item.quantity = next; else showToast(`Only ${item.material.stock} ${item.material.unit} available`); loadView('invoices'); }
+export function removePOSItem(id: string) { posCart = posCart.filter(i => i.material.id !== id); loadView('invoices'); }
+export function clearPOSCart() { posCart = []; loadView('invoices'); }
+export function updatePOSPayment() { const total = Number((window as any).__posTotal || 0); const received = Number((document.getElementById('pos-received') as HTMLInputElement)?.value || 0); const method = (document.getElementById('pos-method') as HTMLSelectElement)?.value; const fields = document.getElementById('pos-cash-fields'); if (fields) fields.style.display = method === 'credit' ? 'none' : ''; const change = method === 'cash' ? Math.max(0, received - total) : 0; const target = document.getElementById('pos-change-value'); if (target) target.textContent = fmtPeso(change); }
+export async function completePOSSale() {
+  if (!posCart.length) { showToast('Add at least one material'); return; }
+  const total = Number((window as any).__posTotal || 0);
+  const method = (document.getElementById('pos-method') as HTMLSelectElement)?.value || 'cash';
+  const received = Number((document.getElementById('pos-received') as HTMLInputElement)?.value || 0);
+  if (method === 'cash' && received < total) { showToast(`Amount received is short by ${fmtPeso(total - received)}`); return; }
+  const items = posCart.map(item => ({ material_id: item.material.id, description: item.material.name, quantity: item.quantity, unit_price: Number(item.material.price_per_unit) }));
+  const customer_id = (document.getElementById('pos-customer') as HTMLSelectElement)?.value || null;
+  const delivery_person = (document.getElementById('pos-delivery') as HTMLInputElement)?.value.trim() || null;
+  const btn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null; if (btn) btn.disabled = true;
+  try {
+    const invoice = await apiPost<any>('/invoices', { customer_id, due_date: null, tax_rate: Number((window as any).__invDefaultTax || 0), delivery_person, items });
+    if (method !== 'credit') await apiPost(`/invoices/${invoice.id}/pay`, { amount: total, method, notes: '' });
+    const change = method === 'cash' ? received - total : 0;
+    posCart = [];
+    await showReceiptPreview(invoice.id);
+    if (change > 0) showToast(`Sale completed. Change: ${fmtPeso(change)}`, 'success');
+    else showToast('Sale completed', 'success');
+    loadView('invoices');
+  } catch (e: any) { showToast(e.message || 'Unable to complete sale'); if (btn) btn.disabled = false; }
+}
 
 export function showInvoiceModal() {
   const customers = (window as any).__invCustomers || [];
