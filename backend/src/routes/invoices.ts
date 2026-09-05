@@ -96,9 +96,6 @@ router.post('/', async (req: Request, res: Response) => {
     if (!PAYMENT_METHODS.includes(paymentMethod) || !validAmount) {
       res.status(422).json({ error: 'A valid payment method and payment amount are required' }); return;
     }
-    if (paymentMethod === 'credit' && !customer_id) {
-      res.status(422).json({ error: 'Credit / On Account sales require a registered customer' }); return;
-    }
   }
 
   const invoiceId = uuidv4();

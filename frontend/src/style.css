@@ -936,6 +936,7 @@ body.show-install #install-prompt { display: flex; }
 .pos-payment { padding-top:var(--space-3); border-top:1px solid var(--c-border); }
 .pos-payment > label { margin-bottom:-4px; }
 #pos-cash-fields { display:grid; gap:6px; }
+.pos-credit-warning { display:none; padding:var(--space-2) var(--space-3); border:1px solid rgba(245,158,11,.35); border-radius:var(--radius-md); color:var(--c-warning); background:var(--c-warning-bg); font-size:var(--fs-xs); line-height:1.45; }
 .pos-change { align-items:center; margin-top:var(--space-2); padding:var(--space-2) var(--space-3); border-radius:var(--radius-md); color:var(--c-text-muted); background:var(--c-surface-elevated); }
 .pos-change strong { color:var(--c-success); }
 .pos-complete { width:100%; min-height:46px; margin-top:var(--space-4); font-weight:800; }
