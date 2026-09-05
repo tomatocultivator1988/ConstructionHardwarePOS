@@ -44,10 +44,6 @@ export function showSupplierModal(data?: Supplier) {
       <div class="form-group"><label>Contact Person</label><input id="sf-contact" maxlength="100" value="${esc(data?.contact_person || '')}" /></div>
       <div class="form-group"><label>Phone</label><input id="sf-phone" maxlength="13" placeholder="09123456789" value="${esc(data?.phone || '')}" /><div class="field-error" id="sf-phone-err"></div></div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label>Email</label><input id="sf-email" type="email" maxlength="100" value="${esc(data?.email || '')}" /><div class="field-error" id="sf-email-err"></div></div>
-      <div class="form-group"><label>TIN</label><input id="sf-tin" maxlength="20" value="${esc(data?.tin || '')}" /></div>
-    </div>
     <div class="form-group"><label>Address</label><input id="sf-address" maxlength="200" value="${esc(data?.address || '')}" /></div>
     <div class="form-group"><label>Notes</label><input id="sf-notes" maxlength="200" value="${esc(data?.notes || '')}" /></div>
     <div class="modal-actions">
@@ -58,21 +54,18 @@ export function showSupplierModal(data?: Supplier) {
 }
 
 export async function createSupplier() {
-  clearErr('sf-name-err'); clearErr('sf-phone-err'); clearErr('sf-email-err');
+  clearErr('sf-name-err'); clearErr('sf-phone-err');
   const name = val('sf-name').trim();
   if (!name) { setErr('sf-name-err', 'Name is required'); return; }
   if (name.length < 2) { setErr('sf-name-err', 'Must be at least 2 characters'); return; }
   const phone = val('sf-phone').trim();
   if (phone && !/^\d{7,13}$/.test(phone)) { setErr('sf-phone-err', 'Must be 7-13 digits'); return; }
-  const email = val('sf-email').trim();
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setErr('sf-email-err', 'Invalid email'); return; }
   disableBtn('sf-save-btn', true);
   try {
     await apiPost('/suppliers', {
       name, contact_person: val('sf-contact').trim() || null,
-      phone: phone || null, email: email || null,
+      phone: phone || null,
       address: val('sf-address').trim() || null,
-      tin: val('sf-tin').trim() || null,
       notes: val('sf-notes').trim() || null,
     });
     closeModal(); loadView('suppliers');
@@ -81,21 +74,18 @@ export async function createSupplier() {
 }
 
 export async function updateSupplier(id: string) {
-  clearErr('sf-name-err'); clearErr('sf-phone-err'); clearErr('sf-email-err');
+  clearErr('sf-name-err'); clearErr('sf-phone-err');
   const name = val('sf-name').trim();
   if (!name) { setErr('sf-name-err', 'Name is required'); return; }
   if (name.length < 2) { setErr('sf-name-err', 'Must be at least 2 characters'); return; }
   const phone = val('sf-phone').trim();
   if (phone && !/^\d{7,13}$/.test(phone)) { setErr('sf-phone-err', 'Must be 7-13 digits'); return; }
-  const email = val('sf-email').trim();
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setErr('sf-email-err', 'Invalid email'); return; }
   disableBtn('sf-save-btn', true);
   try {
     await apiPut(`/suppliers/${id}`, {
       name, contact_person: val('sf-contact').trim() || null,
-      phone: phone || null, email: email || null,
+      phone: phone || null,
       address: val('sf-address').trim() || null,
-      tin: val('sf-tin').trim() || null,
       notes: val('sf-notes').trim() || null,
     });
     closeModal(); loadView('suppliers');

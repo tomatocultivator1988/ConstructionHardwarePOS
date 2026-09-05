@@ -21,6 +21,7 @@ import userRoutes from './routes/users';
 import auditRoutes from './routes/audit';
 import seedRoutes from './routes/seed';
 import shiftRoutes from './routes/shifts';
+import catalogRoutes from './routes/catalog';
 import { authMiddleware } from './lib/auth';
 
 const app = express();
@@ -95,6 +96,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/audit-log', auditRoutes);
 app.use('/api/seed', seedRoutes);
 app.use('/api/shifts', shiftRoutes);
+app.use('/api/catalog', catalogRoutes);
 
 app.get('/api/health', async (_req, res) => {
   try {

@@ -15,6 +15,7 @@ function validateMaterial(body: any, existing?: any) {
   const price_per_unit = body.price_per_unit ?? existing?.price_per_unit;
   const reorder_point = body.reorder_point ?? existing?.reorder_point;
   const category = body.category !== undefined ? body.category : (existing?.category ?? '');
+  const supplier_id = body.supplier_id !== undefined ? body.supplier_id : (existing?.supplier_id ?? null);
   const wholesale_price = body.wholesale_price != null ? body.wholesale_price : (existing?.wholesale_price ?? 0);
 
   if (typeof name !== 'string' || !name.trim()) errors.push('Name is required');
@@ -28,7 +29,7 @@ function validateMaterial(body: any, existing?: any) {
   if (Number(wholesale_price) < 0) errors.push('Wholesale price cannot be negative');
   if (Number(reorder_point) < 0) errors.push('Reorder point cannot be negative');
 
-  return { name, unit, stock, cost_price, price_per_unit, reorder_point, category, wholesale_price, errors };
+  return { name, unit, stock, cost_price, price_per_unit, reorder_point, category, wholesale_price, supplier_id, errors };
 }
 
 router.get('/', async (req: Request, res: Response) => {
@@ -67,15 +68,15 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   const db = getDb();
   const { name, unit, stock, cost_price, price_per_unit, reorder_point } = req.body;
-  const validation = validateMaterial({ name, unit, stock, cost_price, price_per_unit, reorder_point, category: req.body.category });
+  const validation = validateMaterial({ name, unit, stock, cost_price, price_per_unit, reorder_point, category: req.body.category, supplier_id: req.body.supplier_id });
   if (validation.errors.length) {
     res.status(400).json({ error: validation.errors.join('; ') });
     return;
   }
   const id = uuidv4();
   await db.prepare(
-    'INSERT INTO materials (id, name, unit, stock, cost_price, price_per_unit, wholesale_price, reorder_point, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, validation.name.trim(), validation.unit, validation.stock ?? 0, validation.cost_price ?? 0, validation.price_per_unit, validation.wholesale_price, validation.reorder_point ?? 10, validation.category);
+    'INSERT INTO materials (id, name, unit, stock, cost_price, price_per_unit, wholesale_price, reorder_point, category, supplier_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, validation.name.trim(), validation.unit, validation.stock ?? 0, validation.cost_price ?? 0, validation.price_per_unit, validation.wholesale_price, validation.reorder_point ?? 10, validation.category, validation.supplier_id || null);
   const material = await db.prepare('SELECT * FROM materials WHERE id = ?').get(id);
   await logAudit((req as any).user?.id || null, 'create', 'material', id, validation.name.trim(), null, material);
   res.status(201).json(material);
@@ -86,13 +87,13 @@ router.put('/:id', async (req: Request, res: Response) => {
   const existing = await db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id);
   if (!existing) { res.status(404).json({ error: 'Material not found' }); return; }
   const { name, unit, stock, cost_price, price_per_unit, reorder_point } = req.body;
-  const validation = validateMaterial({ name, unit, stock, cost_price, price_per_unit, reorder_point, category: req.body.category }, existing);
+  const validation = validateMaterial({ name, unit, stock, cost_price, price_per_unit, reorder_point, category: req.body.category, supplier_id: req.body.supplier_id }, existing);
   if (validation.errors.length) {
     res.status(400).json({ error: validation.errors.join('; ') });
     return;
   }
   await db.prepare(
-    `UPDATE materials SET name=?, unit=?, stock=?, cost_price=?, price_per_unit=?, wholesale_price=?, reorder_point=?, category=?, updated_at=datetime('now') WHERE id=?`
+    `UPDATE materials SET name=?, unit=?, stock=?, cost_price=?, price_per_unit=?, wholesale_price=?, reorder_point=?, category=?, supplier_id=?, updated_at=datetime('now') WHERE id=?`
   ).run(
     validation.name,
     validation.unit,
@@ -102,6 +103,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     validation.wholesale_price,
     validation.reorder_point,
     validation.category,
+    validation.supplier_id || null,
     req.params.id
   );
   const oldStock = Number((existing as any).stock);

@@ -20,6 +20,7 @@ export interface Material {
   wholesale_price: number;
   reorder_point: number;
   category: string;
+  supplier_id?: string | null;
   created_at: string;
   updated_at: string;
 }

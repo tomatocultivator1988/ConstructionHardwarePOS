@@ -59,6 +59,7 @@ async function initTables() {
       wholesale_price REAL DEFAULT 0,
       reorder_point REAL DEFAULT 10,
       category TEXT DEFAULT '',
+      supplier_id TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -121,6 +122,13 @@ async function initTables() {
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS catalog_options (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      UNIQUE(type, name)
     );
 
     CREATE TABLE IF NOT EXISTS invoice_sequence (
@@ -298,6 +306,8 @@ async function migrateSchema() {
   if (!custCols.includes('tin')) await db.exec("ALTER TABLE customers ADD COLUMN tin TEXT");
 
   const invoiceInfo = (await db.prepare("PRAGMA table_info('invoices')").all()) as any[];
+  const materialInfo = (await db.prepare("PRAGMA table_info('materials')").all()) as any[];
+  if (!materialInfo.some((r: any) => r.name === 'supplier_id')) await db.exec("ALTER TABLE materials ADD COLUMN supplier_id TEXT");
   const invoiceCols = invoiceInfo.map((r: any) => r.name);
   if (!invoiceCols.includes('delivery_person')) await db.exec("ALTER TABLE invoices ADD COLUMN delivery_person TEXT");
 

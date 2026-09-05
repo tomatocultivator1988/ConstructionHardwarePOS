@@ -4,7 +4,7 @@ import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpe
 import { loadView } from '../lib/router';
 import type { Expense } from '../lib/types';
 
-const EXPENSE_CATEGORIES = [
+let EXPENSE_CATEGORIES = [
   'Rent', 'Utilities', 'Labor/Salary', 'Delivery/Transport',
   'Tools & Equipment', 'Maintenance', 'Supplies', 'Other'
 ];
@@ -14,11 +14,25 @@ function catOptions(selected?: string) {
   return EXPENSE_CATEGORIES.map(c => `<option value="${esc(c)}"${c === selected ? ' selected' : ''}>${esc(c)}</option>`).join('');
 }
 
+export async function addExpenseCategory() {
+  const name = window.prompt('New expense category:')?.trim();
+  if (!name) return;
+  try {
+    const option = await apiPost<{ name: string }>('/catalog', { type: 'expense_category', name });
+    if (!EXPENSE_CATEGORIES.includes(option.name)) EXPENSE_CATEGORIES.push(option.name);
+    const select = document.getElementById('exf-category') as HTMLSelectElement | null;
+    if (select) { const opt = document.createElement('option'); opt.value = option.name; opt.textContent = option.name; opt.selected = true; select.appendChild(opt); }
+    showToast('Expense category added', 'success');
+  } catch (e: any) { showToast(e.message || 'Unable to add category'); }
+}
+
 export async function renderExpenses(): Promise<string> {
-  const [expenses, summary] = await Promise.all([
+  const [expenses, summary, catalog] = await Promise.all([
     apiGet<Expense[]>('/expenses'),
     apiGet<{ category: string; total: number }[]>('/expenses/summary'),
+    apiGet<Record<string, string[]>>('/catalog'),
   ]);
+  if (catalog.expense_category?.length) EXPENSE_CATEGORIES = catalog.expense_category;
   const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
 
   return `
@@ -70,7 +84,7 @@ export function showExpenseModal(data?: Expense) {
     <div class="form-row">
       <div class="form-group">
         <label>Category *</label>
-        <select id="exf-category"><option value="">Select category...</option>${catOptions(data?.category)}</select>
+        <div class="catalog-field"><select id="exf-category"><option value="">Select category...</option>${catOptions(data?.category)}</select><button type="button" class="btn btn-sm" onclick="addExpenseCategory()">+ Add</button></div>
         <div class="field-error" id="exf-category-err"></div>
       </div>
       <div class="form-group">

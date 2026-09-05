@@ -2,11 +2,11 @@ import { apiGet, apiPost, apiPut, apiDel } from '../lib/api';
 import { esc, val, setErr, clearErr, disableBtn, fmtDate, fmtPeso } from '../lib/helpers';
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
 import { loadView } from '../lib/router';
-import type { Material, StockMovement } from '../lib/types';
+import type { Material, StockMovement, Supplier } from '../lib/types';
 
-const UNIT_OPTIONS = ['Each', 'Kilogram', 'Meter', 'Roll', 'Gallon', 'Pieces', 'Liter', 'Box', 'Set', 'Bag', 'Pair', 'Sack', 'Bottle', 'Pack'];
+let UNIT_OPTIONS = ['Each', 'Kilogram', 'Meter', 'Roll', 'Gallon', 'Pieces', 'Liter', 'Box', 'Set', 'Bag', 'Pair', 'Sack', 'Bottle', 'Pack'];
 
-const MAT_CATEGORIES = ['', 'Cement', 'Steel/Rebar', 'Lumber/Wood', 'Plumbing', 'Electrical', 'Paint', 'Hardware', 'Sand/Gravel', 'Roofing', 'Tools', 'Other'];
+let MAT_CATEGORIES = ['', 'Cement', 'Steel/Rebar', 'Lumber/Wood', 'Plumbing', 'Electrical', 'Paint', 'Hardware', 'Sand/Gravel', 'Roofing', 'Tools', 'Other'];
 let materialPage = 1;
 const MATERIAL_PAGE_SIZE = 15;
 let materialSearch = '';
@@ -27,6 +27,20 @@ export function toggleCustomUnit() {
   if (custom) input.focus();
 }
 
+export async function addProductCatalogOption(type: 'category' | 'unit') {
+  const label = type === 'category' ? 'New product category' : 'New unit of measure';
+  const name = window.prompt(`${label}:`)?.trim();
+  if (!name) return;
+  try {
+    const option = await apiPost<{ name: string }>('/catalog', { type, name });
+    const values = type === 'category' ? MAT_CATEGORIES : UNIT_OPTIONS;
+    if (!values.includes(option.name)) values.push(option.name);
+    const select = document.getElementById(type === 'category' ? 'mf-category' : 'mf-unit') as HTMLSelectElement | null;
+    if (select) { const opt = document.createElement('option'); opt.value = option.name; opt.textContent = option.name; opt.selected = true; select.appendChild(opt); }
+    showToast(`${label} added`, 'success');
+  } catch (e: any) { showToast(e.message || 'Unable to add option'); }
+}
+
 function catOptions(selected?: string) {
   return MAT_CATEGORIES.map(c => `<option value="${esc(c)}"${c === selected ? ' selected' : ''}>${esc(c) || '- All Categories -'}</option>`).join('');
 }
@@ -35,19 +49,26 @@ export async function renderMaterials(): Promise<string> {
   const query = new URLSearchParams({ page: String(materialPage), pageSize: String(MATERIAL_PAGE_SIZE) });
   if (materialSearch) query.set('search', materialSearch);
   if (materialCategory) query.set('category', materialCategory);
-  const response = await apiGet<Material[] | { data: Material[]; total: number }>(`/materials?${query}`);
+  const [response, suppliers, catalog] = await Promise.all([
+    apiGet<Material[] | { data: Material[]; total: number }>(`/materials?${query}`),
+    apiGet<Supplier[]>('/suppliers'),
+    apiGet<Record<string, string[]>>('/catalog'),
+  ]);
+  if (catalog.category?.length) MAT_CATEGORIES = ['', ...catalog.category];
+  if (catalog.unit?.length) UNIT_OPTIONS = catalog.unit;
+  (window as any).__materialSuppliers = suppliers;
   const materials = Array.isArray(response) ? response : response.data;
   const totalMaterials = Array.isArray(response) ? response.length : response.total;
   (window as any).__materialNames = Object.fromEntries(materials.map((m: Material) => [m.id, m.name]));
   return `
     <div class="page-header">
-      <h2>Materials</h2>
+      <h2>Products</h2>
       <div class="material-toolbar" style="display:flex;gap:var(--space-3);align-items:center">
         <input id="mat-search" type="search" placeholder="Search materials..." value="${esc(materialSearch)}" oninput="filterMaterials()" style="min-height:36px;min-width:220px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
         <select id="mat-cat-filter" onchange="filterMaterials()" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)">
           ${catOptions(materialCategory)}
         </select>
-        <button class="btn btn-primary" onclick="showMaterialModal()">+ Add Material</button>
+        <button class="btn btn-primary" onclick="showMaterialModal()">+ Add Product</button>
       </div>
     </div>
     <div class="table-wrap">
@@ -91,29 +112,31 @@ export function changeMaterialPage(page: number) { materialPage = Math.max(1, pa
 
 export function showMaterialModal(data?: Material) {
   const isEdit = !!data;
+  const suppliers: Supplier[] = (window as any).__materialSuppliers || [];
   showModal(`
-    <h3>${isEdit ? 'Edit' : 'Add'} Material</h3>
+    <h3>${isEdit ? 'Edit' : 'Add'} Product</h3>
     <div class="form-row">
       <div class="form-group"><label>Name *</label><input id="mf-name" maxlength="100" value="${esc(data?.name || '')}" /><div class="field-error" id="mf-name-err"></div></div>
       <div class="form-group"><label>Category</label>
-        <select id="mf-category">${catOptions(data?.category || '')}</select>
+        <div class="catalog-field"><select id="mf-category">${catOptions(data?.category || '')}</select><button type="button" class="btn btn-sm" onclick="addProductCatalogOption('category')">+ Add</button></div>
       </div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Unit *</label>
-        <select id="mf-unit" onchange="toggleCustomUnit()"><option value="">Select unit...</option>${unitOptions(data?.unit)}</select>
+        <div class="catalog-field"><select id="mf-unit" onchange="toggleCustomUnit()"><option value="">Select unit...</option>${unitOptions(data?.unit)}</select><button type="button" class="btn btn-sm" onclick="addProductCatalogOption('unit')">+ Add</button></div>
         <input id="mf-custom-unit" maxlength="30" value="${data?.unit && !UNIT_OPTIONS.includes(data.unit) ? esc(data.unit) : ''}" placeholder="e.g. Bundle, Sheet, Truckload" style="margin-top:6px;display:${data?.unit && !UNIT_OPTIONS.includes(data.unit) ? '' : 'none'}" />
         <div class="field-error" id="mf-unit-err"></div>
       </div>
       <div class="form-group"><label>Stock</label><input id="mf-stock" type="number" min="0" value="${data?.stock ?? 0}" /><div class="field-error" id="mf-stock-err"></div></div>
     </div>
+    <div class="form-group"><label>Supplier (optional)</label><select id="mf-supplier"><option value="">No supplier selected</option>${suppliers.map(s => `<option value="${s.id}"${s.id === (data as any)?.supplier_id ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
     <div class="form-row">
       <div class="form-group"><label>Cost Price</label><input id="mf-cost" type="number" step="0.01" min="0" value="${data?.cost_price ?? ''}" placeholder="0.00" /><div class="field-error" id="mf-cost-err"></div></div>
       <div class="form-group"><label>Retail Price *</label><input id="mf-price" type="number" step="0.01" min="0.01" value="${data?.price_per_unit ?? ''}" /><div class="field-error" id="mf-price-err"></div></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Wholesale Price</label><input id="mf-wprice" type="number" step="0.01" min="0" value="${data?.wholesale_price ? data.wholesale_price.toString() : ''}" placeholder="0.00 = same as retail" /><div class="helper" style="font-size:var(--fs-xs);color:var(--c-text-muted);margin-top:var(--space-1)">Leave 0 to use retail price</div></div>
-      <div class="form-group"><label>Reorder Point</label><input id="mf-reorder" type="number" min="0" value="${data?.reorder_point ?? 10}" /><div class="field-error" id="mf-reorder-err"></div></div>
+      <div class="form-group"><label>Minimum Stock / Reorder Level</label><input id="mf-reorder" type="number" min="0" value="${data?.reorder_point ?? 10}" /><div class="field-error" id="mf-reorder-err"></div></div>
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -129,7 +152,7 @@ export async function createMaterial() {
   const wpriceRaw = parseFloat(val('mf-wprice')); const wprice = isNaN(wpriceRaw) ? 0 : wpriceRaw;
   const stockRaw = val('mf-stock'); const reorderRaw = val('mf-reorder');
   const stock = parseInt(stockRaw) || 0; const reorder = parseInt(reorderRaw) || 0;
-  const category = val('mf-category');
+  const category = val('mf-category'); const supplier_id = val('mf-supplier') || null;
   if (!name) { setErr('mf-name-err', 'Name is required'); return; }
   if (name.length < 2) { setErr('mf-name-err', 'Must be at least 2 characters'); return; }
   if (!unit) { setErr('mf-unit-err', 'Unit is required'); return; }
@@ -139,7 +162,7 @@ export async function createMaterial() {
   if (isNaN(price) || price <= 0) { setErr('mf-price-err', 'Must be > 0'); return; }
   disableBtn('mf-save-btn', true);
   try {
-    await apiPost('/materials', { name, unit, stock, cost_price: cost, price_per_unit: price, wholesale_price: wprice, reorder_point: reorder, category });
+    await apiPost('/materials', { name, unit, stock, cost_price: cost, price_per_unit: price, wholesale_price: wprice, reorder_point: reorder, category, supplier_id });
     closeModal(); loadView('materials');
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('mf-save-btn', false); }
@@ -152,7 +175,7 @@ export async function updateMaterial(id: string) {
   const wpriceRaw = parseFloat(val('mf-wprice')); const wprice = isNaN(wpriceRaw) ? 0 : wpriceRaw;
   const stockRaw = val('mf-stock'); const reorderRaw = val('mf-reorder');
   const stock = parseInt(stockRaw) || 0; const reorder = parseInt(reorderRaw) || 0;
-  const category = val('mf-category');
+  const category = val('mf-category'); const supplier_id = val('mf-supplier') || null;
   if (!name) { setErr('mf-name-err', 'Name is required'); return; }
   if (name.length < 2) { setErr('mf-name-err', 'Must be at least 2 characters'); return; }
   if (!unit) { setErr('mf-unit-err', 'Unit is required'); return; }
@@ -162,7 +185,7 @@ export async function updateMaterial(id: string) {
   if (isNaN(price) || price <= 0) { setErr('mf-price-err', 'Must be > 0'); return; }
   disableBtn('mf-save-btn', true);
   try {
-    await apiPut(`/materials/${id}`, { name, unit, stock, cost_price: cost, price_per_unit: price, wholesale_price: wprice, reorder_point: reorder, category });
+    await apiPut(`/materials/${id}`, { name, unit, stock, cost_price: cost, price_per_unit: price, wholesale_price: wprice, reorder_point: reorder, category, supplier_id });
     closeModal(); loadView('materials');
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('mf-save-btn', false); }
