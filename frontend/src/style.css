@@ -313,8 +313,10 @@ tr.low-stock:hover { background: rgba(245, 158, 11, 0.2); }
 
 /* Product Mix */
 .receivables-toolbar { display: flex; gap: var(--space-2); align-items: center; margin-bottom: var(--space-4); padding: var(--space-3); }
-.receivables-toolbar input { flex: 1; min-width: 180px; }
-.receivables-toolbar select { min-height: 36px; }
+.receivables-toolbar input { flex: 1; min-width: 180px; min-height: 36px; padding: 0 var(--space-3); border: 1px solid var(--c-border); border-radius: var(--radius-md); background: var(--c-surface-elevated); color: var(--c-text); font: inherit; font-size: var(--fs-sm); outline: none; }
+.receivables-toolbar input::placeholder { color: var(--c-text-muted); }
+.receivables-toolbar input:focus { border-color: var(--c-primary); box-shadow: 0 0 0 2px rgba(240,180,41,.16); }
+.receivables-toolbar select { min-height: 36px; padding: 0 var(--space-3); border: 1px solid var(--c-border); border-radius: var(--radius-md); background: var(--c-surface-elevated); color: var(--c-text); font: inherit; font-size: var(--fs-sm); }
 .receivables-card { overflow: hidden; }
 .receivables-card .section-heading { margin: 0; padding: var(--space-4); border-bottom: 1px solid var(--c-border-light); }
 .receivables-card .section-heading h3 { margin: 0 0 4px; }

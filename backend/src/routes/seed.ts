@@ -6,6 +6,48 @@ import { requireAdmin } from '../lib/auth';
 
 const router = Router();
 
+// Small, idempotent demo set for testing the Receivables screen. It is separate
+// from the larger random seed so it cannot silently flood a production database.
+router.post('/receivables', requireAdmin, async (_req: Request, res: Response) => {
+  const db = getDb();
+  const names = ['TEST CREDIT - Unpaid', 'TEST CREDIT - Partial', 'TEST CREDIT - Paid'];
+  const existing = await db.prepare(`SELECT invoice_number FROM invoices WHERE credit_account_name IN (?,?,?)`).all(...names) as any[];
+  if (existing.length === names.length) { res.json({ ok: true, created: 0, message: 'Receivables demo records already exist' }); return; }
+  const materials = await db.prepare('SELECT id, name, unit, stock, cost_price, price_per_unit FROM materials WHERE stock >= 5 ORDER BY name LIMIT 3').all() as any[];
+  if (materials.length < 3) { res.status(400).json({ error: 'At least 3 products with stock of 5 or more are needed' }); return; }
+  const adminId = ((await db.prepare("SELECT id FROM users WHERE username='admin'").get()) as any)?.id || null;
+  const usedNames = new Set(existing.map(row => row.invoice_number));
+  const getSeq = db.prepare('SELECT next_number FROM invoice_sequence WHERE id=1');
+  const bumpSeq = db.prepare('UPDATE invoice_sequence SET next_number=next_number+1 WHERE id=1');
+  const insertInvoice = db.prepare('INSERT INTO invoices (id,customer_id,invoice_number,subtotal,tax_rate,tax_amount,total,status,credit_account_name,user_id) VALUES (?,?,?,?,?,?,?,?,?,?)');
+  const insertItem = db.prepare('INSERT INTO invoice_items (id,invoice_id,material_id,description,quantity,unit_price,cost_price,total) VALUES (?,?,?,?,?,?,?,?)');
+  const insertPayment = db.prepare('INSERT INTO payments (id,invoice_id,amount,method,notes) VALUES (?,?,?,?,?)');
+  const reduceStock = db.prepare('UPDATE materials SET stock=stock-? WHERE id=?');
+  const insertMovement = db.prepare('INSERT INTO stock_movements (id,material_id,type,quantity,reference_id,reference_type,notes) VALUES (?,?,?,?,?,?,?)');
+  const created: string[] = [];
+  const txn = db.transaction(async () => {
+    for (let index = 0; index < names.length; index++) {
+      if (usedNames.has(names[index])) continue;
+      const material = materials[index];
+      const quantity = index + 1;
+      const total = Math.round(quantity * Number(material.price_per_unit) * 100) / 100;
+      const invoiceId = uuidv4();
+      const seq = await getSeq.get() as any;
+      const invoiceNumber = `INV-${String(seq.next_number).padStart(4, '0')}`;
+      await bumpSeq.run();
+      await insertInvoice.run(invoiceId, null, invoiceNumber, total, 0, 0, total, index === 2 ? 'paid' : index === 1 ? 'partial' : 'pending', names[index], adminId);
+      await insertItem.run(uuidv4(), invoiceId, material.id, material.name, quantity, material.price_per_unit, material.cost_price || 0, total);
+      await reduceStock.run(quantity, material.id);
+      await insertMovement.run(uuidv4(), material.id, 'sale', -quantity, invoiceId, 'invoice', `Demo receivable ${invoiceNumber}`);
+      if (index === 1) await insertPayment.run(uuidv4(), invoiceId, Math.round(total / 2 * 100) / 100, 'cash', 'Demo partial payment');
+      if (index === 2) await insertPayment.run(uuidv4(), invoiceId, total, 'cash', 'Demo paid credit sale');
+      created.push(invoiceNumber);
+    }
+  });
+  await txn();
+  res.status(201).json({ ok: true, created: created.length, invoices: created, message: 'Clearly labelled demo receivables created' });
+});
+
 router.post('/', requireAdmin, async (_req: Request, res: Response) => {
   const db = getDb();
 
