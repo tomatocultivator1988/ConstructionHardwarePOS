@@ -275,6 +275,14 @@ async function initTables() {
     INSERT OR IGNORE INTO invoice_sequence (id, next_number) VALUES (1, 1);
     INSERT OR IGNORE INTO po_sequence (id, next_number) VALUES (1, 1);
   `);
+  const catalogDefaults: Record<string, string[]> = {
+    category: ['Cement', 'Steel/Rebar', 'Lumber/Wood', 'Plumbing', 'Electrical', 'Paint', 'Hardware', 'Sand/Gravel', 'Roofing', 'Tools', 'Other'],
+    unit: ['Each', 'Kilogram', 'Meter', 'Roll', 'Gallon', 'Pieces', 'Liter', 'Box', 'Set', 'Bag', 'Pair', 'Sack', 'Bottle', 'Pack'],
+    expense_category: ['Rent', 'Utilities', 'Labor/Salary', 'Delivery/Transport', 'Tools & Equipment', 'Maintenance', 'Supplies', 'Other'],
+  };
+  for (const [type, names] of Object.entries(catalogDefaults)) for (const name of names) {
+    await db.prepare('INSERT OR IGNORE INTO catalog_options (id,type,name) VALUES (?,?,?)').run(uuidv4(), type, name);
+  }
 }
 
 async function migrateSchema() {

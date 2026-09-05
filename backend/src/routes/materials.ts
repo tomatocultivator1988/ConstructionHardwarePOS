@@ -73,6 +73,9 @@ router.post('/', async (req: Request, res: Response) => {
     res.status(400).json({ error: validation.errors.join('; ') });
     return;
   }
+  if (validation.supplier_id && !(await db.prepare('SELECT id FROM suppliers WHERE id=?').get(validation.supplier_id))) {
+    res.status(404).json({ error: 'Supplier not found' }); return;
+  }
   const id = uuidv4();
   await db.prepare(
     'INSERT INTO materials (id, name, unit, stock, cost_price, price_per_unit, wholesale_price, reorder_point, category, supplier_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -91,6 +94,9 @@ router.put('/:id', async (req: Request, res: Response) => {
   if (validation.errors.length) {
     res.status(400).json({ error: validation.errors.join('; ') });
     return;
+  }
+  if (validation.supplier_id && !(await db.prepare('SELECT id FROM suppliers WHERE id=?').get(validation.supplier_id))) {
+    res.status(404).json({ error: 'Supplier not found' }); return;
   }
   await db.prepare(
     `UPDATE materials SET name=?, unit=?, stock=?, cost_price=?, price_per_unit=?, wholesale_price=?, reorder_point=?, category=?, supplier_id=?, updated_at=datetime('now') WHERE id=?`

@@ -13,9 +13,6 @@ const DEFAULTS: Record<string, string[]> = {
 
 router.get('/', async (_req: Request, res: Response) => {
   const db = getDb();
-  for (const type of TYPES) for (const name of DEFAULTS[type]) {
-    await db.prepare('INSERT OR IGNORE INTO catalog_options (id,type,name) VALUES (?,?,?)').run(uuidv4(), type, name);
-  }
   const rows = await db.prepare('SELECT type,name FROM catalog_options ORDER BY type,name').all() as any[];
   const result: Record<string, string[]> = {};
   for (const type of TYPES) result[type] = rows.filter(r => r.type === type).map(r => r.name);
