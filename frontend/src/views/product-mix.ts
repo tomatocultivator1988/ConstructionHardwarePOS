@@ -6,6 +6,13 @@ export async function renderProductMix(): Promise<string> {
   const products = data.products || [];
   const totals = data.totals || {};
   const margin = totals.revenue > 0 ? (totals.gross_profit / totals.revenue) * 100 : 0;
+  const bestSelling = [...products].sort((a: any, b: any) => Number(b.quantity_sold || 0) - Number(a.quantity_sold || 0) || Number(b.revenue || 0) - Number(a.revenue || 0)).slice(0, 5);
+  const slowMovers = [...products].sort((a: any, b: any) => Number(a.quantity_sold || 0) - Number(b.quantity_sold || 0) || Number(a.revenue || 0) - Number(b.revenue || 0)).slice(0, 5);
+  const compactRows = (items: any[], empty: string) => items.length ? items.map((p: any, index: number) => `<tr>
+    <td><span class="product-rank">${index + 1}</span><strong>${esc(p.name)}</strong><small>${esc(p.unit || '')} · Stock ${Number(p.stock || 0)}</small></td>
+    <td class="product-mix-qty">${Number(p.quantity_sold || 0).toLocaleString()} sold</td>
+    <td class="money">${fmtPeso(p.revenue)}</td>
+  </tr>`).join('') : `<tr><td colspan="3" class="empty-state">${empty}</td></tr>`;
 
   return `
     <div class="page-header">
@@ -16,6 +23,16 @@ export async function renderProductMix(): Promise<string> {
       <div class="dashboard-card card-info"><div class="card-label">Gross Profit</div><div class="card-value">${fmtPeso(totals.gross_profit)}</div><div class="card-sub">${margin.toFixed(1)}% overall margin</div></div>
       <div class="dashboard-card"><div class="card-label">Products with Sales</div><div class="card-value">${totals.products_sold || 0}</div><div class="card-sub">of ${totals.products || 0} products</div></div>
       <div class="dashboard-card card-warning"><div class="card-label">No Recorded Sales</div><div class="card-value">${totals.no_sales || 0}</div><div class="card-sub">Review slow-moving stock</div></div>
+    </div>
+    <div class="product-mix-lists">
+      <section class="dashboard-card product-mix-list-card">
+        <div class="section-heading"><div><h3>Best Selling Products</h3><p class="card-sub">Top 5 by quantity sold across completed sales.</p></div><span class="product-list-icon product-list-icon-best">↑</span></div>
+        <div class="table-wrap"><table class="product-mix-mini-table"><thead><tr><th>Product</th><th>Quantity</th><th>Revenue</th></tr></thead><tbody>${compactRows(bestSelling, 'No completed sales yet.')}</tbody></table></div>
+      </section>
+      <section class="dashboard-card product-mix-list-card">
+        <div class="section-heading"><div><h3>Slow Movers / No Sales</h3><p class="card-sub">Lowest recorded quantity sold; review stock before reordering.</p></div><span class="product-list-icon product-list-icon-slow">↓</span></div>
+        <div class="table-wrap"><table class="product-mix-mini-table"><thead><tr><th>Product</th><th>Quantity</th><th>Revenue</th></tr></thead><tbody>${compactRows(slowMovers, 'No products found.')}</tbody></table></div>
+      </section>
     </div>
     <section class="dashboard-card product-mix-card">
       <div class="section-heading"><div><h3>Product performance</h3><p class="card-sub">Ranked by revenue. COGS uses the cost recorded at the time of each sale.</p></div></div>
