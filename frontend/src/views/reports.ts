@@ -12,10 +12,8 @@ export async function renderReports(): Promise<string> {
     <div class="report-tabs" role="tablist" aria-label="Report types">
       <button class="nav-btn ${currentSubTab === 'daily' ? 'active' : ''}" onclick="switchReportTab('daily')" style="font-size:var(--fs-sm)">Daily Sales</button>
       <button class="nav-btn ${currentSubTab === 'monthly' ? 'active' : ''}" onclick="switchReportTab('monthly')" style="font-size:var(--fs-sm)">P&L</button>
-      <button class="nav-btn ${currentSubTab === 'tax' ? 'active' : ''}" onclick="switchReportTab('tax')" style="font-size:var(--fs-sm)">Tax Summary</button>
       <button class="nav-btn ${currentSubTab === 'range' ? 'active' : ''}" onclick="switchReportTab('range')" style="font-size:var(--fs-sm)">Date Range</button>
       <button class="nav-btn ${currentSubTab === 'books' ? 'active' : ''}" onclick="switchReportTab('books')" style="font-size:var(--fs-sm)">Books</button>
-      <button class="nav-btn ${currentSubTab === 'summary' ? 'active' : ''}" onclick="switchReportTab('summary')" style="font-size:var(--fs-sm)">Financial Summary</button>
     </div>
     <div id="report-content">
       ${await loadDailyReport()}
@@ -35,9 +33,7 @@ export async function switchReportTab(tab: string) {
     else if (tab === 'range') el.innerHTML = await loadRangeForm();
     else if (tab === 'books') el.innerHTML = await loadBooksReport();
     else if (tab === 'summary') el.innerHTML = await loadFinancialSummary();
-    document.querySelectorAll('#report-content .nav-btn').forEach((b, i) => {
-      b.classList.toggle('active', (['daily','monthly','tax','range','books','summary'][i] === tab));
-    });
+    document.querySelectorAll('.report-tabs .nav-btn').forEach(b => b.classList.remove('active'));
   } catch (e: any) { showToast(e.message); }
 }
 
