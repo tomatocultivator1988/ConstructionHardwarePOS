@@ -908,6 +908,8 @@ body.show-install #install-prompt { display: flex; }
 .pos-product strong { color:var(--c-primary); font-family:var(--ff-mono); }
 .pos-empty, .pos-cart-empty { grid-column:1/-1; padding:3rem 1rem; color:var(--c-text-muted); text-align:center; }
 .pos-cart-panel { padding:var(--space-4); position:sticky; top:var(--space-4); max-height:calc(100vh - 110px); overflow:auto; }
+.pos-cart-title { display:flex; align-items:center; justify-content:space-between; gap:var(--space-2); }
+.pos-cart-toggle { display:none; border:1px solid var(--c-border); border-radius:999px; padding:.45rem .7rem; color:var(--c-primary); background:var(--c-primary-bg); font:inherit; font-size:var(--fs-xs); font-weight:800; cursor:pointer; }
 .pos-cart-panel select,
 .pos-cart-panel input { width:100%; min-height:42px; padding:0 var(--space-3); border:1px solid var(--c-border); border-radius:var(--radius-md); color:var(--c-text); background:var(--c-surface-elevated); font:inherit; font-size:var(--fs-sm); line-height:1.2; transition:border-color .15s ease,box-shadow .15s ease,background .15s ease; }
 .pos-cart-panel select { cursor:pointer; }
@@ -981,7 +983,11 @@ body.show-install #install-prompt { display: flex; }
   .pos-category { display:inline-block; width:auto; margin:0 2px; padding:.55rem .7rem; text-align:center; }
   .pos-products, .pos-cart-panel { width:100%; }
   .pos-product-grid { max-height:none; overflow:visible; }
-  .pos-cart-panel { position:static; max-height:none; overflow:visible; }
+  .pos-cart-panel { position:fixed; z-index:40; right:10px; bottom:calc(10px + env(safe-area-inset-bottom)); left:10px; max-height:min(76vh,620px); overflow:auto; box-shadow:0 16px 40px rgba(0,0,0,.45); transform:translateY(calc(100% - 62px)); transition:transform .2s ease; }
+  .pos-cart-panel { background:var(--c-surface); }
+  .pos-cart-title { position:sticky; top:calc(-1 * var(--space-4)); z-index:1; margin:calc(-1 * var(--space-4)) calc(-1 * var(--space-4)) var(--space-3); padding:var(--space-3) var(--space-4); background:var(--c-surface); border-bottom:1px solid var(--c-border); }
+  .pos-cart-toggle { display:block; }
+  .pos-page.pos-cart-open .pos-cart-panel { transform:translateY(0); }
   .pos-cart-items { max-height:300px; }
 }
 @media (max-width: 480px) {

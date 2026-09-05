@@ -50,7 +50,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 router.post('/', async (req: Request, res: Response) => {
   const db = getDb();
-  const { customer_id, items, due_date, tax_rate, issued_date, delivery_person } = req.body;
+  const { customer_id, items, due_date, tax_rate, issued_date, delivery_person, payment } = req.body;
 
   if (!items || !items.length) {
     res.status(400).json({ error: 'At least one line item is required' });
@@ -86,6 +86,21 @@ router.post('/', async (req: Request, res: Response) => {
     if (!customer) { res.status(404).json({ error: 'Customer not found' }); return; }
   }
 
+  // POS checkouts may include payment so invoice, stock, and payment commit together.
+  // The Advanced Invoice Form intentionally omits this field for legitimate account invoices.
+  const checkoutPayment = payment && typeof payment === 'object' ? payment : null;
+  if (checkoutPayment) {
+    const paymentMethod = typeof checkoutPayment.method === 'string' ? checkoutPayment.method.trim().toLowerCase() : '';
+    const paymentAmount = checkoutPayment.amount;
+    const validAmount = typeof paymentAmount === 'number' && Number.isFinite(paymentAmount) && (paymentMethod === 'credit' ? paymentAmount === 0 : paymentAmount > 0);
+    if (!PAYMENT_METHODS.includes(paymentMethod) || !validAmount) {
+      res.status(422).json({ error: 'A valid payment method and payment amount are required' }); return;
+    }
+    if (paymentMethod === 'credit' && !customer_id) {
+      res.status(422).json({ error: 'Credit / On Account sales require a registered customer' }); return;
+    }
+  }
+
   const invoiceId = uuidv4();
 
   const insertItem = db.prepare(
@@ -98,6 +113,10 @@ router.post('/', async (req: Request, res: Response) => {
   const insertMovement = db.prepare(
     'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );
+  const insertPayment = db.prepare(
+    'INSERT INTO payments (id, invoice_id, amount, method, notes, shift_id) VALUES (?, ?, ?, ?, ?, ?)'
+  );
+  const paymentId = checkoutPayment ? uuidv4() : null;
   let materialMap = new Map<string, any>();
 
   const txn = db.transaction(async () => {
@@ -138,6 +157,20 @@ router.post('/', async (req: Request, res: Response) => {
     await db.prepare('UPDATE invoices SET subtotal = ?, tax_rate = ?, tax_amount = ?, total = ? WHERE id = ?')
       .run(roundedSubtotal, appliedTaxRate, taxAmount, total, invoiceId);
 
+    if (checkoutPayment) {
+      const paymentMethod = checkoutPayment.method.trim().toLowerCase();
+      if (paymentMethod === 'credit') {
+        await db.prepare("UPDATE invoices SET status='pending' WHERE id=?").run(invoiceId);
+      } else {
+        const paymentAmount = Number(checkoutPayment.amount);
+        if (Math.abs(paymentAmount - total) > 0.005) throw new Error('Payment amount must match the sale total');
+        const activeShift = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1").get((req as any).user?.id) as any;
+        if (!activeShift) throw new Error('Open a cashier shift before completing a paid sale');
+        await insertPayment.run(paymentId, invoiceId, total, paymentMethod, checkoutPayment.notes || null, activeShift.id);
+        await db.prepare("UPDATE invoices SET status='paid', paid_date=datetime('now') WHERE id=?").run(invoiceId);
+      }
+    }
+
     for (const materialId of usedMaterialIds) {
       const qtyNeeded = items
         .filter((it: any) => it.material_id === materialId)
@@ -161,7 +194,8 @@ router.post('/', async (req: Request, res: Response) => {
     FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id WHERE i.id = ?
   `).get(invoiceId);
   const invoiceItems = await db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(invoiceId);
-  res.status(201).json({ ...invoice as any, items: invoiceItems, payments: [] });
+  const invoicePayments = await db.prepare('SELECT * FROM payments WHERE invoice_id = ?').all(invoiceId);
+  res.status(201).json({ ...invoice as any, items: invoiceItems, payments: invoicePayments });
 });
 
 router.post('/:id/pay', async (req: Request, res: Response) => {

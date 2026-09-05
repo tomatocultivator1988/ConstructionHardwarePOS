@@ -39,8 +39,8 @@ export async function renderInvoices(): Promise<string> {
     <div class="pos-layout">
       <aside class="pos-categories"><div class="pos-panel-title">Categories</div><button class="pos-category ${!posCategory ? 'active' : ''}" onclick="setPOSCategory('')">All Categories</button>${categoryButtons}</aside>
       <section class="pos-products"><div class="pos-search"><input id="pos-search" type="search" value="${esc(posSearch)}" placeholder="Search material name, category, or unit..." oninput="filterPOSMaterials(this.value)" /><span>${filteredMaterials.length} item${filteredMaterials.length === 1 ? '' : 's'}</span></div><div class="pos-product-grid">${filteredMaterials.length ? filteredMaterials.map((m: Material) => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('') : '<div class="pos-empty">No materials match your search.</div>'}</div></section>
-      <aside class="pos-cart-panel"><div class="pos-panel-title">Current Sale</div><div class="pos-cart-items">${posCart.length ? posCart.map(item => `<div class="pos-cart-item"><div class="pos-cart-info"><strong>${esc(item.material.name)}</strong><span>${fmtPeso(item.material.price_per_unit)} · ${esc(item.material.unit)}</span></div><div class="pos-qty"><button onclick="changePOSQty('${item.material.id}',-1)">−</button><strong>${item.quantity}</strong><button onclick="changePOSQty('${item.material.id}',1)">+</button></div><strong class="pos-line-total">${fmtPeso(item.quantity * Number(item.material.price_per_unit))}</strong><button class="pos-remove" onclick="removePOSItem('${item.material.id}')" aria-label="Remove item">×</button></div>`).join('') : '<div class="pos-cart-empty">Select a material to start a sale.</div>'}</div>
-        <div class="pos-customer-box"><label for="pos-customer">Customer</label><select id="pos-customer"><option value="">Walk-in Customer</option>${customers.map((c: Customer) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><label for="pos-delivery">Delivery Person <span>(optional)</span></label><input id="pos-delivery" maxlength="100" placeholder="Name for delivery" /></div>
+      <aside class="pos-cart-panel"><div class="pos-panel-title pos-cart-title"><span>Current Sale</span><button class="pos-cart-toggle" onclick="togglePOSCart()" aria-expanded="false">Cart · ${posCart.length} · ${fmtPeso(total)}</button></div><div class="pos-cart-items">${posCart.length ? posCart.map(item => `<div class="pos-cart-item"><div class="pos-cart-info"><strong>${esc(item.material.name)}</strong><span>${fmtPeso(item.material.price_per_unit)} · ${esc(item.material.unit)}</span></div><div class="pos-qty"><button onclick="changePOSQty('${item.material.id}',-1)">−</button><strong>${item.quantity}</strong><button onclick="changePOSQty('${item.material.id}',1)">+</button></div><strong class="pos-line-total">${fmtPeso(item.quantity * Number(item.material.price_per_unit))}</strong><button class="pos-remove" onclick="removePOSItem('${item.material.id}')" aria-label="Remove item">×</button></div>`).join('') : '<div class="pos-cart-empty">Select a material to start a sale.</div>'}</div>
+        <div class="pos-customer-box"><label for="pos-customer">Customer</label><select id="pos-customer" onchange="updatePOSPayment()"><option value="">Walk-in Customer</option>${customers.map((c: Customer) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><label for="pos-delivery">Delivery Person <span>(optional)</span></label><input id="pos-delivery" maxlength="100" placeholder="Name for delivery" /></div>
         <div class="pos-summary"><div><span>Subtotal</span><strong>${fmtPeso(cartTotal)}</strong></div>${taxRate > 0 ? `<div><span>Tax</span><strong>${fmtPeso(tax)}</strong></div>` : ''}<div class="pos-grand-total"><span>Total</span><strong>${fmtPeso(total)}</strong></div></div>
         <div class="pos-payment"><label for="pos-method">Payment Method</label><select id="pos-method" onchange="updatePOSPayment()"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option><option value="check">Check</option><option value="credit">Credit / On Account</option></select><div id="pos-cash-fields"><label for="pos-received">Amount Received</label><input id="pos-received" type="number" min="0" step="0.01" value="${total.toFixed(2)}" oninput="updatePOSPayment()" /><div class="pos-change"><span>Change</span><strong id="pos-change-value">${fmtPeso(0)}</strong></div></div></div>
         <button class="btn btn-primary pos-complete" id="pos-complete-btn" onclick="completePOSSale()" ${posCart.length ? '' : 'disabled'}>Complete Sale</button><button class="btn pos-clear" onclick="clearPOSCart()" ${posCart.length ? '' : 'disabled'}>Clear Cart</button>
@@ -54,6 +54,13 @@ export function changeInvoicePage(page: number) { invoicePage = Math.max(1, page
 
 export function setPOSCategory(category: string) { posCategory = category; loadView('invoices'); }
 export function filterPOSMaterials(value: string) { posSearch = value; renderPOSProductGrid(); }
+export function togglePOSCart() {
+  const page = document.querySelector('.pos-page');
+  const toggle = document.querySelector('.pos-cart-toggle');
+  if (!page || !toggle) return;
+  const open = page.classList.toggle('pos-cart-open');
+  toggle.setAttribute('aria-expanded', String(open));
+}
 function renderPOSProductGrid() {
   const grid = document.querySelector('.pos-product-grid');
   const count = document.querySelector('.pos-search span');
@@ -74,7 +81,7 @@ export function addPOSItem(id: string) {
 export function changePOSQty(id: string, delta: number) { const item = posCart.find(i => i.material.id === id); if (!item) return; const next = item.quantity + delta; if (next <= 0) posCart = posCart.filter(i => i.material.id !== id); else if (next <= Number(item.material.stock)) item.quantity = next; else showToast(`Only ${item.material.stock} ${item.material.unit} available`); loadView('invoices'); }
 export function removePOSItem(id: string) { posCart = posCart.filter(i => i.material.id !== id); loadView('invoices'); }
 export function clearPOSCart() { posCart = []; loadView('invoices'); }
-export function updatePOSPayment() { const total = Number((window as any).__posTotal || 0); const received = Number((document.getElementById('pos-received') as HTMLInputElement)?.value || 0); const method = (document.getElementById('pos-method') as HTMLSelectElement)?.value; const fields = document.getElementById('pos-cash-fields'); if (fields) fields.style.display = method === 'credit' ? 'none' : ''; const change = method === 'cash' ? Math.max(0, received - total) : 0; const target = document.getElementById('pos-change-value'); if (target) target.textContent = fmtPeso(change); }
+export function updatePOSPayment() { const total = Number((window as any).__posTotal || 0); const received = Number((document.getElementById('pos-received') as HTMLInputElement)?.value || 0); const method = (document.getElementById('pos-method') as HTMLSelectElement)?.value; const customer = (document.getElementById('pos-customer') as HTMLSelectElement)?.value; const fields = document.getElementById('pos-cash-fields'); if (fields) fields.style.display = method === 'credit' ? 'none' : ''; const change = method === 'cash' ? Math.max(0, received - total) : 0; const target = document.getElementById('pos-change-value'); if (target) target.textContent = fmtPeso(change); const btn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null; if (btn) btn.disabled = !posCart.length || (method === 'credit' && !customer); }
 export async function completePOSSale() {
   if (!posCart.length) { showToast('Add at least one material'); return; }
   const total = Number((window as any).__posTotal || 0);
@@ -85,12 +92,17 @@ export async function completePOSSale() {
   const customer_id = (document.getElementById('pos-customer') as HTMLSelectElement)?.value || null;
   const delivery_person = (document.getElementById('pos-delivery') as HTMLInputElement)?.value.trim() || null;
   const btn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null; if (btn) btn.disabled = true;
+  if (method === 'credit' && !customer_id) {
+    showToast('Select a registered customer for Credit / On Account sales');
+    if (btn) btn.disabled = false;
+    return;
+  }
   try {
-    const invoice = await apiPost<any>('/invoices', { customer_id, due_date: null, tax_rate: Number((window as any).__invDefaultTax || 0), delivery_person, items });
-    if (method !== 'credit') await apiPost(`/invoices/${invoice.id}/pay`, { amount: total, method, notes: '' });
+    // POS checkout is committed atomically by the backend. Credit creates an unpaid invoice.
+    const checkout = await apiPost<any>('/invoices', { customer_id, due_date: null, tax_rate: Number((window as any).__invDefaultTax || 0), delivery_person, items, payment: { amount: method === 'credit' ? 0 : total, method, notes: '' } });
     const change = method === 'cash' ? received - total : 0;
     posCart = [];
-    await showReceiptPreview(invoice.id);
+    await showReceiptPreview(checkout.id);
     if (change > 0) showToast(`Sale completed. Change: ${fmtPeso(change)}`, 'success');
     else showToast('Sale completed', 'success');
     loadView('invoices');
