@@ -51,6 +51,14 @@ const GUIDE: Record<string, { title: string; intro: string; sections: HelpSectio
       { title: 'Corrections', body: '<strong>Return Items</strong> handles returned quantities and stock restoration. <strong>Credit Memo</strong> adjusts the invoice balance. <strong>Refund</strong> records money returned after payment. <strong>Void Invoice</strong> is an admin action for invalid sales and requires a reason. Do not delete issued sales unless the system explicitly allows it for a safe, unused record.' },
     ],
   },
+  receivables: {
+    title: 'Receivables',
+    intro: 'Manage credit sales and see exactly who still has an unpaid balance.',
+    sections: [
+      { title: 'Credit sales', body: 'Cash, card, bank, and check sales may remain Walk-in. A Credit / On Account sale requires a <strong>Charge To / Buyer Name</strong>; no customer account or due date is required.' },
+      { title: 'Collect payment', body: 'Use Search or the status filter to find unpaid or partially paid sales. Tap <strong>Record Payment</strong>, enter the payment amount and method, then confirm. The balance updates from the invoice payment history.' },
+    ],
+  },
   receipts: {
     title: 'Receipts',
     intro: 'Find payment receipts from completed or partially paid sales.',

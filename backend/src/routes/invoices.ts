@@ -11,7 +11,7 @@ const PAYMENT_METHODS = ['cash', 'card', 'bank', 'check', 'credit'];
 router.get('/', async (req: Request, res: Response) => {
   const db = getDb();
   const baseQuery = `
-    SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name, c.address AS customer_address, c.tin AS customer_tin,
+    SELECT i.*, COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') AS customer_name, c.address AS customer_address, c.tin AS customer_tin,
       i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) AS adjusted_total,
       i.tax_amount - COALESCE((SELECT SUM(tax_amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - CASE WHEN i.tax_rate > 0 THEN COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) * i.tax_rate / (1+i.tax_rate) ELSE 0 END AS adjusted_tax,
       COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0) AS net_paid
@@ -29,10 +29,34 @@ router.get('/', async (req: Request, res: Response) => {
   res.json(await db.prepare(baseQuery).all());
 });
 
+router.get('/receivables', async (req: Request, res: Response) => {
+  const db = getDb();
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+  const status = typeof req.query.status === 'string' ? req.query.status : 'all';
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 15));
+  const balance = `i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) - (COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id AND p.method <> 'credit'),0) - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0))`;
+  const conditions = ["i.status <> 'voided'", "(i.credit_account_name IS NOT NULL OR EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit') )"];
+  const params: any[] = [];
+  if (search) { conditions.push("COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Unassigned Credit') LIKE ?"); params.push(`%${search}%`); }
+  if (status === 'unpaid') conditions.push(`${balance} > 0 AND (COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) = 0)`);
+  if (status === 'partial') conditions.push(`${balance} > 0 AND COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) > 0`);
+  if (status === 'paid') conditions.push(`${balance} <= 0`);
+  const where = conditions.join(' AND ');
+  const select = `SELECT i.id, i.invoice_number, i.issued_date, i.total, i.status, i.credit_account_name,
+    COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Unassigned Credit') AS account_name,
+    COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id AND p.method <> 'credit'),0) - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0) AS net_paid,
+    ${balance} AS balance
+    FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}`;
+  const total = Number((await db.prepare(`SELECT COUNT(*) AS total FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}`).get(...params) as any).total || 0);
+  const data = await db.prepare(`${select} ORDER BY CASE WHEN balance > 0 THEN 0 ELSE 1 END, i.issued_date ASC LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize);
+  res.json({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+});
+
 router.get('/:id', async (req: Request, res: Response) => {
   const db = getDb();
   const invoice = await db.prepare(`
-    SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name, c.address AS customer_address, c.tin AS customer_tin,
+    SELECT i.*, COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') AS customer_name, c.address AS customer_address, c.tin AS customer_tin,
       i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) AS adjusted_total,
       i.tax_amount - COALESCE((SELECT SUM(tax_amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - CASE WHEN i.tax_rate > 0 THEN COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) * i.tax_rate / (1+i.tax_rate) ELSE 0 END AS adjusted_tax,
       COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0) AS net_paid
@@ -50,7 +74,8 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 router.post('/', async (req: Request, res: Response) => {
   const db = getDb();
-  const { customer_id, items, due_date, tax_rate, issued_date, delivery_person, payment } = req.body;
+  const { customer_id, items, due_date, tax_rate, issued_date, delivery_person, credit_account_name, payment } = req.body;
+  const creditName = typeof credit_account_name === 'string' ? credit_account_name.trim() : '';
 
   if (!items || !items.length) {
     res.status(400).json({ error: 'At least one line item is required' });
@@ -59,6 +84,9 @@ router.post('/', async (req: Request, res: Response) => {
 
   if (delivery_person !== undefined && delivery_person !== null && (typeof delivery_person !== 'string' || delivery_person.trim().length > 100)) {
     res.status(400).json({ error: 'Delivery person must be 100 characters or fewer' }); return;
+  }
+  if (credit_account_name !== undefined && credit_account_name !== null && (typeof credit_account_name !== 'string' || creditName.length > 120)) {
+    res.status(400).json({ error: 'Credit account name must be 120 characters or fewer' }); return;
   }
 
   const usedMaterialIds = new Set<string>();
@@ -95,6 +123,9 @@ router.post('/', async (req: Request, res: Response) => {
     const validAmount = typeof paymentAmount === 'number' && Number.isFinite(paymentAmount) && (paymentMethod === 'credit' ? paymentAmount === 0 : paymentAmount > 0);
     if (!PAYMENT_METHODS.includes(paymentMethod) || !validAmount) {
       res.status(422).json({ error: 'A valid payment method and payment amount are required' }); return;
+    }
+    if (paymentMethod === 'credit' && !creditName) {
+      res.status(400).json({ error: 'A buyer or charge-to name is required for credit sales' }); return;
     }
   }
 
@@ -135,8 +166,8 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     await     db.prepare(
-      'INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, delivery_person, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(invoiceId, customer_id || null, invoice_number, 0, tax_rate ?? 0, 0, due_date || null, delivery_person?.trim() || null, issued_date || null, (req as any).user?.id || null);
+      'INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, delivery_person, credit_account_name, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(invoiceId, customer_id || null, invoice_number, 0, tax_rate ?? 0, 0, due_date || null, delivery_person?.trim() || null, creditName || null, issued_date || null, (req as any).user?.id || null);
 
     let subtotal = 0;
     for (const item of items) {

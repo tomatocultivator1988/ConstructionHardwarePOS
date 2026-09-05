@@ -76,6 +76,7 @@ async function initTables() {
       issued_date TEXT DEFAULT (datetime('now')),
       due_date TEXT,
       delivery_person TEXT,
+      credit_account_name TEXT,
       paid_date TEXT,
       user_id TEXT,
       created_at TEXT DEFAULT (datetime('now')),
@@ -334,6 +335,7 @@ async function migrateSchema() {
   if (!invoiceCols.includes('voided_at')) await db.exec("ALTER TABLE invoices ADD COLUMN voided_at TEXT");
   if (!invoiceCols.includes('voided_by')) await db.exec("ALTER TABLE invoices ADD COLUMN voided_by TEXT");
   if (!invoiceCols.includes('void_reason')) await db.exec("ALTER TABLE invoices ADD COLUMN void_reason TEXT");
+  if (!invoiceCols.includes('credit_account_name')) await db.exec("ALTER TABLE invoices ADD COLUMN credit_account_name TEXT");
   const paymentInfo = (await db.prepare("PRAGMA table_info('payments')").all()) as any[];
   if (!paymentInfo.some((r: any) => r.name === 'shift_id')) await db.exec("ALTER TABLE payments ADD COLUMN shift_id TEXT");
   const expenseInfo = (await db.prepare("PRAGMA table_info('expenses')").all()) as any[];

@@ -12,6 +12,7 @@ import * as settings from './views/settings';
 import { printReceipt, showReceiptPreview } from './views/receipt';
 import * as receipts from './views/receipts';
 import * as productMix from './views/product-mix';
+import * as receivables from './views/receivables';
 import { openHelp } from './lib/help';
 
 Object.assign(window, {
@@ -32,6 +33,8 @@ Object.assign(window, {
   changeMaterialPage: materials.changeMaterialPage,
   applyProductMixFilter: productMix.applyProductMixFilter,
   clearProductMixFilter: productMix.clearProductMixFilter,
+  filterReceivables: receivables.filterReceivables,
+  changeReceivablePage: receivables.changeReceivablePage,
   toggleMobileDetails: materials.toggleMobileDetails,
   showInvoiceModal: invoices.showInvoiceModal,
   addLineItem: invoices.addLineItem,
@@ -178,7 +181,7 @@ export function applyRoleUI() {
 }
 
 function openMobileMore() {
-  const options = [['product-mix', 'Product Mix'], ['receipts', 'Receipts'], ['expenses', 'Expenses'], ['suppliers', 'Suppliers'], ...(isAdmin() ? [['reports', 'Reports'], ['settings', 'Settings']] : [])];
+  const options = [['product-mix', 'Product Mix'], ['receivables', 'Receivables'], ['receipts', 'Receipts'], ['expenses', 'Expenses'], ['suppliers', 'Suppliers'], ...(isAdmin() ? [['reports', 'Reports'], ['settings', 'Settings']] : [])];
   const modal = document.createElement('div');
   modal.className = 'modal'; modal.id = 'mobile-more-modal';
   modal.innerHTML = `<div class="modal-content"><h3>More</h3><div class="mobile-more-menu">${options.map(([view, label]) => `<button class="btn mobile-more-option" onclick="closeModal();loadView('${view}')">${label}<span>›</span></button>`).join('')}</div><div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button></div></div>`;
