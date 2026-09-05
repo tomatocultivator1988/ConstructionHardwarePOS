@@ -1,7 +1,6 @@
 import { loadView } from './lib/router';
 import { closeModal, isAdmin } from './lib/helpers';
 import { isLoggedIn, apiGet, getCurrentUser } from './lib/api';
-import * as customers from './views/customers';
 import * as materials from './views/materials';
 import * as invoices from './views/invoices';
 import * as expenses from './views/expenses';
@@ -19,14 +18,6 @@ Object.assign(window, {
   closeModal,
   logout: login.logout,
   doLogin: login.doLogin,
-  showCustomerModal: customers.showCustomerModal,
-  saveCustomer: customers.saveCustomer,
-  updateCustomer: customers.updateCustomer,
-  editCustomer: customers.editCustomer,
-  delCustomer: customers.delCustomer,
-  showCustomerStatement: customers.showCustomerStatement,
-  changeCustomerPage: customers.changeCustomerPage,
-  toggleCustomerDetails: customers.toggleCustomerDetails,
   showMaterialModal: materials.showMaterialModal,
   toggleCustomUnit: materials.toggleCustomUnit,
   addProductCatalogOption: materials.addProductCatalogOption,
@@ -39,7 +30,6 @@ Object.assign(window, {
   changeMaterialPage: materials.changeMaterialPage,
   toggleMobileDetails: materials.toggleMobileDetails,
   showInvoiceModal: invoices.showInvoiceModal,
-  toggleWalkin: invoices.toggleWalkin,
   addLineItem: invoices.addLineItem,
   createInvoice: invoices.createInvoice,
   showInvoiceDetail: invoices.showInvoiceDetail,

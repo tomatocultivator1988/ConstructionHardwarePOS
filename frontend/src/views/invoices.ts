@@ -3,7 +3,7 @@ import { esc, val, fmtDate, fmtPeso, setErr, clearErr, disableBtn, isAdmin } fro
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
 import { loadView } from '../lib/router';
 import { showReceiptPreview } from './receipt';
-import type { Invoice, Material, Customer } from '../lib/types';
+import type { Invoice, Material } from '../lib/types';
 
 let invoicePage = 1;
 const INVOICE_PAGE_SIZE = 15;
@@ -12,15 +12,13 @@ let posCategory = '';
 let posCart: Array<{ material: Material; quantity: number }> = [];
 
 export async function renderInvoices(): Promise<string> {
-  const [invoices, customers, materials, settings] = await Promise.all([
+  const [invoices, materials, settings] = await Promise.all([
     apiGet<Invoice[] | { data: Invoice[]; total: number }>(`/invoices?page=${invoicePage}&pageSize=${INVOICE_PAGE_SIZE}`),
-    apiGet<Customer[]>('/customers'),
     apiGet<Material[]>('/materials'),
     apiGet<{ value: string }>('/settings/default_tax_rate'),
   ]);
   const invoiceData = Array.isArray(invoices) ? invoices : invoices.data;
   const totalInvoices = Array.isArray(invoices) ? invoices.length : invoices.total;
-  (window as any).__invCustomers = customers;
   (window as any).__invMaterials = materials;
   (window as any).__invDefaultTax = settings.value || '0';
   const categories = [...new Set(materials.map((m: Material) => m.category).filter(Boolean))];
@@ -40,7 +38,7 @@ export async function renderInvoices(): Promise<string> {
       <aside class="pos-categories"><div class="pos-panel-title">Categories</div><button class="pos-category ${!posCategory ? 'active' : ''}" onclick="setPOSCategory('')">All Categories</button>${categoryButtons}</aside>
       <section class="pos-products"><div class="pos-search"><input id="pos-search" type="search" value="${esc(posSearch)}" placeholder="Search material name, category, or unit..." oninput="filterPOSMaterials(this.value)" /><span>${filteredMaterials.length} item${filteredMaterials.length === 1 ? '' : 's'}</span></div><div class="pos-product-grid">${filteredMaterials.length ? filteredMaterials.map((m: Material) => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('') : '<div class="pos-empty">No materials match your search.</div>'}</div></section>
       <aside class="pos-cart-panel"><div class="pos-panel-title pos-cart-title"><span>Current Sale</span><button class="pos-cart-toggle" onclick="togglePOSCart()" aria-expanded="false">Cart · ${posCart.length} · ${fmtPeso(total)}</button></div><div class="pos-cart-items">${posCart.length ? posCart.map(item => `<div class="pos-cart-item"><div class="pos-cart-info"><strong>${esc(item.material.name)}</strong><span>${fmtPeso(item.material.price_per_unit)} · ${esc(item.material.unit)}</span></div><div class="pos-qty"><button onclick="changePOSQty('${item.material.id}',-1)">−</button><strong>${item.quantity}</strong><button onclick="changePOSQty('${item.material.id}',1)">+</button></div><strong class="pos-line-total">${fmtPeso(item.quantity * Number(item.material.price_per_unit))}</strong><button class="pos-remove" onclick="removePOSItem('${item.material.id}')" aria-label="Remove item">×</button></div>`).join('') : '<div class="pos-cart-empty">Select a material to start a sale.</div>'}</div>
-        <div class="pos-customer-box"><label for="pos-customer">Customer</label><select id="pos-customer" onchange="updatePOSPayment()"><option value="">Walk-in Customer</option>${customers.map((c: Customer) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select><label for="pos-delivery">Delivery Person <span>(optional)</span></label><input id="pos-delivery" maxlength="100" placeholder="Name for delivery" /></div>
+        <div class="pos-customer-box"><div class="pos-walkin-label">Sale type: <strong>Walk-in</strong></div><label for="pos-delivery">Delivery Person <span>(optional)</span></label><input id="pos-delivery" maxlength="100" placeholder="Name for delivery" /></div>
         <div class="pos-summary"><div><span>Subtotal</span><strong>${fmtPeso(cartTotal)}</strong></div>${taxRate > 0 ? `<div><span>Tax</span><strong>${fmtPeso(tax)}</strong></div>` : ''}<div class="pos-grand-total"><span>Total</span><strong>${fmtPeso(total)}</strong></div></div>
         <div class="pos-payment"><label for="pos-method">Payment Method</label><select id="pos-method" onchange="updatePOSPayment()"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option><option value="check">Check</option><option value="credit">Credit / On Account</option></select><div id="pos-credit-warning" class="pos-credit-warning" role="status">This will be recorded as unassigned credit. Use the invoice number to collect payment later.</div><div id="pos-cash-fields"><label for="pos-received">Amount Received</label><input id="pos-received" type="number" min="0" step="0.01" value="${total.toFixed(2)}" oninput="updatePOSPayment()" /><div class="pos-change"><span>Change</span><strong id="pos-change-value">${fmtPeso(0)}</strong></div></div></div>
         <button class="btn btn-primary pos-complete" id="pos-complete-btn" onclick="completePOSSale()" ${posCart.length ? '' : 'disabled'}>Complete Sale</button><button class="btn pos-clear" onclick="clearPOSCart()" ${posCart.length ? '' : 'disabled'}>Clear Cart</button>
@@ -89,7 +87,7 @@ export async function completePOSSale() {
   const received = Number((document.getElementById('pos-received') as HTMLInputElement)?.value || 0);
   if (method === 'cash' && received < total) { showToast(`Amount received is short by ${fmtPeso(total - received)}`); return; }
   const items = posCart.map(item => ({ material_id: item.material.id, description: item.material.name, quantity: item.quantity, unit_price: Number(item.material.price_per_unit) }));
-  const customer_id = (document.getElementById('pos-customer') as HTMLSelectElement)?.value || null;
+  const customer_id = null;
   const delivery_person = (document.getElementById('pos-delivery') as HTMLInputElement)?.value.trim() || null;
   const btn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null; if (btn) btn.disabled = true;
   try {
@@ -105,7 +103,6 @@ export async function completePOSSale() {
 }
 
 export function showInvoiceModal() {
-  const customers = (window as any).__invCustomers || [];
   const materials = (window as any).__invMaterials || [];
   const matOpts = materials.map((m: Material) => {
     const cost = m.cost_price || 0;
@@ -115,23 +112,7 @@ export function showInvoiceModal() {
   showModal(`
     <h3>New Invoice</h3>
 
-    <div class="toggle-group">
-      <label>Walk-in / Cash Sale</label>
-      <label class="toggle">
-        <input type="checkbox" id="inv-walkin" onchange="toggleWalkin()" />
-        <span class="slider"></span>
-      </label>
-      <label>Account Sale</label>
-    </div>
-
-    <div class="form-group" id="inv-customer-group">
-      <label>Customer</label>
-      <select id="inv-customer">
-        <option value="">Select customer...</option>
-        ${customers.map((c: Customer) => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
-      </select>
-      <div class="field-error" id="inv-customer-err"></div>
-    </div>
+    <div class="info-callout">This sale will be recorded as Walk-in / Unassigned. Use the invoice number for payment follow-up.</div>
     <div class="form-group">
       <label>Delivery Person <span style="color:var(--c-text-muted);font-weight:normal">(optional)</span></label>
       <input id="inv-delivery-person" maxlength="100" placeholder="Name of delivery person" />
@@ -160,12 +141,6 @@ export function showInvoiceModal() {
   `, 'invoice-modal');
 }
 
-export function toggleWalkin() {
-  const isWalkin = (document.getElementById('inv-walkin') as HTMLInputElement).checked;
-  const group = document.getElementById('inv-customer-group')!;
-  group.style.display = isWalkin ? 'none' : '';
-}
-
 export function addLineItem() {
   const materials = (window as any).__invMaterials || [];
   const matOpts = materials.map((m: Material) => {
@@ -191,13 +166,10 @@ export function addLineItem() {
 }
 
 export async function createInvoice() {
-  clearErr('inv-customer-err');
   document.querySelectorAll('.li-err').forEach(el => { el.textContent = ''; });
   document.querySelectorAll('.li-qty').forEach(el => el.classList.remove('error'));
 
-  const isWalkin = (document.getElementById('inv-walkin') as HTMLInputElement).checked;
-  const customer_id = isWalkin ? null : val('inv-customer');
-  if (!isWalkin && !customer_id) { setErr('inv-customer-err', 'Select a customer or enable walk-in mode'); return; }
+  const customer_id = null;
   const tax_rate = parseFloat((window as any).__invDefaultTax || '0');
 
   const matList: Material[] = (window as any).__invMaterials || [];
@@ -229,8 +201,7 @@ export async function createInvoice() {
   const roundedSubtotal = Math.round(subtotal * 100) / 100;
   const taxAmount = Math.round(roundedSubtotal * tax_rate * 100) / 100;
   const total = Math.round((roundedSubtotal + taxAmount) * 100) / 100;
-  const customerSel = document.getElementById('inv-customer') as HTMLSelectElement;
-  const customerName = isWalkin ? 'Walk-in / Cash Sale' : (customerSel?.selectedOptions?.[0]?.text || 'Unknown');
+  const customerName = 'Walk-in / Unassigned';
   const delivery_person = val('inv-delivery-person').trim();
 
   const confirmHtml = `

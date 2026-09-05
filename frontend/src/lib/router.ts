@@ -1,5 +1,4 @@
 import { renderDashboard } from '../views/dashboard';
-import { renderCustomers } from '../views/customers';
 import { renderMaterials } from '../views/materials';
 import { renderInvoices } from '../views/invoices';
 import { renderSettings } from '../views/settings';
@@ -15,7 +14,6 @@ import { applyRoleUI } from '../main';
 
 const VIEWS: Record<string, () => Promise<string>> = {
   dashboard: renderDashboard,
-  customers: renderCustomers,
   materials: renderMaterials,
   invoices: renderInvoices,
   receipts: renderReceipts,

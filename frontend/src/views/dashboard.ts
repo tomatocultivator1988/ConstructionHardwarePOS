@@ -43,7 +43,6 @@ export async function renderDashboard(): Promise<string> {
   const sv = analytics.stockValue || { total_cost: 0, total_retail: 0 };
   const topMats = analytics.topMaterials || [];
   const margins = analytics.materialMargins || [];
-  const topCust = analytics.topCustomers || [];
   const mRev = analytics.monthRevenue || { revenue: 0, profit: 0 };
   const lmRev = analytics.lastMonthRevenue || { revenue: 0, profit: 0 };
   const yRev = analytics.yearRevenue || { revenue: 0, profit: 0 };
@@ -217,20 +216,6 @@ export async function renderDashboard(): Promise<string> {
         <span class="period-sub">${paidCount} paid, ${pendingCount} pending</span>
       </div>
     </div>
-
-    ${topCust.length ? `
-    <div class="top-customers-bar">
-      <div style="font-size:var(--fs-sm);font-weight:600;color:var(--c-text-secondary);margin-bottom:var(--space-3)">Top Customers</div>
-      ${topCust.map((c: any, i: number) => `
-        <div class="tc-item">
-          <span class="tc-rank">#${i + 1}</span>
-          <span class="tc-name">${esc(c.name)}</span>
-          <span class="tc-bar-wrap"><span class="tc-bar" style="width:${Math.min(100, (c.total_paid / Math.max(...topCust.map((x: any) => x.total_paid))) * 100)}%"></span></span>
-          <span class="tc-amount">${fmtPeso(c.total_paid)}</span>
-        </div>
-      `).join('')}
-    </div>
-    ` : ''}
 
     <div class="chart-grid">
       <div class="chart-card">
