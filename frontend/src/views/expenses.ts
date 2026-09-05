@@ -15,14 +15,18 @@ function catOptions(selected?: string) {
 }
 
 export async function addExpenseCategory() {
-  const name = window.prompt('New expense category:')?.trim();
-  if (!name) return;
+  showModal(`<h3>New Expense Category</h3><p class="modal-help">Add a reusable category for expense records and reports.</p><div class="form-group"><label for="expense-category-name">Name *</label><input id="expense-category-name" maxlength="60" autofocus placeholder="Enter category name" /><div class="field-error" id="expense-category-name-err"></div></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveExpenseCategory()">Add</button></div>`, 'expense-category-modal');
+}
+
+export async function saveExpenseCategory() {
+  const name = val('expense-category-name').trim();
+  if (name.length < 2) { setErr('expense-category-name-err', 'Enter at least 2 characters'); return; }
   try {
     const option = await apiPost<{ name: string }>('/catalog', { type: 'expense_category', name });
     if (!EXPENSE_CATEGORIES.includes(option.name)) EXPENSE_CATEGORIES.push(option.name);
     const select = document.getElementById('exf-category') as HTMLSelectElement | null;
     if (select) { const opt = document.createElement('option'); opt.value = option.name; opt.textContent = option.name; opt.selected = true; select.appendChild(opt); }
-    showToast('Expense category added', 'success');
+    closeModal(); showToast('Expense category added', 'success');
   } catch (e: any) { showToast(e.message || 'Unable to add category'); }
 }
 

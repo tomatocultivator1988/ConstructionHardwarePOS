@@ -336,25 +336,31 @@ export async function showInvoiceDetail(id: string) {
 }
 
 export async function voidInvoice(id: string) {
-  const reason = window.prompt('Enter the reason for voiding this invoice:')?.trim();
-  if (!reason) return;
+  showModal(`<h3>Void Invoice</h3><div class="form-group"><label for="void-reason">Reason *</label><input id="void-reason" maxlength="200" autofocus placeholder="Enter reason" /><div class="field-error" id="void-reason-err"></div></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-danger" onclick="submitVoidInvoice('${id}')">Void Invoice</button></div>`, 'invoice-action-modal');
+}
+export async function submitVoidInvoice(id: string) {
+  const reason = val('void-reason').trim(); if (reason.length < 3) { setErr('void-reason-err', 'Enter at least 3 characters'); return; }
   try { await apiPut(`/invoices/${id}/void`, { reason }); showToast('Invoice voided and stock restored', 'success'); closeModal(); loadView('invoices'); }
   catch (e: any) { showToast(e.message); }
 }
 
 export async function issueCreditMemo(id: string) {
-  const amount = Number(window.prompt('Credit memo amount:'));
-  const reason = window.prompt('Credit memo reason:')?.trim();
-  if (!Number.isFinite(amount) || amount <= 0 || !reason) return;
-  try { await apiPost(`/invoices/${id}/credit-memo`, { amount, reason }); showToast('Credit memo issued', 'success'); }
+  showModal(`<h3>Issue Credit Memo</h3><div class="form-group"><label for="memo-amount">Amount *</label><input id="memo-amount" type="number" min="0.01" step="0.01" autofocus placeholder="0.00" /></div><div class="form-group"><label for="memo-reason">Reason *</label><input id="memo-reason" maxlength="200" placeholder="Enter reason" /></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitCreditMemo('${id}')">Issue Memo</button></div>`, 'invoice-action-modal');
+}
+export async function submitCreditMemo(id: string) {
+  const amount = Number(val('memo-amount')); const reason = val('memo-reason').trim();
+  if (!Number.isFinite(amount) || amount <= 0 || reason.length < 3) { showToast('Enter a valid amount and reason'); return; }
+  try { await apiPost(`/invoices/${id}/credit-memo`, { amount, reason }); showToast('Credit memo issued', 'success'); closeModal(); loadView('invoices'); }
   catch (e: any) { showToast(e.message); }
 }
 
 export async function recordRefund(id: string) {
-  const amount = Number(window.prompt('Refund amount:'));
-  const method = window.prompt('Refund method (cash/card/bank):')?.trim();
-  if (!Number.isFinite(amount) || amount <= 0 || !method) return;
-  try { await apiPost(`/invoices/${id}/refund`, { amount, method }); showToast('Refund recorded', 'success'); }
+  showModal(`<h3>Record Refund</h3><div class="form-group"><label for="refund-amount">Amount *</label><input id="refund-amount" type="number" min="0.01" step="0.01" autofocus placeholder="0.00" /></div><div class="form-group"><label for="refund-method">Refund method *</label><select id="refund-method"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option></select></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitRefund('${id}')">Record Refund</button></div>`, 'invoice-action-modal');
+}
+export async function submitRefund(id: string) {
+  const amount = Number(val('refund-amount')); const method = val('refund-method');
+  if (!Number.isFinite(amount) || amount <= 0 || !method) { showToast('Enter a valid amount and method'); return; }
+  try { await apiPost(`/invoices/${id}/refund`, { amount, method }); showToast('Refund recorded', 'success'); closeModal(); loadView('invoices'); }
   catch (e: any) { showToast(e.message); }
 }
 

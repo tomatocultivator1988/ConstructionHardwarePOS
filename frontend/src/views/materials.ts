@@ -28,16 +28,21 @@ export function toggleCustomUnit() {
 }
 
 export async function addProductCatalogOption(type: 'category' | 'unit') {
-  const label = type === 'category' ? 'New product category' : 'New unit of measure';
-  const name = window.prompt(`${label}:`)?.trim();
-  if (!name) return;
+  const label = type === 'category' ? 'New Product Category' : 'New Unit of Measure';
+  showModal(`<h3>${label}</h3><p class="modal-help">Add a reusable option for future products.</p><div class="form-group"><label for="catalog-name">Name *</label><input id="catalog-name" maxlength="60" autofocus placeholder="Enter ${type === 'category' ? 'category' : 'unit'} name" /><div class="field-error" id="catalog-name-err"></div></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveProductCatalogOption('${type}')">Add</button></div>`, 'catalog-option-modal');
+}
+
+export async function saveProductCatalogOption(type: 'category' | 'unit') {
+  const label = type === 'category' ? 'Product category' : 'Unit of measure';
+  const name = val('catalog-name').trim();
+  if (name.length < 2) { setErr('catalog-name-err', 'Enter at least 2 characters'); return; }
   try {
     const option = await apiPost<{ name: string }>('/catalog', { type, name });
     const values = type === 'category' ? MAT_CATEGORIES : UNIT_OPTIONS;
     if (!values.includes(option.name)) values.push(option.name);
     const select = document.getElementById(type === 'category' ? 'mf-category' : 'mf-unit') as HTMLSelectElement | null;
     if (select) { const opt = document.createElement('option'); opt.value = option.name; opt.textContent = option.name; opt.selected = true; select.appendChild(opt); }
-    showToast(`${label} added`, 'success');
+    closeModal(); showToast(`${label} added`, 'success');
   } catch (e: any) { showToast(e.message || 'Unable to add option'); }
 }
 
