@@ -48,6 +48,43 @@ router.post('/receivables', requireAdmin, async (_req: Request, res: Response) =
   res.status(201).json({ ok: true, created: created.length, invoices: created, message: 'Clearly labelled demo receivables created' });
 });
 
+// Idempotent historical demo data for the Receivables monthly chart.
+// Every record is visibly labelled so it can be removed after QA.
+router.post('/receivables-trend', requireAdmin, async (_req: Request, res: Response) => {
+  const db = getDb();
+  const materials = await db.prepare('SELECT id, name, cost_price, price_per_unit, stock FROM materials WHERE stock >= 1 ORDER BY name LIMIT 1').all() as any[];
+  if (!materials.length) { res.status(400).json({ error: 'At least 1 product with stock is needed' }); return; }
+  const material = materials[0];
+  const adminId = ((await db.prepare("SELECT id FROM users WHERE username='admin'").get()) as any)?.id || null;
+  const records = [
+    { number: 'TEST-TREND-JUL-CREDIT', date: '2026-07-15T10:00:00', total: 450, credit: 'TEST TREND - July Credit', payment: null },
+    { number: 'TEST-TREND-JUL-CASH', date: '2026-07-20T11:00:00', total: 700, credit: null, payment: 'cash' },
+    { number: 'TEST-TREND-AUG-CREDIT', date: '2026-08-12T10:00:00', total: 900, credit: 'TEST TREND - August Credit', payment: null },
+    { number: 'TEST-TREND-AUG-CASH', date: '2026-08-18T13:00:00', total: 1200, credit: null, payment: 'cash' },
+    { number: 'TEST-TREND-SEP-CREDIT', date: '2026-09-02T09:00:00', total: 600, credit: 'TEST TREND - September Credit', payment: null },
+    { number: 'TEST-TREND-SEP-CASH', date: '2026-09-03T14:00:00', total: 1500, credit: null, payment: 'cash' },
+  ];
+  const existing = await db.prepare('SELECT invoice_number FROM invoices WHERE invoice_number LIKE ?').all('TEST-TREND-%') as any[];
+  const existingNumbers = new Set(existing.map(row => row.invoice_number));
+  const insertInvoice = db.prepare('INSERT INTO invoices (id, invoice_number, subtotal, tax_rate, tax_amount, total, status, issued_date, paid_date, credit_account_name, user_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+  const insertItem = db.prepare('INSERT INTO invoice_items (id, invoice_id, material_id, description, quantity, unit_price, cost_price, total) VALUES (?,?,?,?,?,?,?,?)');
+  const insertPayment = db.prepare('INSERT INTO payments (id, invoice_id, amount, method, payment_date, notes) VALUES (?,?,?,?,?,?)');
+  const created: string[] = [];
+  const txn = db.transaction(async () => {
+    for (const record of records) {
+      if (existingNumbers.has(record.number)) continue;
+      const id = uuidv4();
+      const status = record.payment ? 'paid' : 'pending';
+      await insertInvoice.run(id, record.number, record.total, 0, 0, record.total, status, record.date, record.payment ? record.date : null, record.credit, adminId);
+      await insertItem.run(uuidv4(), id, material.id, material.name, 1, record.total, material.cost_price || 0, record.total);
+      if (record.payment) await insertPayment.run(uuidv4(), id, record.total, record.payment, record.date, 'TEST TREND demo sale');
+      created.push(record.number);
+    }
+  });
+  await txn();
+  res.status(201).json({ ok: true, created: created.length, invoices: created, message: 'Clearly labelled July–September trend demo sales created' });
+});
+
 router.post('/', requireAdmin, async (_req: Request, res: Response) => {
   const db = getDb();
 
