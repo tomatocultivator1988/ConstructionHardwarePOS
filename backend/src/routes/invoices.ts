@@ -74,9 +74,11 @@ router.get('/receivables-trend', async (_req: Request, res: Response) => {
       - COALESCE((SELECT SUM(r.amount)
         FROM refunds r JOIN invoices ri ON ri.id=r.invoice_id
         WHERE ri.status <> 'voided' AND r.method <> 'credit' AND date(r.created_at, '+8 hours') BETWEEN months.month_start AND months.month_end), 0) AS collections
+      , COALESCE((SELECT SUM(i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued' AND date(cm.created_at, '+8 hours') <= months.month_end),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id AND date(ir.created_at, '+8 hours') <= months.month_end),0) - (COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id AND p.method <> 'credit' AND date(p.payment_date, '+8 hours') <= months.month_end),0) - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id AND r.method <> 'credit' AND date(r.created_at, '+8 hours') <= months.month_end),0)))
+        FROM invoices i WHERE i.status <> 'voided' AND (i.credit_account_name IS NOT NULL OR EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit')) AND date(i.issued_date, '+8 hours') <= months.month_end), 0) AS current_balance
     FROM months ORDER BY month_start
   `).all();
-  res.json(rows.map((row: any) => ({ month: row.month, credit_sales: Number(row.credit_sales || 0), immediate_sales: Number(row.immediate_sales || 0), collections: Number(row.collections || 0) })));
+  res.json(rows.map((row: any) => ({ month: row.month, credit_sales: Number(row.credit_sales || 0), immediate_sales: Number(row.immediate_sales || 0), collections: Number(row.collections || 0), current_balance: Math.max(0, Number(row.current_balance || 0)) })));
 });
 
 router.get('/:id', async (req: Request, res: Response) => {
