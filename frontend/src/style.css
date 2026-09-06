@@ -1022,12 +1022,19 @@ tr.low-stock td:first-child { box-shadow:inset 4px 0 0 var(--c-warning); }
 
 /* Reports use compact, wrapping controls and metric cards on small screens. */
 .report-tabs { display:flex; flex-wrap:wrap; gap:3px; width:100%; margin-bottom:var(--space-5); padding:3px; border-radius:var(--radius-md); background:var(--c-bg); }
+.report-period-bar { display:flex; align-items:center; justify-content:space-between; gap:var(--space-4); margin-bottom:var(--space-3); padding:var(--space-3) var(--space-4); border:1px solid var(--c-border); border-radius:var(--radius-lg); background:var(--c-surface); }
+.report-period-bar > div { display:flex; flex-direction:column; gap:2px; }
+.report-period-bar strong { color:var(--c-text); font-size:var(--fs-sm); }
+.report-period-bar span { color:var(--c-primary); font-size:var(--fs-xs); font-weight:600; }
+.report-period-bar select { min-height:36px; min-width:130px; padding:0 var(--space-3); border:1px solid var(--c-border); border-radius:var(--radius-md); background:var(--c-surface-elevated); color:var(--c-text); font:inherit; font-size:var(--fs-sm); }
 .report-tabs .nav-btn { flex:0 1 auto; min-height:36px; }
 .report-filters { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-3); margin-bottom:var(--space-5); }
 .report-filters input, .report-filters select { min-height:36px; min-width:140px; max-width:100%; }
 .report-metrics { min-width:0; }
 .report-payment-methods { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-3); margin-bottom:var(--space-4); padding:var(--space-3) var(--space-4); background:var(--c-surface); border-radius:var(--radius-md); border:1px solid var(--c-border); }
 @media (max-width: 680px) {
+  .report-period-bar { align-items:stretch; flex-direction:column; }
+  .report-period-bar select { width:100%; }
   .report-tabs { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:4px; }
   .report-tabs .nav-btn { width:100%; min-width:0; padding-inline:6px; font-size:.7rem !important; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .report-filters { align-items:stretch; gap:8px; }

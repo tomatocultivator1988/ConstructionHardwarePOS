@@ -3,12 +3,33 @@ import { esc, fmtDate, fmtPeso, businessDate, businessMonth } from '../lib/helpe
 import { showToast } from '../lib/helpers';
 
 let currentSubTab = 'daily';
+let currentReportPeriod = 'month';
+
+function reportPeriodRange(period = currentReportPeriod): { from: string; to: string } {
+  const today = businessDate();
+  const [year, month, day] = today.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (period === 'year') return { from: `${year}-01-01`, to: `${year}-12-31` };
+  if (period === 'week') {
+    const mondayOffset = (date.getUTCDay() + 6) % 7;
+    const monday = new Date(date); monday.setUTCDate(date.getUTCDate() - mondayOffset);
+    const sunday = new Date(monday); sunday.setUTCDate(monday.getUTCDate() + 6);
+    return { from: monday.toISOString().slice(0, 10), to: sunday.toISOString().slice(0, 10) };
+  }
+  return { from: `${year}-${String(month).padStart(2, '0')}-01`, to: new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10) };
+}
+
+function periodText() {
+  const range = reportPeriodRange();
+  return `${fmtDate(range.from)} – ${fmtDate(range.to)}`;
+}
 
 export async function renderReports(): Promise<string> {
   return `
     <div class="page-header">
       <h2>Reports</h2>
     </div>
+    <div class="report-period-bar"><div><strong>Report period</strong><span id="report-period-range">${periodText()}</span></div><select id="report-period" onchange="applyReportPeriod(this.value)"><option value="week" ${currentReportPeriod === 'week' ? 'selected' : ''}>This week</option><option value="month" ${currentReportPeriod === 'month' ? 'selected' : ''}>This month</option><option value="year" ${currentReportPeriod === 'year' ? 'selected' : ''}>This year</option></select></div>
     <div class="report-tabs" role="tablist" aria-label="Report types">
       <button class="nav-btn ${currentSubTab === 'daily' ? 'active' : ''}" onclick="switchReportTab('daily')" style="font-size:var(--fs-sm)">Daily Sales</button>
       <button class="nav-btn ${currentSubTab === 'monthly' ? 'active' : ''}" onclick="switchReportTab('monthly')" style="font-size:var(--fs-sm)">P&L</button>
@@ -34,6 +55,12 @@ export async function switchReportTab(tab: string) {
     else if (tab === 'summary') el.innerHTML = await loadFinancialSummary();
     document.querySelectorAll('.report-tabs .nav-btn').forEach(b => b.classList.remove('active'));
   } catch (e: any) { showToast(e.message); }
+}
+
+export function applyReportPeriod(period: string) {
+  if (!['week', 'month', 'year'].includes(period)) return;
+  currentReportPeriod = period;
+  (window as any).loadView?.('reports');
 }
 
 async function loadFinancialSummary(from?: string, to?: string) {
@@ -63,10 +90,11 @@ export async function reloadFinancialSummary() {
 }
 
 async function loadBooksReport(from?: string, to?: string) {
-  const start = from || businessDate(); const end = to || start;
+  const period = reportPeriodRange();
+  const start = from || period.from; const end = to || period.to;
   const [data, cash] = await Promise.all([apiGet<any>(`/reports/books?from=${start}&to=${end}`), apiGet<any>(`/reports/cash-flow?from=${start}&to=${end}`)]);
   const rows = (items: any[], fields: string[]) => items.length ? items.map((r: any) => `<tr>${fields.map(f => `<td data-label="${esc(f)}">${esc(String(r[f] ?? ''))}</td>`).join('')}</tr>`).join('') : '<tr><td colspan="6">No entries</td></tr>';
-  return `<div class="report-filters"><label>From</label><input id="rpt-books-from" type="date" value="${start}" /><label>To</label><input id="rpt-books-to" type="date" value="${end}" /><button class="btn btn-primary btn-sm" onclick="reloadBooks()">Load</button><button class="btn btn-primary btn-sm" onclick="printReport('books','${start} to ${end}')">Print</button></div>
+  return `<div class="report-filters"><label>From</label><input id="rpt-books-from" type="date" value="${start}" /><label>To</label><input id="rpt-books-to" type="date" value="${end}" /><button class="btn btn-primary btn-sm" onclick="reloadBooks()">Load</button><button class="btn btn-primary btn-sm" onclick="printReport('books','${start} to ${end}')">Export</button></div>
     <h3>Sales Journal</h3><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Date</th><th>Buyer</th><th>Net Sales</th><th>Tax</th><th>Adjusted Total</th></tr></thead><tbody>${rows(data.sales,['invoice_number','issued_date','buyer','net_sales','adjusted_tax','adjusted_total'])}</tbody></table></div>
     <h3>Cash Receipts Journal</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Invoice</th><th>Method</th><th>Amount</th></tr></thead><tbody>${rows(data.receipts,['payment_date','invoice_number','method','amount'])}</tbody></table></div>
     <h3>Expenses / Purchases</h3><div class="table-wrap"><table><thead><tr><th>Date</th><th>Category</th><th>Vendor</th><th>Payment</th><th>Description</th><th>Amount</th></tr></thead><tbody>${rows(data.expenses,['expense_date','category','vendor','payment_method','description','amount'])}</tbody></table></div>
@@ -81,12 +109,12 @@ export async function reloadBooks() {
 }
 
 async function loadDailyReport(date?: string) {
-  const d = date || businessDate();
+  const d = date || reportPeriodRange().to;
   const data = await apiGet<any>(`/reports/daily?date=${d}`);
   return `
     <div class="report-filters">
       <input type="date" id="rpt-daily-date" value="${d}" onchange="reloadDaily()" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
-      <button class="btn btn-primary btn-sm" onclick="printReport('daily', '${d}')">Print</button>
+      <button class="btn btn-primary btn-sm" onclick="printReport('daily', '${d}')">Export</button>
     </div>
     <div class="dashboard-grid report-metrics report-metrics-4">
       <div class="dashboard-card card-success"><div class="card-label">Gross Sales</div><div class="card-value">${fmtPeso(data.totals.gross_sales)}</div></div>
@@ -119,14 +147,14 @@ async function loadDailyReport(date?: string) {
 }
 
 async function loadMonthlyReport(month?: string) {
-  const m = month || businessMonth();
+  const m = month || reportPeriodRange().to.slice(0, 7) || businessMonth();
   const data = await apiGet<any>(`/reports/monthly?month=${m}`);
   const netColor = data.net_profit >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
   const momColor = data.mom_change >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
   return `
     <div class="report-filters">
       <input type="month" id="rpt-month" value="${m}" onchange="reloadMonthly()" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
-      <button class="btn btn-primary btn-sm" onclick="printReport('monthly', '${m}')">Print</button>
+      <button class="btn btn-primary btn-sm" onclick="printReport('monthly', '${m}')">Export</button>
     </div>
     <div class="dashboard-grid report-metrics report-metrics-5">
       <div class="dashboard-card card-success"><div class="card-label">Net Sales</div><div class="card-value">${fmtPeso(data.revenue)}</div><div class="card-sub">Accrual basis</div></div>
@@ -166,7 +194,7 @@ async function loadTaxReport(month?: string) {
   return `
     <div class="report-filters">
       <input type="month" id="rpt-tax-month" value="${m}" onchange="reloadTax()" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
-      <button class="btn btn-primary btn-sm" onclick="printReport('tax', '${m}')">Print</button>
+      <button class="btn btn-primary btn-sm" onclick="printReport('tax', '${m}')">Export</button>
     </div>
     <div class="dashboard-grid report-metrics report-metrics-4">
       <div class="dashboard-card card-info"><div class="card-label">Total Invoices</div><div class="card-value">${data.invoice_count}</div></div>

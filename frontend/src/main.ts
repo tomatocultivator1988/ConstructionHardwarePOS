@@ -92,6 +92,7 @@ Object.assign(window, {
   reloadTax: reports.reloadTax,
   loadRangeReport: reports.loadRangeReport,
   printReport: reports.printReport,
+  applyReportPeriod: reports.applyReportPeriod,
   reloadBooks: reports.reloadBooks,
   reloadFinancialSummary: reports.reloadFinancialSummary,
   switchSettingsTab: settings.switchSettingsTab,
