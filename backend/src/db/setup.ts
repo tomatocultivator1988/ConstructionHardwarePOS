@@ -403,6 +403,9 @@ async function migrateSchema() {
   await db.exec('CREATE INDEX IF NOT EXISTS idx_payments_shift ON payments(shift_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_refunds_shift ON refunds(shift_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_credit_memos_invoice ON credit_memos(invoice_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_returns_invoice ON invoice_returns(invoice_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_refunds_invoice_method ON refunds(invoice_id, method)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_payments_invoice_method ON payments(invoice_id, method)');
 
   // Views are created idempotently. Dropping and recreating them on every
   // serverless cold start creates a race when multiple Vercel instances

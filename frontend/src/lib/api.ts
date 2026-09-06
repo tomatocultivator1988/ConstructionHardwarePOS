@@ -2,6 +2,7 @@ const API = '/api';
 const CACHE_TTL = 30000;
 
 const cache = new Map<string, { data: any; ts: number }>();
+const inFlight = new Map<string, Promise<any>>();
 
 function invalidatePattern(pattern: string) {
   for (const key of cache.keys()) {
@@ -35,6 +36,14 @@ async function handleResponse(res: Response) {
 export async function apiGet<T = any>(path: string): Promise<T> {
   const cached = cache.get(path);
   if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.data;
+  const pending = inFlight.get(path);
+  if (pending) return pending as Promise<T>;
+  const request = fetchGet<T>(path);
+  inFlight.set(path, request);
+  try { return await request; } finally { inFlight.delete(path); }
+}
+
+async function fetchGet<T>(path: string): Promise<T> {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     let transientResponse = false;

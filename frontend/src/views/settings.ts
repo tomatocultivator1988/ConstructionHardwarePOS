@@ -53,7 +53,7 @@ export async function recordCashEvent(id: string, type: string) {
 
 async function loadGeneralSettings() {
   const keys = ['default_tax_rate','business_name','business_address','business_tin','business_rdo','vat_registered'];
-  const values = Object.fromEntries(await Promise.all(keys.map(async key => [key, (await apiGet<{ value: string }>(`/settings/${key}`)).value || ''])));
+  const values = await apiGet<Record<string, string>>(`/settings?keys=${keys.join(',')}`);
   return `
     <div class="settings-card">
       <h3 style="margin-bottom:var(--space-4)">Business & Invoice Profile</h3>
