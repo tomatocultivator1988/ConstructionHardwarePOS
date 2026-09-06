@@ -6,7 +6,6 @@ let currentSubTab = 'daily';
 let currentReportPeriod = 'month';
 let monthlyReportData: any = null;
 let pnlChart: any = null;
-let expenseChart: any = null;
 
 function reportPeriodRange(period = currentReportPeriod): { from: string; to: string } {
   const today = businessDate();
@@ -57,10 +56,10 @@ export async function switchReportTab(tab: string) {
   if (periodControl) periodControl.innerHTML = reportPeriodControl();
   const el = document.getElementById('report-content');
   if (!el) return;
-  el.innerHTML = '<div class="loading-skeleton">${"<div class=\\"sk-item\\"></div>".repeat(4)}</div>';
+  el.innerHTML = `<div class="loading-skeleton">${'<div class="sk-item"></div>'.repeat(4)}</div>`;
   try {
     if (tab === 'daily') el.innerHTML = await loadDailyReport();
-    else if (tab === 'monthly') { el.innerHTML = await loadMonthlyReport(); drawPnlChart(); drawExpenseChart(); }
+    else if (tab === 'monthly') { el.innerHTML = await loadMonthlyReport(); drawPnlChart(); }
     else if (tab === 'tax') el.innerHTML = await loadTaxReport();
     else if (tab === 'range') el.innerHTML = await loadRangeForm();
     else if (tab === 'books') el.innerHTML = await loadBooksReport();
@@ -183,8 +182,6 @@ async function loadMonthlyReport(month?: string) {
     </div>
     <div class="pnl-cash-snapshot"><div class="pnl-cash-heading"><strong>Cash Flow &amp; Credit Snapshot</strong><span>${fmtDate(monthStart)} – ${fmtDate(monthEnd)}</span></div><div class="pnl-cash-grid"><div><span>Cash Collections</span><b>${fmtPeso(cash.cash_receipts)}</b></div><div><span>Cash Refunds</span><b class="negative">${fmtPeso(cash.cash_refunds)}</b></div><div><span>Cash Expenses</span><b class="negative">${fmtPeso(cash.cash_expenses)}</b></div><div><span>Net Cash Change</span><b class="${cash.net_cash_change >= 0 ? 'positive' : 'negative'}">${fmtPeso(cash.net_cash_change)}</b></div><div><span>Credit / Receivables</span><b class="warning-value">${fmtPeso(financial.accounts_receivable)}</b></div></div></div>
     <div class="chart-card pnl-chart-card"><div class="chart-title">P&amp;L Breakdown</div><p class="card-sub">How the selected month’s sales are allocated to costs, expenses, and profit.</p><div class="pnl-chart-wrap"><canvas id="pnl-report-chart"></canvas></div></div>
-    ${data.expense_by_category?.length ? `
-    <div class="chart-card pnl-expense-chart-card"><div class="chart-title">Expenses by Category</div><p class="card-sub">Percentage of total operating expenses for the selected month.</p><div class="pnl-expense-chart-wrap"><canvas id="pnl-expense-chart"></canvas></div></div>` : '<div class="chart-card pnl-expense-chart-card"><div class="chart-title">Expenses by Category</div><p class="card-sub">No expenses recorded for the selected month.</p></div>'}
     <div class="chart-card" style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-lg);padding:var(--space-5)">
       <div class="chart-title">Summary</div>
       <div class="summary-line"><span>Net Sales (accrual)</span><span>${fmtPeso(data.revenue)}</span></div>
@@ -308,7 +305,7 @@ export async function reloadMonthly() {
   const el = document.getElementById('report-content');
   if (!el) return;
   el.innerHTML = await loadMonthlyReport(m);
-  drawPnlChart(); drawExpenseChart();
+  drawPnlChart();
 }
 
 function drawPnlChart() {
@@ -327,21 +324,6 @@ function drawPnlChart() {
     type: 'pie',
     data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: '#0c1b2d', borderWidth: 3, hoverOffset: 5 }] },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#a9bfd2', usePointStyle: true, padding: 14, generateLabels: (chart: any) => chart.data.labels.map((label: string, index: number) => ({ text: `${label} · ${((Number(chart.data.datasets[0].data[index]) / total) * 100).toFixed(1)}%`, fillStyle: colors[index], strokeStyle: colors[index], index })) } }, tooltip: { callbacks: { label: (context: any) => ` ${context.label}: ₱${Number(context.raw || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${((Number(context.raw || 0) / total) * 100).toFixed(1)}%)` } } } }
-  });
-}
-
-function drawExpenseChart() {
-  const canvas = document.getElementById('pnl-expense-chart') as HTMLCanvasElement | null;
-  const ChartCtor = (window as any).Chart;
-  const categories = monthlyReportData?.expense_by_category || [];
-  if (!canvas || !ChartCtor || !categories.length) return;
-  if (expenseChart) { try { expenseChart.destroy(); } catch {} }
-  const total = categories.reduce((sum: number, item: any) => sum + Number(item.total || 0), 0);
-  const colors = ['#f28c28', '#ef654a', '#22c55e', '#4da3d8', '#9b7ede', '#d6a84f', '#7690a6'];
-  expenseChart = new ChartCtor(canvas, {
-    type: 'doughnut',
-    data: { labels: categories.map((item: any) => item.category), datasets: [{ data: categories.map((item: any) => Number(item.total || 0)), backgroundColor: colors, borderColor: '#0c1b2d', borderWidth: 3, hoverOffset: 5 }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '58%', plugins: { legend: { position: 'right', labels: { color: '#a9bfd2', usePointStyle: true, padding: 14, generateLabels: (chart: any) => chart.data.labels.map((label: string, index: number) => ({ text: `${label} · ${total > 0 ? ((Number(chart.data.datasets[0].data[index]) / total) * 100).toFixed(1) : '0.0'}%`, fillStyle: colors[index % colors.length], strokeStyle: colors[index % colors.length], index })) } }, tooltip: { callbacks: { label: (context: any) => { const value = Number(context.raw || 0); return ` ${context.label}: ₱${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${total > 0 ? ((value / total) * 100).toFixed(1) : '0.0'}%)`; } } } } }
   });
 }
 
