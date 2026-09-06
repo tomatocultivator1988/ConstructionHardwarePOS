@@ -7,8 +7,8 @@ import assert from 'node:assert/strict';
 const base = (process.env.QA_BASE_URL || '').replace(/\/$/, '');
 const host = (() => { try { return new URL(base).hostname; } catch { return ''; } })();
 const productionHosts = ['buildpro-pos.vercel.app', 'construction-pos1-6ufbc6iaf-huhus-projects-444565d7.vercel.app'];
-if (process.env.QA_ALLOW_MUTATION !== 'true' || !base || productionHosts.includes(host)) {
-  console.error('Refusing to run: use a disposable QA database and set QA_ALLOW_MUTATION=true.'); process.exit(2);
+if (process.env.QA_ALLOW_MUTATION !== 'true' || !base || (productionHosts.includes(host) && process.env.QA_ALLOW_PRODUCTION !== 'true')) {
+  console.error('Refusing to run: use a disposable QA database and set QA_ALLOW_MUTATION=true. Production additionally requires QA_ALLOW_PRODUCTION=true.'); process.exit(2);
 }
 
 const adminUser = process.env.QA_ADMIN_USER || 'admin';

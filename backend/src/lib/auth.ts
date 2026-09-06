@@ -50,7 +50,9 @@ export function requireAdminOrPOS(req: Request, res: Response, next: NextFunctio
   if (req.user?.role === 'admin') return next();
   const method = req.method;
   const path = req.path;
+  const rootPath = path === '' || path === '/';
   const allowed = method === 'GET' ||
+    (rootPath && method === 'POST') ||
     (path.endsWith('/pay') && method === 'POST') ||
     (path === '/me' && method === 'GET');
   if (allowed) return next();
