@@ -26,12 +26,19 @@ function periodText() {
   return `${fmtDate(range.from)} – ${fmtDate(range.to)}`;
 }
 
+function reportPeriodControl() {
+  if (currentSubTab === 'daily') {
+    return `<div class="report-period-bar daily-period-bar"><div><strong>Daily sales date</strong><span>Choose the day to review</span></div><input id="rpt-daily-date" type="date" value="${reportPeriodRange().to}" onchange="reloadDaily()" /></div>`;
+  }
+  return `<div class="report-period-bar"><div><strong>Report period</strong><span id="report-period-range">${periodText()}</span></div><select id="report-period" onchange="applyReportPeriod(this.value)"><option value="week" ${currentReportPeriod === 'week' ? 'selected' : ''}>This week</option><option value="month" ${currentReportPeriod === 'month' ? 'selected' : ''}>This month</option><option value="year" ${currentReportPeriod === 'year' ? 'selected' : ''}>This year</option></select></div>`;
+}
+
 export async function renderReports(): Promise<string> {
   return `
     <div class="page-header">
       <h2>Reports</h2>
     </div>
-    <div class="report-period-bar"><div><strong>Report period</strong><span id="report-period-range">${periodText()}</span></div><select id="report-period" onchange="applyReportPeriod(this.value)"><option value="week" ${currentReportPeriod === 'week' ? 'selected' : ''}>This week</option><option value="month" ${currentReportPeriod === 'month' ? 'selected' : ''}>This month</option><option value="year" ${currentReportPeriod === 'year' ? 'selected' : ''}>This year</option></select></div>
+    <div id="report-period-control">${reportPeriodControl()}</div>
     <div class="report-tabs" role="tablist" aria-label="Report types">
       <button class="nav-btn ${currentSubTab === 'daily' ? 'active' : ''}" onclick="switchReportTab('daily')" style="font-size:var(--fs-sm)">Daily Sales</button>
       <button class="nav-btn ${currentSubTab === 'monthly' ? 'active' : ''}" onclick="switchReportTab('monthly')" style="font-size:var(--fs-sm)">P&L</button>
@@ -45,6 +52,8 @@ export async function renderReports(): Promise<string> {
 
 export async function switchReportTab(tab: string) {
   currentSubTab = tab;
+  const periodControl = document.getElementById('report-period-control');
+  if (periodControl) periodControl.innerHTML = reportPeriodControl();
   const el = document.getElementById('report-content');
   if (!el) return;
   el.innerHTML = '<div class="loading-skeleton">${"<div class=\\"sk-item\\"></div>".repeat(4)}</div>';
@@ -115,7 +124,6 @@ async function loadDailyReport(date?: string) {
   const data = await apiGet<any>(`/reports/daily?date=${d}`);
   return `
     <div class="report-filters">
-      <input type="date" id="rpt-daily-date" value="${d}" onchange="reloadDaily()" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
       <button class="btn btn-primary btn-sm" onclick="printReport('daily', '${d}')">Export</button>
     </div>
     <div class="dashboard-grid report-metrics report-metrics-4">
