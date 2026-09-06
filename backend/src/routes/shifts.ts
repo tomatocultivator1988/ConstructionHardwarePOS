@@ -6,7 +6,7 @@ import { logAudit } from '../lib/audit';
 
 const router = Router();
 
-router.get('/current', requireAdmin, async (req: Request, res: Response) => {
+router.get('/current', async (req: Request, res: Response) => {
   const db = getDb();
   const shift = await db.prepare("SELECT * FROM cashier_shifts WHERE user_id = ? AND status = 'open' ORDER BY opened_at DESC LIMIT 1").get(req.user!.id) as any;
   if (!shift) { res.json(null); return; }

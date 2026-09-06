@@ -113,6 +113,8 @@ Object.assign(window, {
   showCloseStaffShift: settings.showCloseStaffShift,
   closeStaffShift: settings.closeStaffShift,
   recordCashEvent: settings.recordCashEvent,
+  showCashEventModal: settings.showCashEventModal,
+  submitCashEvent: settings.submitCashEvent,
   showUserModal: settings.showUserModal,
   createUser: settings.createUser,
   updateUser: settings.updateUser,

@@ -9,7 +9,7 @@ import { renderReceipts } from '../views/receipts';
 import { renderProductMix } from '../views/product-mix';
 import { renderReceivables } from '../views/receivables';
 import { showLogin } from '../views/login';
-import { isLoggedIn } from './api';
+import { isLoggedIn, apiGet } from './api';
 import { showToast } from './helpers';
 import { applyRoleUI } from '../main';
 
@@ -46,6 +46,12 @@ export async function loadView(view: string) {
 
   const currentUser = JSON.parse(localStorage.getItem('buildpro_user') || 'null');
   if (currentUser?.role === 'staff' && view !== 'invoices') { view = 'invoices'; }
+  if (currentUser?.role === 'staff' && view === 'invoices') {
+    try {
+      const shift = await apiGet<any>(`/shifts/current?_=${Date.now()}`);
+      if (!shift) { showToast('Your shift is closed. Please contact the admin.'); (window as any).logout?.(); return; }
+    } catch { /* The POS view will show the normal retry/error state if the session is unavailable. */ }
+  }
 
   applyRoleUI();
 
