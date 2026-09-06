@@ -486,7 +486,7 @@ router.post('/:id/return', async (req: Request, res: Response) => {
 
   const txn = db.transaction(async () => {
     for (const item of items) {
-      const lineItem = await db.prepare('SELECT id FROM invoice_items WHERE id = ? AND invoice_id = ?').get(item.invoice_item_id || '', invoiceId) as any;
+      const lineItem = await db.prepare('SELECT id, unit_price FROM invoice_items WHERE id = ? AND invoice_id = ?').get(item.invoice_item_id || '', invoiceId) as any;
       const totalCredit = Math.round(Number(lineItem.unit_price) * Number(item.quantity) * (1 + Number(inv.tax_rate || 0)) * 100) / 100;
       await db.prepare('INSERT INTO invoice_returns (id, invoice_item_id, invoice_id, material_id, quantity, total_credit) VALUES (?, ?, ?, ?, ?, ?)')
         .run(uuidv4(), lineItem.id, invoiceId, item.material_id, item.quantity, totalCredit);
