@@ -175,7 +175,7 @@ async function loadMonthlyReport(month?: string) {
       <div class="dashboard-card card-danger"><div class="card-label">Expenses</div><div class="card-value">${fmtPeso(data.expenses)}</div></div>
       <div class="dashboard-card card-info"><div class="card-label">Net Profit</div><div class="card-value" style="color:${netColor}">${fmtPeso(data.net_profit)}</div><div class="card-sub">${data.mom_change >= 0 ? '↑' : '↓'} ${Math.abs(data.mom_change).toFixed(1)}% vs last month</div></div>
     </div>
-    <div class="chart-card pnl-chart-card"><div class="chart-title">P&amp;L Breakdown</div><p class="card-sub">Compare the selected month’s revenue, costs, expenses, and profit.</p><div class="pnl-chart-wrap"><canvas id="pnl-report-chart"></canvas></div></div>
+    <div class="chart-card pnl-chart-card"><div class="chart-title">P&amp;L Breakdown</div><p class="card-sub">How the selected month’s sales are allocated to costs, expenses, and profit.</p><div class="pnl-chart-wrap"><canvas id="pnl-report-chart"></canvas></div></div>
     ${data.expense_by_category?.length ? `
     <div class="chart-card pnl-expense-chart-card"><div class="chart-title">Expenses by Category</div><p class="card-sub">Percentage of total operating expenses for the selected month.</p><div class="pnl-expense-chart-wrap"><canvas id="pnl-expense-chart"></canvas></div></div>` : '<div class="chart-card pnl-expense-chart-card"><div class="chart-title">Expenses by Category</div><p class="card-sub">No expenses recorded for the selected month.</p></div>'}
     <div class="chart-card" style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-lg);padding:var(--space-5)">
@@ -310,10 +310,16 @@ function drawPnlChart() {
   if (!canvas || !ChartCtor || !monthlyReportData) return;
   if (pnlChart) { try { pnlChart.destroy(); } catch {} }
   const d = monthlyReportData;
+  const netValue = Math.abs(Number(d.net_profit || 0));
+  const labels = ['COGS', 'Operating Expenses', d.net_profit >= 0 ? 'Net Profit' : 'Net Loss'];
+  const values = [Number(d.cogs || 0), Number(d.expenses || 0), netValue];
+  const total = values.reduce((sum, value) => sum + Math.max(0, value), 0);
+  if (total <= 0) return;
+  const colors = ['#7690a6', '#ef654a', d.net_profit >= 0 ? '#22c55e' : '#ef4444'];
   pnlChart = new ChartCtor(canvas, {
-    type: 'bar',
-    data: { labels: ['Net Sales', 'COGS', 'Gross Profit', 'Expenses', 'Net Profit'], datasets: [{ label: 'Amount', data: [d.revenue, d.cogs, d.gross_profit, d.expenses, d.net_profit], backgroundColor: ['#f28c28', '#7690a6', '#22c55e', '#ef654a', d.net_profit >= 0 ? '#22c55e' : '#ef4444'], borderRadius: 6, borderSkipped: false }] },
-    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { color: '#a9bfd2', callback: (value: any) => '₱' + Number(value).toLocaleString() }, grid: { color: 'rgba(169,191,210,.12)' } }, x: { ticks: { color: '#a9bfd2' }, grid: { display: false } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (context: any) => ' ₱' + Number(context.raw || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) } } } }
+    type: 'doughnut',
+    data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: '#0c1b2d', borderWidth: 3, hoverOffset: 5 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '55%', plugins: { legend: { position: 'right', labels: { color: '#a9bfd2', usePointStyle: true, padding: 14, generateLabels: (chart: any) => chart.data.labels.map((label: string, index: number) => ({ text: `${label} · ${((Number(chart.data.datasets[0].data[index]) / total) * 100).toFixed(1)}%`, fillStyle: colors[index], strokeStyle: colors[index], index })) } }, tooltip: { callbacks: { label: (context: any) => ` ${context.label}: ₱${Number(context.raw || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${((Number(context.raw || 0) / total) * 100).toFixed(1)}%)` } } } }
   });
 }
 
