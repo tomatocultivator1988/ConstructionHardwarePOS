@@ -52,7 +52,7 @@ const invoice = await request('/invoices', { token: staffToken, method: 'POST', 
 assert.equal(invoice.total, 20);
 assert.equal(Number((await request(`/materials/${material.id}`, { token: staffToken })).stock), 9);
 
-await request(`/shifts/${shift.id}/event`, { token: adminToken, method: 'POST', body: { type: 'cash_out', amount: 101, reason: 'Too much' }, expected: 400 });
+await request(`/shifts/${shift.id}/event`, { token: adminToken, method: 'POST', body: { type: 'cash_out', amount: 121, reason: 'Too much' }, expected: 400 });
 await request(`/shifts/${shift.id}/event`, { token: adminToken, method: 'POST', body: { type: 'cash_out', amount: 10, reason: 'QA drawer test' }, expected: 201 });
 const active = (await request('/shifts/active', { token: adminToken })).find(s => s.id === shift.id); assert.equal(Number(active.expected_cash), 110);
 
