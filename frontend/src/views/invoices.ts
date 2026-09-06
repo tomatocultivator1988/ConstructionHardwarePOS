@@ -455,12 +455,17 @@ export async function submitCreditMemo(id: string) {
 }
 
 export async function recordRefund(id: string) {
-  showModal(`<h3>Record Refund</h3><div class="form-group"><label for="refund-amount">Amount *</label><input id="refund-amount" type="number" min="0.01" step="0.01" autofocus placeholder="0.00" /></div><div class="form-group"><label for="refund-method">Refund method *</label><select id="refund-method"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option></select></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitRefund('${id}')">Record Refund</button></div>`, 'invoice-action-modal');
+  let shifts: any[] = [];
+  try { shifts = await apiGet<any[]>('/shifts/active'); } catch { /* non-cash refunds remain available if shift lookup fails */ }
+  const shiftOptions = shifts.map(shift => `<option value="${esc(shift.id)}">${esc(shift.username || 'Cashier')} · ${fmtPeso(shift.expected_cash)}</option>`).join('');
+  showModal(`<h3>Record Refund</h3><div class="form-group"><label for="refund-amount">Amount *</label><input id="refund-amount" type="number" min="0.01" step="0.01" autofocus placeholder="0.00" /></div><div class="form-group"><label for="refund-method">Refund method *</label><select id="refund-method" onchange="document.getElementById('refund-shift-wrap')?.classList.toggle('is-hidden', this.value !== 'cash')"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option><option value="check">Check</option></select></div><div id="refund-shift-wrap" class="form-group"><label for="refund-shift">Cashier shift *</label>${shiftOptions ? `<select id="refund-shift"><option value="">Select active shift...</option>${shiftOptions}</select>` : '<p class="field-help">No active cashier shift is available for a cash refund.</p>'}</div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitRefund('${id}')">Record Refund</button></div>`, 'invoice-action-modal');
 }
 export async function submitRefund(id: string) {
   const amount = Number(val('refund-amount')); const method = val('refund-method');
   if (!Number.isFinite(amount) || amount <= 0 || !method) { showToast('Enter a valid amount and method'); return; }
-  try { await apiPost(`/invoices/${id}/refund`, { amount, method }); showToast('Refund recorded', 'success'); closeModal(); loadView('invoices'); }
+  const shiftId = method === 'cash' ? val('refund-shift') : undefined;
+  if (method === 'cash' && !shiftId) { showToast('Select an active cashier shift for a cash refund'); return; }
+  try { await apiPost(`/invoices/${id}/refund`, { amount, method, ...(shiftId ? { shift_id: shiftId } : {}) }); showToast('Refund recorded', 'success'); closeModal(); loadView('invoices'); }
   catch (e: any) { showToast(e.message); }
 }
 

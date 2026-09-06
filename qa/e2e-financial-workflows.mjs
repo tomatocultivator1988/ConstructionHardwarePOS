@@ -35,7 +35,7 @@ await req('/invoices', { token:staffToken, method:'POST', body:{ items:[{ materi
 const cashSale = await req('/invoices', { token:staffToken, method:'POST', body:{ items:[{ material_id:material.id, description:material.name, quantity:1, unit_price:20 }], payment:{ amount:20, method:'cash' } }, status:201 });
 assert.equal(Number((await req(`/materials/${material.id}`, { token:staffToken })).stock), 29);
 await req(`/invoices/${cashSale.id}/pay`, { token:staffToken, method:'POST', body:{ amount:1, method:'card' }, status:400 });
-await req(`/invoices/${cashSale.id}/refund`, { token:admin, method:'POST', body:{ amount:5, method:'card', reference:marker }, status:201 });
+await req(`/invoices/${cashSale.id}/refund`, { token:admin, method:'POST', body:{ amount:5, method:'cash', reference:marker }, status:201 });
 const cashDetails = await req(`/invoices/${cashSale.id}`, { token:staffToken });
 assert.equal(Number(cashDetails.net_paid), 15);
 await req(`/invoices/${cashSale.id}/return`, { token:admin, method:'POST', body:{ items:[{ invoice_item_id:cashDetails.items[0].id, material_id:material.id, quantity:1 }] }, status:200 });
@@ -46,12 +46,14 @@ const creditSale = await req('/invoices', { token:staffToken, method:'POST', bod
 assert.equal(creditSale.status, 'pending');
 let rec = await req('/invoices/receivables?page=1&pageSize=100', { token:staffToken });
 let row = rec.data.find(x => x.id === creditSale.id); assert.ok(row); assert.equal(Number(row.balance), 40);
+await req(`/invoices/${creditSale.id}/pay`, { token:staffToken, method:'POST', body:{ amount:1, method:'credit' }, status:400 });
 await req(`/invoices/${creditSale.id}/pay`, { token:staffToken, method:'POST', body:{ amount:10, method:'cash' }, status:201 });
 let creditDetails = await req(`/invoices/${creditSale.id}`, { token:staffToken }); assert.equal(creditDetails.status, 'partial');
 await req(`/invoices/${creditSale.id}/pay`, { token:staffToken, method:'POST', body:{ amount:30, method:'card' }, status:201 });
 creditDetails = await req(`/invoices/${creditSale.id}`, { token:staffToken }); assert.equal(creditDetails.status, 'paid');
 await req(`/invoices/${creditSale.id}/credit-memo`, { token:admin, method:'POST', body:{ amount:5, reason:`${marker} adjustment` }, status:201 });
 await req(`/invoices/${creditSale.id}/refund`, { token:admin, method:'POST', body:{ amount:10, method:'card', reference:marker }, status:201 });
+creditDetails = await req(`/invoices/${creditSale.id}`, { token:staffToken }); assert.equal(creditDetails.status, 'partial');
 rec = await req('/invoices/receivables?page=1&pageSize=100', { token:staffToken });
 row = rec.data.find(x => x.id === creditSale.id); assert.ok(row); assert.equal(Number(row.balance), 5);
 await req('/invoices/receivables?status=paid&page=1&pageSize=100', { token:staffToken });

@@ -8,6 +8,22 @@ import { clearCache } from '../lib/cache';
 const router = Router();
 router.use(requireAdminOrPOS);
 const PAYMENT_METHODS = ['cash', 'card', 'bank', 'check', 'credit'];
+const SETTLEMENT_METHODS = ['cash', 'card', 'bank', 'check'];
+const REFUND_METHODS = ['cash', 'card', 'bank', 'check'];
+
+async function refreshInvoiceStatus(db: ReturnType<typeof getDb>, invoiceId: string) {
+  const invoice = await db.prepare('SELECT total, status FROM invoices WHERE id=?').get(invoiceId) as any;
+  if (!invoice || invoice.status === 'voided') return;
+  const credits = await db.prepare("SELECT COALESCE(SUM(amount),0) total FROM credit_memos WHERE invoice_id=? AND status='issued'").get(invoiceId) as any;
+  const returns = await db.prepare('SELECT COALESCE(SUM(total_credit),0) total FROM invoice_returns WHERE invoice_id=?').get(invoiceId) as any;
+  const payments = await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM payments WHERE invoice_id=?').get(invoiceId) as any;
+  const refunds = await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id=?').get(invoiceId) as any;
+  const adjustedTotal = Math.max(0, Number(invoice.total) - Number(credits.total || 0) - Number(returns.total || 0));
+  const netPaid = Number(payments.total || 0) - Number(refunds.total || 0);
+  const status = netPaid >= adjustedTotal - 0.005 ? 'paid' : netPaid > 0 ? 'partial' : 'pending';
+  await db.prepare("UPDATE invoices SET status=?, paid_date=CASE WHEN ?='paid' THEN COALESCE(paid_date, datetime('now')) ELSE NULL END WHERE id=?")
+    .run(status, status, invoiceId);
+}
 
 router.get('/', async (req: Request, res: Response) => {
   const db = getDb();
@@ -296,7 +312,7 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
     res.status(400).json({ error: 'Amount must be greater than 0' });
     return;
   }
-  if (typeof method !== 'string' || !PAYMENT_METHODS.includes(method.trim().toLowerCase())) {
+  if (typeof method !== 'string' || !SETTLEMENT_METHODS.includes(method.trim().toLowerCase())) {
     res.status(400).json({ error: 'Payment method is required' });
     return;
   }
@@ -409,6 +425,7 @@ router.post('/:id/credit-memo', requireAdmin, async (req: Request, res: Response
     if (creditAmount > Math.max(0, Number(current.total) - Number(used.total) - Number(returned.total)) + 0.005) throw new Error('Credit amount exceeds remaining invoice value');
     await db.prepare('INSERT INTO credit_memos (id, invoice_id, memo_number, reason, amount, tax_amount, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(id, invoice.id, number, reason, creditAmount, creditTax, (req as any).user?.id || null);
+    await refreshInvoiceStatus(db, invoice.id);
     await logAudit((req as any).user?.id || null, 'create', 'credit_memo', id, `${number} for ${invoice.invoice_number}: ${reason}`, null, { invoice_id: invoice.id, memo_number: number, amount: creditAmount, tax_amount: creditTax, reason });
   });
   try { await createCreditMemo(); } catch (e: any) { res.status(409).json({ error: e.message }); return; }
@@ -421,11 +438,14 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
   const amount = Number(req.body?.amount);
   const method = typeof req.body?.method === 'string' ? req.body.method.trim() : '';
   if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
-  if (!Number.isFinite(amount) || amount <= 0 || !PAYMENT_METHODS.includes(method.toLowerCase())) { res.status(400).json({ error: 'Valid refund amount and method are required' }); return; }
+  if (!Number.isFinite(amount) || amount <= 0 || !REFUND_METHODS.includes(method.toLowerCase())) { res.status(400).json({ error: 'Valid refund amount and method are required' }); return; }
   let shiftId: string | null = null;
   if (method.toLowerCase() === 'cash') {
-    const shift = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1").get((req as any).user?.id) as any;
-    if (!shift) { res.status(409).json({ error: 'Open cashier shift required for cash refunds' }); return; }
+    const requestedShiftId = typeof req.body?.shift_id === 'string' ? req.body.shift_id : '';
+    const shift = requestedShiftId
+      ? await db.prepare("SELECT id FROM cashier_shifts WHERE id=? AND status='open'").get(requestedShiftId) as any
+      : await db.prepare("SELECT cs.id FROM cashier_shifts cs JOIN payments p ON p.shift_id=cs.id WHERE p.invoice_id=? AND p.method='cash' AND cs.status='open' ORDER BY cs.opened_at DESC LIMIT 1").get(invoice.id) as any;
+    if (!shift) { res.status(409).json({ error: 'Select an active cashier shift for a cash refund' }); return; }
     shiftId = shift.id;
   }
   const id = uuidv4();
@@ -438,6 +458,7 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
     if (amount > availableRefund + 0.005) throw new Error('Refund exceeds unapplied payments');
     await db.prepare('INSERT INTO refunds (id, invoice_id, amount, method, reference, created_by, shift_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(id, invoice.id, amount, method, req.body?.reference || null, (req as any).user?.id || null, shiftId);
+    await refreshInvoiceStatus(db, invoice.id);
     await logAudit((req as any).user?.id || null, 'create', 'refund', id, `Refund ${amount} via ${method} for ${invoice.invoice_number}`, null, { invoice_id: invoice.id, amount, method, shift_id: shiftId });
   });
   try { await createRefund(); } catch (e: any) { res.status(409).json({ error: e.message }); return; }
@@ -494,18 +515,7 @@ router.post('/:id/return', async (req: Request, res: Response) => {
       await insertMovement.run(uuidv4(), item.material_id, 'return', item.quantity, invoiceId, 'invoice', `Returned from ${inv.invoice_number}`);
     }
 
-    // Recalculate invoice balance
-    const totalPaid = (await db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM payments WHERE invoice_id = ?').get(invoiceId) as any).total;
-    const refunded = (await db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM refunds WHERE invoice_id = ?').get(invoiceId) as any).total;
-    const credits = (await db.prepare("SELECT COALESCE(SUM(amount),0) AS total FROM credit_memos WHERE invoice_id=? AND status='issued'").get(invoiceId) as any).total;
-    const returnsCredit = (await db.prepare('SELECT COALESCE(SUM(total_credit),0) AS total FROM invoice_returns WHERE invoice_id=?').get(invoiceId) as any).total;
-    const remainingBalance = Number(inv.total) - Number(credits) - Number(returnsCredit) - Number(totalPaid) + Number(refunded);
-
-    if (remainingBalance > 0) {
-      await db.prepare("UPDATE invoices SET status = 'partial' WHERE id = ?").run(invoiceId);
-    } else if (remainingBalance <= 0) {
-      await db.prepare("UPDATE invoices SET status = 'paid', paid_date = datetime('now') WHERE id = ?").run(invoiceId);
-    }
+    await refreshInvoiceStatus(db, invoiceId);
   });
 
   await txn();
