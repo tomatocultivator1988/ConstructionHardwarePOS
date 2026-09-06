@@ -48,6 +48,39 @@ export async function printReceipt(id: string) {
   }
 }
 
+export async function printShift(id: string) {
+  try {
+    const bluetooth = (navigator as any).bluetooth;
+    if (!bluetooth) { showToast('Web Bluetooth is not supported in this browser. Use Chrome or Edge over HTTPS with a BLE thermal printer.'); return; }
+    const device = await bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: PRINTER_SERVICES });
+    if (!device?.gatt) throw new Error('Selected device does not support Bluetooth printing');
+    const server = device.gatt.connected ? device.gatt : await device.gatt.connect();
+    const characteristic = await findPrinterCharacteristic(server);
+    if (!characteristic) throw new Error('Could not find a writable thermal printer characteristic');
+    const shift = await apiGet<any>(`/shifts/${id}`);
+    await writeThermalReceipt(characteristic, buildThermalShift(shift));
+    showToast(`Shift report sent to ${device.name || 'thermal printer'}`, 'success');
+  } catch (e: any) {
+    if (e?.name === 'NotFoundError') showToast('No Bluetooth printer was selected');
+    else showToast(e?.message || 'Unable to print shift report');
+  }
+}
+
+function buildThermalShift(shift: any): Uint8Array {
+  const encoder = new TextEncoder(); const width = 42; const line = '-'.repeat(width);
+  const safe = (value: any) => String(value ?? '—').replace(/[\r\n]/g, ' ').trim();
+  const row = (label: string, value: string) => label.padEnd(Math.max(1, width - value.length)) + value;
+  const variance = Number(shift.variance || 0);
+  const content = [
+    '\x1b@', '\x1b\x61\x01', 'JEG ENTERPRISES', 'CASHIER SHIFT REPORT', '\x1b\x61\x00', line,
+    row('Cashier', safe(shift.username)), row('Opened', safe(shift.opened_at)), row('Closed', safe(shift.closed_at)), line,
+    row('Opening Cash', fmtPeso(shift.opening_cash)), row('Cash Sales', fmtPeso(shift.cash_sales)), row('Cash Refunds', fmtPeso(shift.cash_refunds)), row('Drawer Adjustments', fmtPeso(shift.drawer_events)), line,
+    row('EXPECTED CASH', fmtPeso(shift.expected_cash)), row('COUNTED CASH', fmtPeso(shift.closing_cash)), row(variance >= 0 ? 'OVER' : 'SHORT', fmtPeso(Math.abs(variance))), line,
+    `Notes: ${safe(shift.notes)}`, '', 'For internal cashier reconciliation', '\x1b\x64\x04', '\x1d\x56\x00',
+  ].join('\n') + '\n';
+  return encoder.encode(content);
+}
+
 async function loadReceiptContext(id: string): Promise<ReceiptContext> {
   const inv = await apiGet<Invoice>(`/invoices/${id}`);
   let settings: Record<string, string> = {};

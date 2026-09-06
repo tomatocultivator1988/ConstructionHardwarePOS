@@ -19,6 +19,22 @@ router.get('/current', async (req: Request, res: Response) => {
   res.json({ ...shift, expected_cash: expected, cash_sales: Number((cash as any).total || 0), cash_refunds: Number((refunds as any).total || 0), drawer_events: Number((events as any).total || 0) });
 });
 
+router.get('/history', async (req: Request, res: Response) => {
+  const db = getDb();
+  const where = req.user!.role === 'admin' ? '' : 'WHERE s.user_id = ?';
+  const params = req.user!.role === 'admin' ? [] : [req.user!.id];
+  const rows = await db.prepare(`SELECT s.*, u.username FROM cashier_shifts s LEFT JOIN users u ON u.id=s.user_id ${where} ORDER BY s.opened_at DESC LIMIT 50`).all(...params);
+  res.json(rows);
+});
+
+router.get('/:id', async (req: Request, res: Response) => {
+  const db = getDb();
+  const shift = await db.prepare('SELECT s.*, u.username FROM cashier_shifts s LEFT JOIN users u ON u.id=s.user_id WHERE s.id=?').get(req.params.id) as any;
+  if (!shift) { res.status(404).json({ error: 'Shift not found' }); return; }
+  if (shift.user_id !== req.user!.id && req.user!.role !== 'admin') { res.status(403).json({ error: 'You can only view your own shift' }); return; }
+  res.json(shift);
+});
+
 router.post('/open', async (req: Request, res: Response) => {
   const db = getDb();
   const openingCash = Number(req.body?.opening_cash);
