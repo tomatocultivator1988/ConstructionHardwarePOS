@@ -58,6 +58,8 @@ Object.assign(window, {
   updatePOSPayment: invoices.updatePOSPayment,
   completePOSSale: invoices.completePOSSale,
   enhancePOS: invoices.enhancePOS,
+  startPOSCameraScan: invoices.startPOSCameraScan,
+  stopPOSCameraScan: invoices.stopPOSCameraScan,
   scanPOSBarcode: invoices.scanPOSBarcode,
   setPOSQty: invoices.setPOSQty,
   returnItems: invoices.returnItems,

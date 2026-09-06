@@ -10,6 +10,8 @@ const INVOICE_PAGE_SIZE = 15;
 let posSearch = '';
 let posCategory = '';
 let posCart: Array<{ material: Material; quantity: number }> = [];
+let posCameraStream: MediaStream | null = null;
+let posCameraFrame = 0;
 
 export function enhancePOS() {
   const search = document.getElementById('pos-search') as HTMLInputElement | null;
@@ -27,6 +29,53 @@ export function enhancePOS() {
     const item = posCart[index]; const qty = row.querySelector('.pos-qty');
     if (item && qty && !qty.querySelector('input')) qty.innerHTML = `<input class="pos-qty-input" type="number" min="0.01" max="${Number(item.material.stock)}" step="0.01" value="${item.quantity}" aria-label="Quantity" onchange="setPOSQty('${item.material.id}', this.value)" />`;
   });
+}
+
+export async function startPOSCameraScan() {
+  const BarcodeDetectorApi = (window as any).BarcodeDetector;
+  if (!BarcodeDetectorApi) {
+    showToast('Camera barcode scanning is not supported in this browser. Use Chrome or Edge on Android, or use a physical scanner.');
+    return;
+  }
+  if (!navigator.mediaDevices?.getUserMedia) { showToast('Camera access is not available in this browser'); return; }
+  stopPOSCameraScan();
+  showModal('<h3>Scan Product Barcode</h3><p class="modal-help">Point your camera at a product barcode. The product must already have the barcode saved.</p><div class="pos-camera-wrap"><video id="pos-camera-video" autoplay muted playsinline></video><div class="pos-camera-guide"></div></div><p id="pos-camera-status" class="modal-help">Starting camera…</p><div class="modal-actions"><button class="btn" onclick="stopPOSCameraScan();closeModal()">Cancel</button></div>', 'pos-camera-modal');
+  try {
+    posCameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    const video = document.getElementById('pos-camera-video') as HTMLVideoElement | null;
+    if (!video) { stopPOSCameraScan(); return; }
+    video.srcObject = posCameraStream;
+    await video.play();
+    const detector = new BarcodeDetectorApi({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf', 'codabar', 'qr_code'] });
+    const scan = async () => {
+      if (!posCameraStream || !document.getElementById('pos-camera-video')) return;
+      try {
+        const codes = await detector.detect(video);
+        const code = codes?.[0]?.rawValue?.trim();
+        if (code) { stopPOSCameraScan(); closeModal(); const input = document.getElementById('pos-search') as HTMLInputElement | null; if (input) input.value = code; scanPOSCode(code); return; }
+      } catch { /* Keep scanning while the camera has no readable frame. */ }
+      posCameraFrame = requestAnimationFrame(scan);
+    };
+    const status = document.getElementById('pos-camera-status'); if (status) status.textContent = 'Looking for a barcode…';
+    posCameraFrame = requestAnimationFrame(scan);
+  } catch (e: any) {
+    stopPOSCameraScan(); closeModal();
+    showToast(e?.name === 'NotAllowedError' ? 'Camera permission was denied' : 'Unable to open the camera');
+  }
+}
+
+export function stopPOSCameraScan() {
+  if (posCameraFrame) cancelAnimationFrame(posCameraFrame);
+  posCameraFrame = 0;
+  posCameraStream?.getTracks().forEach(track => track.stop());
+  posCameraStream = null;
+}
+
+function scanPOSCode(code: string) {
+  const normalized = code.trim().toLowerCase();
+  const material = ((window as any).__invMaterials || []).find((m: Material) => String(m.barcode || '').trim().toLowerCase() === normalized);
+  if (material) addPOSItem(material.id);
+  else showToast(`Barcode ${code} is not registered to a product`);
 }
 
 export function scanPOSBarcode(event: KeyboardEvent) {
@@ -71,7 +120,7 @@ export async function renderInvoices(): Promise<string> {
     <div class="pos-header"><div><div class="pos-kicker">Jeg Enterprises POS</div><h2>Point of Sale</h2></div><button class="btn btn-sm" onclick="showInvoiceModal()">Advanced Invoice Form</button></div>
     <div class="pos-layout">
       <aside class="pos-categories"><div class="pos-panel-title">Categories</div><button class="pos-category ${!posCategory ? 'active' : ''}" onclick="setPOSCategory('')">All Categories</button>${categoryButtons}</aside>
-      <section class="pos-products"><div class="pos-search"><input id="pos-search" type="search" value="${esc(posSearch)}" placeholder="Search material name, category, or unit..." oninput="filterPOSMaterials(this.value)" /><span>${filteredMaterials.length} item${filteredMaterials.length === 1 ? '' : 's'}</span></div><div class="pos-product-grid">${filteredMaterials.length ? filteredMaterials.map((m: Material) => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('') : '<div class="pos-empty">No materials match your search.</div>'}</div></section>
+      <section class="pos-products"><div class="pos-search"><input id="pos-search" type="search" value="${esc(posSearch)}" placeholder="Search material name, category, or unit..." oninput="filterPOSMaterials(this.value)" /><button class="btn btn-sm pos-camera-btn" onclick="startPOSCameraScan()" title="Scan barcode with camera">Scan Barcode</button><span>${filteredMaterials.length} item${filteredMaterials.length === 1 ? '' : 's'}</span></div><div class="pos-product-grid">${filteredMaterials.length ? filteredMaterials.map((m: Material) => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('') : '<div class="pos-empty">No materials match your search.</div>'}</div></section>
       <aside class="pos-cart-panel"><div class="pos-panel-title pos-cart-title"><span>Current Sale</span><button class="pos-cart-toggle" onclick="togglePOSCart()" aria-expanded="false">Cart · ${posCart.length} · ${fmtPeso(total)}</button></div><div class="pos-cart-items">${posCart.length ? posCart.map(item => `<div class="pos-cart-item"><div class="pos-cart-info"><strong>${esc(item.material.name)}</strong><span>${fmtPeso(item.material.price_per_unit)} · ${esc(item.material.unit)}</span></div><div class="pos-qty"><button onclick="changePOSQty('${item.material.id}',-1)">−</button><strong>${item.quantity}</strong><button onclick="changePOSQty('${item.material.id}',1)">+</button></div><strong class="pos-line-total">${fmtPeso(item.quantity * Number(item.material.price_per_unit))}</strong><button class="pos-remove" onclick="removePOSItem('${item.material.id}')" aria-label="Remove item">×</button></div>`).join('') : '<div class="pos-cart-empty">Select a material to start a sale.</div>'}</div>
         <div class="pos-customer-box"><div id="pos-credit-fields" style="display:none"><label for="pos-credit-name">Charge To / Buyer Name <span>* for credit</span></label><input id="pos-credit-name" maxlength="120" placeholder="Name of person or business responsible for payment" /></div></div>
         <div class="pos-summary"><div><span>Subtotal</span><strong>${fmtPeso(cartTotal)}</strong></div>${taxRate > 0 ? `<div><span>Tax</span><strong>${fmtPeso(tax)}</strong></div>` : ''}<div class="pos-grand-total"><span>Total</span><strong>${fmtPeso(total)}</strong></div></div>
