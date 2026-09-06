@@ -394,6 +394,10 @@ async function migrateSchema() {
   if (!indexNames.includes('idx_invoices_issued_date')) {
     await db.exec("CREATE INDEX idx_invoices_issued_date ON invoices(issued_date)");
   }
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_issued_day ON invoices(date(issued_date))');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_payments_payment_day ON payments(date(payment_date))');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_refunds_created_day ON refunds(date(created_at))');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_expenses_date_day ON expenses(date(expense_date))');
   if (!indexNames.includes('idx_invoices_status')) {
     await db.exec("CREATE INDEX idx_invoices_status ON invoices(status)");
   }

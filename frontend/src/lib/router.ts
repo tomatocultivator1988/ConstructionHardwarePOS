@@ -30,6 +30,7 @@ export { isLoggedIn };
 
 let chartInstances: any[] = [];
 let currentView = '';
+let loadSequence = 0;
 
 export function getCurrentView() { return currentView; }
 
@@ -58,13 +59,17 @@ export async function loadView(view: string) {
     destroyCharts();
   }
 
+  const sequence = ++loadSequence;
   currentView = view;
   const el = document.getElementById('main-content')!;
   el.innerHTML = `<div class="loading-skeleton">${'<div class="sk-item"></div>'.repeat(6)}</div>`;
   try {
-    el.innerHTML = await VIEWS[view]();
+    const html = await VIEWS[view]();
+    if (sequence !== loadSequence || currentView !== view) return;
+    el.innerHTML = html;
     if (view === 'receivables') (window as any).drawReceivablesTrend?.();
   } catch (err: any) {
+    if (sequence !== loadSequence || currentView !== view) return;
     el.innerHTML = '<div class="loading-skeleton"></div>';
     showToast(err.message || String(err));
   }

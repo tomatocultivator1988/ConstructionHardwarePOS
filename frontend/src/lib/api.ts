@@ -47,8 +47,11 @@ async function fetchGet<T>(path: string): Promise<T> {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     let transientResponse = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
-      const res = await fetch(API + path, { headers: apiHeaders() });
+      const controller = new AbortController();
+      timeout = setTimeout(() => controller.abort(), 15000);
+      const res = await fetch(API + path, { headers: apiHeaders(), signal: controller.signal });
       transientResponse = [500, 502, 503, 504].includes(res.status);
       if (transientResponse && attempt < 2) {
         await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
@@ -60,11 +63,13 @@ async function fetchGet<T>(path: string): Promise<T> {
       return data;
     } catch (e: any) {
       lastError = e instanceof Error ? e : new Error(String(e));
-      if (!transientResponse && !/failed to fetch|networkerror|network error/i.test(lastError.message)) throw lastError;
+      if (!transientResponse && !/failed to fetch|networkerror|network error|abort/i.test(lastError.message)) throw lastError;
       if (attempt < 2) {
         await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
         continue;
       }
+    } finally {
+      if (timeout) clearTimeout(timeout);
     }
   }
   throw lastError || new Error('Request failed');
