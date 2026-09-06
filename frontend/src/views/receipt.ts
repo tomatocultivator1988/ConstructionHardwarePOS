@@ -119,7 +119,7 @@ function buildThermalReceipt({ inv, settings, dateStr, timeStr, totalPaid, adjus
   });
   const paymentMethods = (inv.payments || []).map((p: any) => safe(p.method)).join(', ') || '—';
   const content = [
-    '\x1b@', '\x1b\x61\x01', safe(settings.business_name, 'BuildPro Construction Supply'),
+    '\x1b@', '\x1b\x61\x01', safe(settings.business_name, 'Jeg Enterprises'),
     'Hardware & Building Materials Dealer', safe(settings.business_address, 'Business address not configured'),
     `${isVat ? 'VAT Reg.' : 'Non-VAT'} TIN: ${safe(settings.business_tin, 'Not configured')}`,
     `RDO/Branch: ${safe(settings.business_rdo, 'Not configured')}`, '\x1b\x61\x00', line,
@@ -141,7 +141,7 @@ function receiptPreviewHtml({ inv, settings, dateStr, timeStr, totalPaid, adjust
   const safe = (value: any, fallback = '') => esc(String(value ?? fallback));
   const rows = (inv.items || []).map((item: any) => `<tr><td>${safe(item.description, 'Item')}</td><td>${safe(item.quantity)}</td><td>${fmtPeso(item.unit_price)}</td><td>${fmtPeso(item.total)}</td></tr>`).join('');
   const methods = (inv.payments || []).map((p: any) => safe(p.method)).join(', ') || '—';
-  return `<div class="receipt-paper-header"><strong>${safe(settings.business_name, 'BuildPro Construction Supply')}</strong><span>Hardware &amp; Building Materials Dealer</span><span>${safe(settings.business_address, 'Business address not configured')}</span><span>${isVat ? 'VAT Reg.' : 'Non-VAT'} TIN: ${safe(settings.business_tin, 'Not configured')} · RDO/Branch: ${safe(settings.business_rdo, 'Not configured')}</span></div>
+  return `<div class="receipt-paper-header"><strong>${safe(settings.business_name, 'Jeg Enterprises')}</strong><span>Hardware &amp; Building Materials Dealer</span><span>${safe(settings.business_address, 'Business address not configured')}</span><span>${isVat ? 'VAT Reg.' : 'Non-VAT'} TIN: ${safe(settings.business_tin, 'Not configured')} · RDO/Branch: ${safe(settings.business_rdo, 'Not configured')}</span></div>
     <h4>SALES INVOICE / OFFICIAL RECEIPT</h4>
     <dl class="receipt-paper-info"><dt>Document No.</dt><dd>${safe(inv.invoice_number)}</dd><dt>Date</dt><dd>${safe(dateStr)}</dd><dt>Time</dt><dd>${safe(timeStr)}</dd><dt>Sold To</dt><dd>${safe((inv as any).customer_name, 'Walk-in')}</dd><dt>Delivery</dt><dd>${safe((inv as any).delivery_person, 'Not assigned')}</dd></dl>
     <table><thead><tr><th>Particulars</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table>

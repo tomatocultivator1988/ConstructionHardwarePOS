@@ -226,6 +226,21 @@ router.post('/', async (req: Request, res: Response) => {
   res.status(201).json({ ...invoice as any, items: invoiceItems, payments: invoicePayments });
 });
 
+router.put('/:id/delivery', async (req: Request, res: Response) => {
+  const db = getDb();
+  const deliveryPerson = req.body?.delivery_person;
+  if (deliveryPerson !== null && deliveryPerson !== undefined && (typeof deliveryPerson !== 'string' || deliveryPerson.trim().length > 100)) {
+    res.status(400).json({ error: 'Delivery person must be 100 characters or fewer' }); return;
+  }
+  const invoice = await db.prepare('SELECT id, invoice_number, delivery_person FROM invoices WHERE id=?').get(req.params.id) as any;
+  if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+  const next = typeof deliveryPerson === 'string' ? deliveryPerson.trim() : '';
+  const invoiceId = String(req.params.id);
+  await db.prepare('UPDATE invoices SET delivery_person=?, updated_at=datetime(\'now\') WHERE id=?').run(next || null, invoiceId);
+  await logAudit((req as any).user?.id || null, 'update', 'invoice', invoiceId, `Delivery person updated for ${invoice.invoice_number}`, { delivery_person: invoice.delivery_person || null }, { delivery_person: next || null });
+  res.json({ ok: true, delivery_person: next || null });
+});
+
 router.post('/:id/pay', async (req: Request, res: Response) => {
   const db = getDb();
   const { amount, method, notes } = req.body;

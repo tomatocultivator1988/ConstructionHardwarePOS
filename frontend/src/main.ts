@@ -42,6 +42,8 @@ Object.assign(window, {
   showInvoiceDetail: invoices.showInvoiceDetail,
   recordPayment: invoices.recordPayment,
   delInvoice: invoices.delInvoice,
+  showDeliveryModal: invoices.showDeliveryModal,
+  saveDeliveryPerson: invoices.saveDeliveryPerson,
   changeInvoicePage: invoices.changeInvoicePage,
   setPOSCategory: invoices.setPOSCategory,
   filterPOSMaterials: invoices.filterPOSMaterials,

@@ -56,6 +56,7 @@ export interface Invoice {
   status: 'pending' | 'partial' | 'paid' | 'voided';
   issued_date: string;
   due_date: string | null;
+  delivery_person?: string | null;
   paid_date: string | null;
   created_at: string;
   customer_name: string;

@@ -31,7 +31,7 @@ export function showLogin() {
             <path d="M6 20 L20 8 L34 20" stroke="#f0b429" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
             <rect x="18" y="14" width="4" height="6" rx="1" fill="#f0b429"/>
           </svg>
-          <div class="login-title">BuildPro</div>
+          <div class="login-title">Jeg Enterprises</div>
           <div class="login-sub">POS System</div>
         </div>
         <div class="form-group">

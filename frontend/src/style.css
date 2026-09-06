@@ -1,21 +1,21 @@
 :root {
-  /* ── Premium Dark Theme ── */
-  --c-bg: #0a0a0d;
-  --c-surface: #141518;
-  --c-surface-hover: #1c1d22;
-  --c-surface-elevated: #1e1f24;
-  --c-border: #2a2b30;
-  --c-border-light: #35363d;
+  /* ── Jeg Enterprises navy and orange theme ── */
+  --c-bg: #071525;
+  --c-surface: #0c1b2d;
+  --c-surface-hover: #10243a;
+  --c-surface-elevated: #132a42;
+  --c-border: #1d3b58;
+  --c-border-light: #2b4d6b;
 
-  --c-primary: #f0b429;
-  --c-primary-dark: #d49a1c;
-  --c-primary-light: #f7c948;
-  --c-primary-glow: rgba(240, 180, 41, 0.12);
-  --c-primary-bg: rgba(240, 180, 41, 0.07);
+  --c-primary: #f28c28;
+  --c-primary-dark: #d96f12;
+  --c-primary-light: #ffad4d;
+  --c-primary-glow: rgba(242, 140, 40, 0.16);
+  --c-primary-bg: rgba(242, 140, 40, 0.10);
 
-  --c-text: #eae8e4;
-  --c-text-secondary: #a09e9a;
-  --c-text-muted: #6b6a66;
+  --c-text: #edf5fc;
+  --c-text-secondary: #a9bfd2;
+  --c-text-muted: #7690a6;
 
   --c-danger: #ef4444;
   --c-danger-bg: rgba(239, 68, 68, 0.1);
@@ -27,7 +27,7 @@
   --c-low-stock: rgba(245, 158, 11, 0.12);
 
   /* ── Typography ── */
-  --ff: 'Inter', system-ui, -apple-system, sans-serif;
+  --ff: 'Aptos', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --ff-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
   --fs-xs: 0.6875rem;
   --fs-sm: 0.8125rem;
@@ -969,6 +969,9 @@ body.show-install #install-prompt { display: flex; }
 .pos-product.low-stock .pos-product-name { padding-right:64px; }
 .pos-walkin-label { padding:.7rem .8rem; border:1px solid var(--c-border); border-radius:var(--radius-md); color:var(--c-text-secondary); background:var(--c-surface-elevated); font-size:var(--fs-sm); }
 .pos-walkin-label strong { color:var(--c-text); }
+.pos-delivery-note { margin-top: .5rem; padding: .55rem .7rem; border: 1px dashed var(--c-border-light); border-radius: var(--radius-md); color: var(--c-text-muted); font-size: var(--fs-xs); line-height: 1.4; }
+.delivery-value { display: inline-block; margin-right: .35rem; color: var(--c-text-secondary); }
+.delivery-edit-btn { padding: 2px 7px; min-height: 26px; color: var(--c-primary); border-color: rgba(242,140,40,.35); }
 tr.low-stock td:first-child { box-shadow:inset 4px 0 0 var(--c-warning); }
 .pos-product-name { width:100%; overflow:hidden; font-weight:700; line-height:1.3; text-overflow:ellipsis; white-space:nowrap; }
 .pos-product-meta { color:var(--c-text-muted); font-size:var(--fs-xs); }

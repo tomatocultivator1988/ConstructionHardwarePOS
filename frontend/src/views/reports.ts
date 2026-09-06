@@ -286,7 +286,7 @@ export function printReport(type: string, date: string) {
   if (!w) return;
   const content = document.getElementById('report-content')?.innerHTML || '';
   w.document.write(`
-    <html><head><title>BuildPro Report — ${date}</title>
+    <html><head><title>Jeg Enterprises Report — ${date}</title>
     <style>
       @page { size: A4; margin: 16mm; }
       * { box-sizing: border-box; }

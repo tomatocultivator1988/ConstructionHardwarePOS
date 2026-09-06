@@ -33,22 +33,35 @@ export async function renderInvoices(): Promise<string> {
   const total = Math.round((cartTotal + tax) * 100) / 100;
   (window as any).__posTotal = total;
   return `<div class="pos-page">
-    <div class="pos-header"><div><div class="pos-kicker">BuildPro POS</div><h2>Point of Sale</h2></div><button class="btn btn-sm" onclick="showInvoiceModal()">Advanced Invoice Form</button></div>
+    <div class="pos-header"><div><div class="pos-kicker">Jeg Enterprises POS</div><h2>Point of Sale</h2></div><button class="btn btn-sm" onclick="showInvoiceModal()">Advanced Invoice Form</button></div>
     <div class="pos-layout">
       <aside class="pos-categories"><div class="pos-panel-title">Categories</div><button class="pos-category ${!posCategory ? 'active' : ''}" onclick="setPOSCategory('')">All Categories</button>${categoryButtons}</aside>
       <section class="pos-products"><div class="pos-search"><input id="pos-search" type="search" value="${esc(posSearch)}" placeholder="Search material name, category, or unit..." oninput="filterPOSMaterials(this.value)" /><span>${filteredMaterials.length} item${filteredMaterials.length === 1 ? '' : 's'}</span></div><div class="pos-product-grid">${filteredMaterials.length ? filteredMaterials.map((m: Material) => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('') : '<div class="pos-empty">No materials match your search.</div>'}</div></section>
       <aside class="pos-cart-panel"><div class="pos-panel-title pos-cart-title"><span>Current Sale</span><button class="pos-cart-toggle" onclick="togglePOSCart()" aria-expanded="false">Cart · ${posCart.length} · ${fmtPeso(total)}</button></div><div class="pos-cart-items">${posCart.length ? posCart.map(item => `<div class="pos-cart-item"><div class="pos-cart-info"><strong>${esc(item.material.name)}</strong><span>${fmtPeso(item.material.price_per_unit)} · ${esc(item.material.unit)}</span></div><div class="pos-qty"><button onclick="changePOSQty('${item.material.id}',-1)">−</button><strong>${item.quantity}</strong><button onclick="changePOSQty('${item.material.id}',1)">+</button></div><strong class="pos-line-total">${fmtPeso(item.quantity * Number(item.material.price_per_unit))}</strong><button class="pos-remove" onclick="removePOSItem('${item.material.id}')" aria-label="Remove item">×</button></div>`).join('') : '<div class="pos-cart-empty">Select a material to start a sale.</div>'}</div>
-        <div class="pos-customer-box"><div class="pos-walkin-label">Sale type: <strong>Walk-in</strong></div><label for="pos-delivery">Delivery Person <span>(optional)</span></label><input id="pos-delivery" maxlength="100" placeholder="Name for delivery" /><div id="pos-credit-fields" style="display:none"><label for="pos-credit-name">Charge To / Buyer Name *</label><input id="pos-credit-name" maxlength="120" placeholder="Name of person or business responsible for payment" /></div></div>
+        <div class="pos-customer-box"><div class="pos-walkin-label">Sale type: <strong>Walk-in</strong></div><div class="pos-delivery-note">Delivery assignment can be added later from Sales History.</div><div id="pos-credit-fields" style="display:none"><label for="pos-credit-name">Charge To / Buyer Name *</label><input id="pos-credit-name" maxlength="120" placeholder="Name of person or business responsible for payment" /></div></div>
         <div class="pos-summary"><div><span>Subtotal</span><strong>${fmtPeso(cartTotal)}</strong></div>${taxRate > 0 ? `<div><span>Tax</span><strong>${fmtPeso(tax)}</strong></div>` : ''}<div class="pos-grand-total"><span>Total</span><strong>${fmtPeso(total)}</strong></div></div>
         <div class="pos-payment"><label for="pos-method">Payment Method</label><select id="pos-method" onchange="updatePOSPayment()"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option><option value="check">Check</option><option value="credit">Credit / On Account</option></select><div id="pos-credit-warning" class="pos-credit-warning" role="status">This will be recorded as unassigned credit. Use the invoice number to collect payment later.</div><div id="pos-cash-fields"><label for="pos-received">Amount Received</label><input id="pos-received" type="number" min="0" step="0.01" value="${total.toFixed(2)}" oninput="updatePOSPayment()" /><div class="pos-change"><span>Change</span><strong id="pos-change-value">${fmtPeso(0)}</strong></div></div></div>
         <button class="btn btn-primary pos-complete" id="pos-complete-btn" onclick="completePOSSale()" ${posCart.length ? '' : 'disabled'}>Complete Sale</button><button class="btn pos-clear" onclick="clearPOSCart()" ${posCart.length ? '' : 'disabled'}>Clear Cart</button>
       </aside>
     </div>
-    <details class="pos-history"><summary>Sales History <span>${totalInvoices} invoice${totalInvoices === 1 ? '' : 's'}</span></summary><div class="table-wrap"><table><thead><tr><th>#</th><th>Customer</th><th>Total</th><th>Status</th><th>Issued</th><th class="actions">Actions</th></tr></thead><tbody>${invoiceData.length ? invoiceData.map((inv: Invoice) => `<tr><td data-label="#" style="font-weight:600">${esc(inv.invoice_number)}</td><td data-label="Customer">${esc(inv.customer_name)}</td><td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(inv.total)}</td><td data-label="Status"><span class="status-badge ${inv.status}">${inv.status}</span></td><td data-label="Issued">${fmtDate(inv.issued_date)}</td><td data-label="" class="actions"><button class="btn btn-success btn-sm" onclick="showInvoiceDetail('${inv.id}')">View</button><button class="btn btn-danger btn-sm" onclick="delInvoice('${inv.id}')">Delete</button></td></tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--c-text-muted);padding:2rem">No sales yet</td></tr>'}</tbody></table></div>${totalInvoices > INVOICE_PAGE_SIZE ? `<div class="pagination"><span>Showing ${(invoicePage-1)*INVOICE_PAGE_SIZE+1}–${Math.min(invoicePage*INVOICE_PAGE_SIZE, totalInvoices)} of ${totalInvoices}</span><button class="btn btn-sm" ${invoicePage===1?'disabled':''} onclick="changeInvoicePage(${invoicePage-1})">Previous</button><strong>Page ${invoicePage} of ${Math.ceil(totalInvoices/INVOICE_PAGE_SIZE)}</strong><button class="btn btn-sm" ${invoicePage>=Math.ceil(totalInvoices/INVOICE_PAGE_SIZE)?'disabled':''} onclick="changeInvoicePage(${invoicePage+1})">Next</button></div>` : ''}</details>
+    <details class="pos-history"><summary>Sales History <span>${totalInvoices} invoice${totalInvoices === 1 ? '' : 's'}</span></summary><div class="table-wrap"><table><thead><tr><th>#</th><th>Customer</th><th>Total</th><th>Status</th><th>Issued</th><th>Delivery Person</th><th class="actions">Actions</th></tr></thead><tbody>${invoiceData.length ? invoiceData.map((inv: Invoice) => `<tr><td data-label="#" style="font-weight:600">${esc(inv.invoice_number)}</td><td data-label="Customer">${esc(inv.customer_name)}</td><td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(inv.total)}</td><td data-label="Status"><span class="status-badge ${inv.status}">${inv.status}</span></td><td data-label="Issued">${fmtDate(inv.issued_date)}</td><td data-label="Delivery Person"><span class="delivery-value">${esc(inv.delivery_person || 'Not assigned')}</span><button class="btn btn-sm delivery-edit-btn" onclick="showDeliveryModal('${inv.id}')">${inv.delivery_person ? 'Edit' : 'Assign'}</button></td><td data-label="" class="actions"><button class="btn btn-success btn-sm" onclick="showInvoiceDetail('${inv.id}')">View</button><button class="btn btn-danger btn-sm" onclick="delInvoice('${inv.id}')">Delete</button></td></tr>`).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--c-text-muted);padding:2rem">No sales yet</td></tr>'}</tbody></table></div>${totalInvoices > INVOICE_PAGE_SIZE ? `<div class="pagination"><span>Showing ${(invoicePage-1)*INVOICE_PAGE_SIZE+1}–${Math.min(invoicePage*INVOICE_PAGE_SIZE, totalInvoices)} of ${totalInvoices}</span><button class="btn btn-sm" ${invoicePage===1?'disabled':''} onclick="changeInvoicePage(${invoicePage-1})">Previous</button><strong>Page ${invoicePage} of ${Math.ceil(totalInvoices/INVOICE_PAGE_SIZE)}</strong><button class="btn btn-sm" ${invoicePage>=Math.ceil(totalInvoices/INVOICE_PAGE_SIZE)?'disabled':''} onclick="changeInvoicePage(${invoicePage+1})">Next</button></div>` : ''}</details>
   </div>`;
 }
 
 export function changeInvoicePage(page: number) { invoicePage = Math.max(1, page); loadView('invoices'); }
+
+export async function showDeliveryModal(invoiceId: string) {
+  try {
+    const invoice = await apiGet<any>(`/invoices/${invoiceId}`);
+    showModal(`<h3>Assign Delivery Person</h3><p class="modal-help">Delivery can be assigned or updated after the sale.</p><div class="form-group"><label for="delivery-person-edit">Delivery Person <span>(optional)</span></label><input id="delivery-person-edit" maxlength="100" value="${esc(invoice.delivery_person || '')}" placeholder="Enter delivery person name" /></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveDeliveryPerson('${invoiceId}')">Save</button></div>`, 'delivery-modal');
+  } catch (e: any) { showToast(e.message || 'Unable to load invoice'); }
+}
+
+export async function saveDeliveryPerson(invoiceId: string) {
+  const value = (document.getElementById('delivery-person-edit') as HTMLInputElement)?.value.trim() || null;
+  try { await apiPut(`/invoices/${invoiceId}/delivery`, { delivery_person: value }); closeModal(); showToast('Delivery person updated', 'success'); loadView('invoices'); }
+  catch (e: any) { showToast(e.message || 'Unable to update delivery person'); }
+}
 
 export function setPOSCategory(category: string) { posCategory = category; loadView('invoices'); }
 export function filterPOSMaterials(value: string) { posSearch = value; renderPOSProductGrid(); }
@@ -90,11 +103,10 @@ export async function completePOSSale() {
   if (method === 'credit' && !credit_account_name) { showToast('Enter the buyer or charge-to name for a credit sale'); (document.getElementById('pos-credit-name') as HTMLInputElement)?.focus(); return; }
   const items = posCart.map(item => ({ material_id: item.material.id, description: item.material.name, quantity: item.quantity, unit_price: Number(item.material.price_per_unit) }));
   const customer_id = null;
-  const delivery_person = (document.getElementById('pos-delivery') as HTMLInputElement)?.value.trim() || null;
   const btn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null; if (btn) btn.disabled = true;
   try {
     // POS checkout is committed atomically by the backend. Credit creates an unpaid invoice.
-    const checkout = await apiPost<any>('/invoices', { customer_id, due_date: null, credit_account_name: credit_account_name || null, tax_rate: Number((window as any).__invDefaultTax || 0), delivery_person, items, payment: { amount: method === 'credit' ? 0 : total, method, notes: '' } });
+    const checkout = await apiPost<any>('/invoices', { customer_id, due_date: null, credit_account_name: credit_account_name || null, tax_rate: Number((window as any).__invDefaultTax || 0), items, payment: { amount: method === 'credit' ? 0 : total, method, notes: '' } });
     const change = method === 'cash' ? received - total : 0;
     posCart = [];
     await showReceiptPreview(checkout.id);
@@ -115,11 +127,6 @@ export function showInvoiceModal() {
     <h3>New Invoice</h3>
 
     <div class="info-callout">This sale will be recorded as Walk-in / Unassigned. Use the invoice number for payment follow-up.</div>
-    <div class="form-group">
-      <label>Delivery Person <span style="color:var(--c-text-muted);font-weight:normal">(optional)</span></label>
-      <input id="inv-delivery-person" maxlength="100" placeholder="Name of delivery person" />
-    </div>
-
     <h4>Line Items</h4>
     <div id="line-items">
       <div class="line-item">
@@ -204,7 +211,6 @@ export async function createInvoice() {
   const taxAmount = Math.round(roundedSubtotal * tax_rate * 100) / 100;
   const total = Math.round((roundedSubtotal + taxAmount) * 100) / 100;
   const customerName = 'Walk-in / Unassigned';
-  const delivery_person = val('inv-delivery-person').trim();
 
   const confirmHtml = `
     <h3>Confirm Invoice</h3>
@@ -219,7 +225,7 @@ export async function createInvoice() {
 
   disableBtn('inv-create-btn', true);
   try {
-    await apiPost('/invoices', { customer_id, due_date: null, tax_rate, delivery_person: delivery_person || null, items });
+    await apiPost('/invoices', { customer_id, due_date: null, tax_rate, items });
     closeModal();
     loadView('invoices');
   } catch (e: any) { showToast(e.message); }
