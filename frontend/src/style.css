@@ -1038,12 +1038,22 @@ tr.low-stock td:first-child { box-shadow:inset 4px 0 0 var(--c-warning); }
 .pnl-expense-chart-card .chart-title { margin-bottom: 4px; }
 .pnl-expense-chart-card .card-sub { margin-bottom: var(--space-3); }
 .pnl-expense-chart-wrap { height: 280px; max-width: 720px; position: relative; }
+.pnl-cash-snapshot { margin: var(--space-4) 0; padding: var(--space-4); border: 1px solid var(--c-border); border-radius: var(--radius-lg); background: var(--c-surface); }
+.pnl-cash-heading { display:flex; justify-content:space-between; gap:var(--space-3); margin-bottom:var(--space-3); color:var(--c-text); }
+.pnl-cash-heading span { color:var(--c-text-muted); font-size:var(--fs-xs); }
+.pnl-cash-grid { display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:var(--space-2); }
+.pnl-cash-grid div { display:grid; gap:4px; padding:var(--space-3); border-radius:var(--radius-md); background:var(--c-surface-elevated); }
+.pnl-cash-grid span { color:var(--c-text-muted); font-size:var(--fs-xs); }
+.pnl-cash-grid b { color:var(--c-text); font-family:var(--ff-mono); font-size:var(--fs-sm); }
+.pnl-cash-grid .warning-value { color:var(--c-warning); }
 .report-tabs .nav-btn { flex:0 1 auto; min-height:36px; }
 .report-filters { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-3); margin-bottom:var(--space-5); }
 .report-filters input, .report-filters select { min-height:36px; min-width:140px; max-width:100%; }
 .report-metrics { min-width:0; }
 .report-payment-methods { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-3); margin-bottom:var(--space-4); padding:var(--space-3) var(--space-4); background:var(--c-surface); border-radius:var(--radius-md); border:1px solid var(--c-border); }
 @media (max-width: 680px) {
+  .pnl-cash-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .pnl-cash-heading { align-items:flex-start; flex-direction:column; }
   .report-period-bar { align-items:stretch; flex-direction:column; }
   .report-period-bar select { width:100%; }
   .report-tabs { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:4px; }

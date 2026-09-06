@@ -159,7 +159,13 @@ async function loadDailyReport(date?: string) {
 
 async function loadMonthlyReport(month?: string) {
   const m = month || reportPeriodRange().to.slice(0, 7) || businessMonth();
-  const data = await apiGet<any>(`/reports/monthly?month=${m}`);
+  const monthStart = `${m}-01`;
+  const monthEnd = new Date(Date.UTC(Number(m.slice(0, 4)), Number(m.slice(5, 7)), 0)).toISOString().slice(0, 10);
+  const [data, cash, financial] = await Promise.all([
+    apiGet<any>(`/reports/monthly?month=${m}`),
+    apiGet<any>(`/reports/cash-flow?from=${monthStart}&to=${monthEnd}`),
+    apiGet<any>(`/reports/financial-summary?from=${monthStart}&to=${monthEnd}`),
+  ]);
   monthlyReportData = data;
   const netColor = data.net_profit >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
   const momColor = data.mom_change >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
@@ -175,6 +181,7 @@ async function loadMonthlyReport(month?: string) {
       <div class="dashboard-card card-danger"><div class="card-label">Expenses</div><div class="card-value">${fmtPeso(data.expenses)}</div></div>
       <div class="dashboard-card card-info"><div class="card-label">Net Profit</div><div class="card-value" style="color:${netColor}">${fmtPeso(data.net_profit)}</div><div class="card-sub">${data.mom_change >= 0 ? '↑' : '↓'} ${Math.abs(data.mom_change).toFixed(1)}% vs last month</div></div>
     </div>
+    <div class="pnl-cash-snapshot"><div class="pnl-cash-heading"><strong>Cash Flow &amp; Credit Snapshot</strong><span>${fmtDate(monthStart)} – ${fmtDate(monthEnd)}</span></div><div class="pnl-cash-grid"><div><span>Cash Collections</span><b>${fmtPeso(cash.cash_receipts)}</b></div><div><span>Cash Refunds</span><b class="negative">${fmtPeso(cash.cash_refunds)}</b></div><div><span>Cash Expenses</span><b class="negative">${fmtPeso(cash.cash_expenses)}</b></div><div><span>Net Cash Change</span><b class="${cash.net_cash_change >= 0 ? 'positive' : 'negative'}">${fmtPeso(cash.net_cash_change)}</b></div><div><span>Credit / Receivables</span><b class="warning-value">${fmtPeso(financial.accounts_receivable)}</b></div></div></div>
     <div class="chart-card pnl-chart-card"><div class="chart-title">P&amp;L Breakdown</div><p class="card-sub">How the selected month’s sales are allocated to costs, expenses, and profit.</p><div class="pnl-chart-wrap"><canvas id="pnl-report-chart"></canvas></div></div>
     ${data.expense_by_category?.length ? `
     <div class="chart-card pnl-expense-chart-card"><div class="chart-title">Expenses by Category</div><p class="card-sub">Percentage of total operating expenses for the selected month.</p><div class="pnl-expense-chart-wrap"><canvas id="pnl-expense-chart"></canvas></div></div>` : '<div class="chart-card pnl-expense-chart-card"><div class="chart-title">Expenses by Category</div><p class="card-sub">No expenses recorded for the selected month.</p></div>'}
@@ -317,9 +324,9 @@ function drawPnlChart() {
   if (total <= 0) return;
   const colors = ['#7690a6', '#ef654a', d.net_profit >= 0 ? '#22c55e' : '#ef4444'];
   pnlChart = new ChartCtor(canvas, {
-    type: 'doughnut',
+    type: 'pie',
     data: { labels, datasets: [{ data: values, backgroundColor: colors, borderColor: '#0c1b2d', borderWidth: 3, hoverOffset: 5 }] },
-    options: { responsive: true, maintainAspectRatio: false, cutout: '55%', plugins: { legend: { position: 'right', labels: { color: '#a9bfd2', usePointStyle: true, padding: 14, generateLabels: (chart: any) => chart.data.labels.map((label: string, index: number) => ({ text: `${label} · ${((Number(chart.data.datasets[0].data[index]) / total) * 100).toFixed(1)}%`, fillStyle: colors[index], strokeStyle: colors[index], index })) } }, tooltip: { callbacks: { label: (context: any) => ` ${context.label}: ₱${Number(context.raw || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${((Number(context.raw || 0) / total) * 100).toFixed(1)}%)` } } } }
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#a9bfd2', usePointStyle: true, padding: 14, generateLabels: (chart: any) => chart.data.labels.map((label: string, index: number) => ({ text: `${label} · ${((Number(chart.data.datasets[0].data[index]) / total) * 100).toFixed(1)}%`, fillStyle: colors[index], strokeStyle: colors[index], index })) } }, tooltip: { callbacks: { label: (context: any) => ` ${context.label}: ₱${Number(context.raw || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${((Number(context.raw || 0) / total) * 100).toFixed(1)}%)` } } } }
   });
 }
 
