@@ -236,7 +236,7 @@ router.put('/:id/delivery', async (req: Request, res: Response) => {
   if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
   const next = typeof deliveryPerson === 'string' ? deliveryPerson.trim() : '';
   const invoiceId = String(req.params.id);
-  await db.prepare('UPDATE invoices SET delivery_person=?, updated_at=datetime(\'now\') WHERE id=?').run(next || null, invoiceId);
+  await db.prepare('UPDATE invoices SET delivery_person=? WHERE id=?').run(next || null, invoiceId);
   await logAudit((req as any).user?.id || null, 'update', 'invoice', invoiceId, `Delivery person updated for ${invoice.invoice_number}`, { delivery_person: invoice.delivery_person || null }, { delivery_person: next || null });
   res.json({ ok: true, delivery_person: next || null });
 });
