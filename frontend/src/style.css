@@ -331,6 +331,14 @@ tr.low-stock:hover { background: rgba(245, 158, 11, 0.2); }
 .shift-expected-card small { color:var(--c-text-muted); }
 .shift-variance { margin:-8px 0 var(--space-4); color:var(--c-text-muted); font-size:var(--fs-sm); }
 .shift-variance.balanced { color:var(--c-success); } .shift-variance.over { color:var(--c-warning); } .shift-variance.short { color:var(--c-danger); }
+.shift-history-card { max-width:100%; overflow:hidden; }
+.shift-preview { min-width:min(100%, 420px); }
+.shift-preview-paper { margin-top:var(--space-4); padding:var(--space-5); background:#fff; color:#17202a; border:1px solid #d5d9dd; font-family:Arial,sans-serif; }
+.shift-preview-paper h4 { margin:0 0 var(--space-4); text-align:center; letter-spacing:.08em; }
+.shift-preview-paper dl { display:grid; grid-template-columns:1fr auto; gap:8px 18px; margin:0; }
+.shift-preview-paper dt { color:#59636d; } .shift-preview-paper dd { margin:0; text-align:right; font-weight:600; }
+.shift-preview-paper p { margin:var(--space-5) 0 0; padding-top:var(--space-3); border-top:1px solid #d5d9dd; overflow-wrap:anywhere; }
+@media (max-width:680px) { .shift-history-card .table-wrap { overflow-x:visible; } .shift-history-card td.actions { display:flex; flex-wrap:wrap; gap:6px; } .shift-history-card td.actions .btn { flex:1 1 auto; } .shift-preview { min-width:0; } }
 .receivable-edit-btn { margin-left: .45rem; padding: 2px 7px; min-height: 24px; color: var(--c-primary); border-color: rgba(242,140,40,.35); }
 .money { font-family: var(--ff-mono); white-space: nowrap; }
 .positive { color: var(--c-success); }

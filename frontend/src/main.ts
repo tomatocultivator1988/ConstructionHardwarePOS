@@ -101,6 +101,7 @@ Object.assign(window, {
   switchSettingsTab: settings.switchSettingsTab,
   saveSettings: settings.saveSettings,
   updateShiftVariance: settings.updateShiftVariance,
+  showShiftPreview: settings.showShiftPreview,
   openCashierShift: settings.openCashierShift,
   closeCashierShift: settings.closeCashierShift,
   recordCashEvent: settings.recordCashEvent,
