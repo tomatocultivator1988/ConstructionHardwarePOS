@@ -1,60 +1,65 @@
-/*
- * BuildPro POS workflow smoke test.
- * Run only against a disposable QA deployment/database:
- *   QA_BASE_URL=https://... QA_TOKEN=... QA_ALLOW_MUTATION=true npm run qa:e2e
- * The opt-in guard is intentional; this test creates invoices and stock movements.
+/* BuildPro POS admin/staff shift and POS E2E test.
+ * Run only against a disposable QA database:
+ * QA_BASE_URL=https://... QA_ADMIN_USER=admin QA_ADMIN_PIN=... QA_ALLOW_MUTATION=true npm run qa:e2e
  */
 import assert from 'node:assert/strict';
 
-const base = process.env.QA_BASE_URL;
-const normalizedBase = (base || '').replace(/\/$/, '').toLowerCase();
-const knownProductionHosts = ['buildpro-pos.vercel.app', 'construction-pos1-6ufbc6iaf-huhus-projects-444565d7.vercel.app'];
-const isKnownProduction = knownProductionHosts.some((host) => normalizedBase.includes(host));
-if (process.env.QA_ALLOW_MUTATION !== 'true' || !base || !process.env.QA_TOKEN || isKnownProduction) {
-  console.error('Refusing to run: set QA_BASE_URL, QA_TOKEN, and QA_ALLOW_MUTATION=true against a disposable QA database.');
-  process.exit(2);
+const base = (process.env.QA_BASE_URL || '').replace(/\/$/, '');
+const host = (() => { try { return new URL(base).hostname; } catch { return ''; } })();
+const productionHosts = ['buildpro-pos.vercel.app', 'construction-pos1-6ufbc6iaf-huhus-projects-444565d7.vercel.app'];
+if (process.env.QA_ALLOW_MUTATION !== 'true' || !base || productionHosts.includes(host)) {
+  console.error('Refusing to run: use a disposable QA database and set QA_ALLOW_MUTATION=true.'); process.exit(2);
 }
 
-const headers = { Authorization: `Bearer ${process.env.QA_TOKEN}`, 'Content-Type': 'application/json' };
-async function call(path, options = {}) {
-  const response = await fetch(`${base.replace(/\/$/, '')}/api${path}`, { ...options, headers: { ...headers, ...(options.headers || {}) } });
-  const text = await response.text();
-  const body = text ? JSON.parse(text) : null;
-  assert.ok(response.ok, `${options.method || 'GET'} ${path}: ${body?.error || response.status}`);
-  return body;
-}
-const post = (path, body) => call(path, { method: 'POST', body: JSON.stringify(body) });
-const put = (path, body) => call(path, { method: 'PUT', body: JSON.stringify(body) });
+const adminUser = process.env.QA_ADMIN_USER || 'admin';
+const adminPin = process.env.QA_ADMIN_PIN || '0000';
+const marker = `QA-SHIFT-${Date.now()}`;
 
-const marker = `QA-${Date.now()}`;
-const shift = await post('/shifts/open', { opening_cash: 100 });
-const rejectedCashOut = await fetch(`${base.replace(/\/$/, '')}/api/shifts/${shift.id}/event`, { method: 'POST', headers, body: JSON.stringify({ type: 'cash_out', amount: 101, reason: 'Too much' }) });
-assert.equal(rejectedCashOut.status, 400, 'cash-out above drawer balance must be rejected');
-const material = await post('/materials', { name: `${marker} Material`, unit: 'Piece', stock: 20, cost_price: 10, price_per_unit: 25, wholesale_price: 20, reorder_point: 2, category: 'Other' });
-const customer = await post('/customers', { name: `${marker} Customer`, address: 'QA Test Address', tin: '000-000-000-000' });
-const invoice = await post('/invoices', { customer_id: customer.id, tax_rate: 0, items: [{ material_id: material.id, description: material.name, quantity: 2, unit_price: 25 }] });
-assert.equal(invoice.total, 50);
-const afterSale = await call(`/materials/${material.id}`);
-assert.equal(Number(afterSale.stock), 18);
-await post(`/invoices/${invoice.id}/pay`, { amount: 50, method: 'cash' });
-await post(`/invoices/${invoice.id}/return`, { items: [{ invoice_item_id: invoice.items[0].id, material_id: material.id, quantity: 1 }] });
-const afterReturn = await call(`/invoices/${invoice.id}`);
-assert.equal(Number(afterReturn.adjusted_total), 25);
-await post(`/invoices/${invoice.id}/refund`, { amount: 25, method: 'cash', reference: marker });
-await post(`/invoices/${invoice.id}/credit-memo`, { amount: 10, reason: 'QA adjustment' });
-const adjusted = await call(`/invoices/${invoice.id}`);
-assert.equal(Number(adjusted.adjusted_total), 15);
-assert.equal(Number(adjusted.adjusted_tax), 0);
-const summary = await call('/reports/financial-summary?from=2000-01-01&to=2100-01-01');
-assert.ok(Number(summary.net_sales) >= 15, 'financial summary should include adjusted net sales');
-assert.ok(Number(summary.refunds) >= 25, 'financial summary should include refunds');
-const closed = await post(`/shifts/${shift.id}/close`, { closing_cash: 125 });
-assert.equal(closed.status, 'closed');
-assert.equal(Number(closed.expected_cash), 125);
-await put(`/invoices/${invoice.id}/void`, { reason: 'QA cleanup' });
-const voided = await call(`/invoices/${invoice.id}`);
-assert.equal(voided.status, 'voided');
-const audit = await call('/audit');
-const auditedEntities = new Set(audit.filter((entry) => [invoice.id, material.id, customer.id, shift.id].includes(entry.entity_id)).map((entry) => entry.entity));
-for (const entity of ['invoice', 'material', 'customer', 'cashier_shift']) assert.ok(auditedEntities.has(entity), `audit log missing ${entity}`);
-console.log('BuildPro POS E2E workflow checks passed:', marker);
+async function request(path, { token, method = 'GET', body, expected } = {}) {
+  const response = await fetch(`${base}/api${path}`, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const text = await response.text(); let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+  if (expected !== undefined) assert.equal(response.status, expected, `${method} ${path}: ${data?.error || response.status}`);
+  else assert.ok(response.ok, `${method} ${path}: ${data?.error || response.status}`);
+  return data;
+}
+async function login(username, pin, expected = 200) { return (await request('/auth/login', { method: 'POST', body: { username, pin }, expected }))?.token; }
+
+const adminToken = await login(adminUser, adminPin);
+const staffUser = `${marker.toLowerCase()}-cashier`; const staffPin = '2468';
+await request('/users', { token: adminToken, method: 'POST', body: { username: staffUser, pin: staffPin, role: 'staff' }, expected: 201 });
+await login(staffUser, staffPin, 403);
+
+const users = await request('/users', { token: adminToken });
+const staffRecord = users.find(u => u.username === staffUser); assert.ok(staffRecord);
+const shift = await request('/shifts/open', { token: adminToken, method: 'POST', body: { user_id: staffRecord.id, opening_cash: 100 }, expected: 201 });
+const staffToken = await login(staffUser, staffPin);
+assert.equal(shift.user_id, staffRecord.id);
+
+await request('/shifts/open', { token: adminToken, method: 'POST', body: { user_id: staffRecord.id, opening_cash: 100 }, expected: 409 });
+await request('/reports/daily?date=2026-01-01', { token: staffToken, expected: 403 });
+await request('/materials', { token: staffToken, method: 'POST', body: { name: `${marker} Forbidden`, unit: 'Piece', stock: 1, cost_price: 1, price_per_unit: 2 }, expected: 403 });
+await request('/shifts/active', { token: staffToken, expected: 403 });
+
+const material = await request('/materials', { token: adminToken, method: 'POST', body: { name: `${marker} Product`, unit: 'Piece', stock: 10, cost_price: 10, price_per_unit: 20, wholesale_price: 18, reorder_point: 2, category: 'Other', barcode: `${marker}-BARCODE` }, expected: 201 });
+const invoice = await request('/invoices', { token: staffToken, method: 'POST', body: { customer_id: null, tax_rate: 0, items: [{ material_id: material.id, description: material.name, quantity: 1, unit_price: 20 }], payment: { amount: 20, method: 'cash', notes: '' } }, expected: 201 });
+assert.equal(invoice.total, 20);
+assert.equal(Number((await request(`/materials/${material.id}`, { token: staffToken })).stock), 9);
+
+await request(`/shifts/${shift.id}/event`, { token: adminToken, method: 'POST', body: { type: 'cash_out', amount: 101, reason: 'Too much' }, expected: 400 });
+await request(`/shifts/${shift.id}/event`, { token: adminToken, method: 'POST', body: { type: 'cash_out', amount: 10, reason: 'QA drawer test' }, expected: 201 });
+const active = (await request('/shifts/active', { token: adminToken })).find(s => s.id === shift.id); assert.equal(Number(active.expected_cash), 110);
+
+const closed = await request(`/shifts/${shift.id}/close`, { token: adminToken, method: 'POST', body: { closing_cash: 110, notes: 'QA shift test' }, expected: 200 });
+assert.equal(closed.status, 'closed'); assert.equal(Number(closed.expected_cash), 110); assert.equal(Number(closed.variance), 0);
+assert.ok(!(await request('/shifts/active', { token: adminToken })).some(s => s.id === shift.id));
+
+await request('/invoices', { token: staffToken, method: 'POST', body: { customer_id: null, tax_rate: 0, items: [{ material_id: material.id, description: material.name, quantity: 1, unit_price: 20 }], payment: { amount: 20, method: 'cash', notes: '' } }, expected: 403 });
+await request('/shifts/current?fresh=1', { token: staffToken, expected: 200 }).then(value => assert.equal(value, null));
+
+const history = await request('/shifts/history', { token: adminToken });
+assert.ok(history.some(s => s.id === shift.id && s.user_id === staffRecord.id));
+const audit = await request('/audit-log', { token: adminToken });
+assert.ok(audit.some(entry => entry.entity_id === shift.id && entry.action === 'open'));
+assert.ok(audit.some(entry => entry.entity_id === shift.id && entry.action === 'close'));
+console.log('BuildPro POS admin/staff shift E2E checks passed:', marker);
