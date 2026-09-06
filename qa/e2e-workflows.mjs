@@ -16,7 +16,13 @@ const adminPin = process.env.QA_ADMIN_PIN || '0000';
 const marker = `QA-SHIFT-${Date.now()}`;
 
 async function request(path, { token, method = 'GET', body, expected } = {}) {
-  const response = await fetch(`${base}/api${path}`, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 20000);
+  let response;
+  try {
+    response = await fetch(`${base}/api${path}`, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body), signal: controller.signal });
+  } catch (error) {
+    throw new Error(`${method} ${path} failed: ${error?.message || error}`);
+  } finally { clearTimeout(timeout); }
   const text = await response.text(); let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
   if (expected !== undefined) assert.equal(response.status, expected, `${method} ${path}: ${data?.error || response.status}`);

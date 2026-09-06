@@ -112,7 +112,7 @@ router.post('/', async (req: Request, res: Response) => {
   const buyerAddress = typeof buyer_address === 'string' ? buyer_address.trim() : '';
   const invoiceNotes = typeof notes === 'string' ? notes.trim() : '';
 
-  if (!items || !items.length) {
+  if (!Array.isArray(items) || items.length === 0) {
     res.status(400).json({ error: 'At least one line item is required' });
     return;
   }
@@ -447,7 +447,7 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
 router.post('/:id/return', async (req: Request, res: Response) => {
   const db = getDb();
   const { items } = req.body;
-  if (!items || !items.length) {
+  if (!Array.isArray(items) || items.length === 0) {
     res.status(400).json({ error: 'At least one return item is required' });
     return;
   }
