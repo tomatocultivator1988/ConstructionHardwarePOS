@@ -33,7 +33,17 @@ export async function switchSettingsTab(tab: string) {
 
 async function loadShiftTab() {
   const shift = await apiGet<any>('/shifts/current');
-  return `<div class="settings-card"><h3>Cashier Shift</h3>${shift ? `<p>Opened: ${esc(fmtDate(shift.opened_at))}</p><div class="form-row"><div class="form-group"><label>Cash in/out amount</label><input id="shift-event-amount" type="number" min="0.01" step="0.01" /></div><div class="form-group"><label>Reason</label><input id="shift-event-reason" maxlength="200" /></div></div><button class="btn" onclick="recordCashEvent('${shift.id}','cash_in')">Cash In</button> <button class="btn" onclick="recordCashEvent('${shift.id}','cash_out')">Cash Out</button><hr><div class="form-group"><label>Counted closing cash</label><input id="shift-closing" type="number" min="0" step="0.01" /></div><div class="form-group"><label>Notes</label><input id="shift-notes" maxlength="200" /></div><button class="btn btn-warning" onclick="closeCashierShift('${shift.id}')">Close Shift</button>` : `<p style="color:var(--c-text-muted)">No open shift.</p><div class="form-group"><label>Opening cash</label><input id="shift-opening" type="number" min="0" step="0.01" value="0" /></div><button class="btn btn-primary" onclick="openCashierShift()">Open Shift</button>`}</div>`;
+  const drawerAdjustment = Number(shift?.drawer_events || 0);
+  return `<div class="settings-card"><h3>Cashier Shift</h3>${shift ? `<p>Opened: ${esc(fmtDate(shift.opened_at))}</p><div class="shift-expected-card"><span>Expected closing cash</span><strong id="shift-expected">${fmtPeso(shift.expected_cash)}</strong><small>Opening cash ${fmtPeso(shift.opening_cash)} + cash sales ${fmtPeso(shift.cash_sales)} − refunds ${fmtPeso(shift.cash_refunds)} ${drawerAdjustment >= 0 ? '+' : '−'} drawer adjustment ${fmtPeso(Math.abs(drawerAdjustment))}</small></div><div class="form-row"><div class="form-group"><label>Cash in/out amount</label><input id="shift-event-amount" type="number" min="0.01" step="0.01" /></div><div class="form-group"><label>Reason</label><input id="shift-event-reason" maxlength="200" /></div></div><button class="btn" onclick="recordCashEvent('${shift.id}','cash_in')">Cash In</button> <button class="btn" onclick="recordCashEvent('${shift.id}','cash_out')">Cash Out</button><hr><div class="form-group"><label>Counted closing cash</label><input id="shift-closing" type="number" min="0" step="0.01" oninput="updateShiftVariance(${Number(shift.expected_cash)})" /></div><div id="shift-variance" class="shift-variance">Enter counted cash to see variance.</div><div class="form-group"><label>Notes</label><input id="shift-notes" maxlength="200" /></div><button class="btn btn-warning" onclick="closeCashierShift('${shift.id}')">Close Shift</button>` : `<p style="color:var(--c-text-muted)">No open shift.</p><div class="form-group"><label>Opening cash</label><input id="shift-opening" type="number" min="0" step="0.01" value="0" /></div><button class="btn btn-primary" onclick="openCashierShift()">Open Shift</button>`}</div>`;
+}
+
+export function updateShiftVariance(expected: number) {
+  const counted = Number(val('shift-closing'));
+  const target = document.getElementById('shift-variance');
+  if (!target || !Number.isFinite(counted) || counted < 0) return;
+  const variance = counted - expected;
+  target.textContent = `${variance >= 0 ? 'Over' : 'Short'} by ${fmtPeso(Math.abs(variance))}`;
+  target.className = `shift-variance ${variance === 0 ? 'balanced' : variance > 0 ? 'over' : 'short'}`;
 }
 
 export async function openCashierShift() {

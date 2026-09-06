@@ -326,6 +326,11 @@ tr.low-stock:hover { background: rgba(245, 158, 11, 0.2); }
 .receivables-trend-card .section-heading h3 { margin: 0 0 4px; }
 .receivables-trend-card .section-heading .card-sub { margin: 0; }
 .receivables-trend-wrap { height: 280px; position: relative; padding: var(--space-4); }
+.shift-expected-card { display:flex; flex-direction:column; gap:4px; padding:var(--space-4); margin:var(--space-4) 0; border:1px solid rgba(242,140,40,.45); border-radius:var(--radius-md); background:rgba(242,140,40,.08); }
+.shift-expected-card strong { color:var(--c-primary); font-size:var(--fs-2xl); font-family:var(--ff-mono); }
+.shift-expected-card small { color:var(--c-text-muted); }
+.shift-variance { margin:-8px 0 var(--space-4); color:var(--c-text-muted); font-size:var(--fs-sm); }
+.shift-variance.balanced { color:var(--c-success); } .shift-variance.over { color:var(--c-warning); } .shift-variance.short { color:var(--c-danger); }
 .receivable-edit-btn { margin-left: .45rem; padding: 2px 7px; min-height: 24px; color: var(--c-primary); border-color: rgba(242,140,40,.35); }
 .money { font-family: var(--ff-mono); white-space: nowrap; }
 .positive { color: var(--c-success); }

@@ -8,8 +8,15 @@ const router = Router();
 
 router.get('/current', async (req: Request, res: Response) => {
   const db = getDb();
-  const shift = await db.prepare("SELECT * FROM cashier_shifts WHERE user_id = ? AND status = 'open' ORDER BY opened_at DESC LIMIT 1").get(req.user!.id);
-  res.json(shift || null);
+  const shift = await db.prepare("SELECT * FROM cashier_shifts WHERE user_id = ? AND status = 'open' ORDER BY opened_at DESC LIMIT 1").get(req.user!.id) as any;
+  if (!shift) { res.json(null); return; }
+  const [cash, refunds, events] = await Promise.all([
+    db.prepare("SELECT COALESCE(SUM(p.amount),0) total FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE p.shift_id=? AND p.method='cash' AND i.status <> 'voided'").get(shift.id),
+    db.prepare("SELECT COALESCE(SUM(r.amount),0) total FROM refunds r JOIN invoices i ON i.id=r.invoice_id WHERE r.method='cash' AND r.shift_id=? AND i.status <> 'voided'").get(shift.id),
+    db.prepare("SELECT COALESCE(SUM(CASE WHEN type='cash_in' THEN amount ELSE -amount END),0) total FROM cash_drawer_events WHERE shift_id=?").get(shift.id),
+  ]);
+  const expected = Number(shift.opening_cash) + Number((cash as any).total || 0) - Number((refunds as any).total || 0) + Number((events as any).total || 0);
+  res.json({ ...shift, expected_cash: expected, cash_sales: Number((cash as any).total || 0), cash_refunds: Number((refunds as any).total || 0), drawer_events: Number((events as any).total || 0) });
 });
 
 router.post('/open', async (req: Request, res: Response) => {

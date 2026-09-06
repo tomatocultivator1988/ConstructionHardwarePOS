@@ -100,6 +100,7 @@ Object.assign(window, {
   reloadFinancialSummary: reports.reloadFinancialSummary,
   switchSettingsTab: settings.switchSettingsTab,
   saveSettings: settings.saveSettings,
+  updateShiftVariance: settings.updateShiftVariance,
   openCashierShift: settings.openCashierShift,
   closeCashierShift: settings.closeCashierShift,
   recordCashEvent: settings.recordCashEvent,
