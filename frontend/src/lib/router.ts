@@ -63,6 +63,7 @@ export async function loadView(view: string) {
   el.innerHTML = `<div class="loading-skeleton">${'<div class="sk-item"></div>'.repeat(6)}</div>`;
   try {
     el.innerHTML = await VIEWS[view]();
+    if (view === 'receivables') (window as any).drawReceivablesTrend?.();
   } catch (err: any) {
     el.innerHTML = '<div class="loading-skeleton"></div>';
     showToast(err.message || String(err));

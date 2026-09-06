@@ -35,6 +35,7 @@ Object.assign(window, {
   clearProductMixFilter: productMix.clearProductMixFilter,
   filterReceivables: receivables.filterReceivables,
   changeReceivablePage: receivables.changeReceivablePage,
+  drawReceivablesTrend: receivables.drawReceivablesTrend,
   showReceivableNameModal: receivables.showReceivableNameModal,
   saveReceivableName: receivables.saveReceivableName,
   toggleMobileDetails: materials.toggleMobileDetails,

@@ -54,6 +54,31 @@ router.get('/receivables', async (req: Request, res: Response) => {
   res.json({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize), summary: { credit_sales: Number(summary.credit_sales || 0), outstanding: Number(summary.outstanding || 0), open_accounts: Number(summary.open_accounts || 0), paid_sales: Number(summary.paid_sales || 0) } });
 });
 
+router.get('/receivables-trend', async (_req: Request, res: Response) => {
+  const db = getDb();
+  const rows = await db.prepare(`
+    WITH RECURSIVE months(month_start, month_end, step) AS (
+      SELECT date('now', '+8 hours', 'start of month', '-2 months'), date('now', '+8 hours', 'start of month', '-1 day'), 0
+      UNION ALL
+      SELECT date(month_start, '+1 month'), date(date(month_start, '+2 months'), '-1 day'), step + 1
+      FROM months WHERE step < 2
+    )
+    SELECT strftime('%Y-%m', month_start) AS month,
+      COALESCE((SELECT SUM(i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0))
+        FROM invoices i WHERE i.status <> 'voided' AND (i.credit_account_name IS NOT NULL OR EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit') ) AND date(i.issued_date, '+8 hours') BETWEEN months.month_start AND months.month_end), 0) AS credit_sales,
+      COALESCE((SELECT SUM(i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0))
+        FROM invoices i WHERE i.status <> 'voided' AND NOT (i.credit_account_name IS NOT NULL OR EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit') ) AND date(i.issued_date, '+8 hours') BETWEEN months.month_start AND months.month_end), 0) AS immediate_sales,
+      COALESCE((SELECT SUM(p.amount)
+        FROM payments p JOIN invoices i ON i.id=p.invoice_id
+        WHERE p.method <> 'credit' AND i.status <> 'voided' AND date(p.payment_date, '+8 hours') BETWEEN months.month_start AND months.month_end), 0)
+      - COALESCE((SELECT SUM(r.amount)
+        FROM refunds r JOIN invoices ri ON ri.id=r.invoice_id
+        WHERE ri.status <> 'voided' AND r.method <> 'credit' AND date(r.created_at, '+8 hours') BETWEEN months.month_start AND months.month_end), 0) AS collections
+    FROM months ORDER BY month_start
+  `).all();
+  res.json(rows.map((row: any) => ({ month: row.month, credit_sales: Number(row.credit_sales || 0), immediate_sales: Number(row.immediate_sales || 0), collections: Number(row.collections || 0) })));
+});
+
 router.get('/:id', async (req: Request, res: Response) => {
   const db = getDb();
   const invoice = await db.prepare(`
