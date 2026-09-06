@@ -64,6 +64,9 @@ router.post('/receivables-trend', requireAdmin, async (_req: Request, res: Respo
     { number: 'TEST-TREND-SEP-CREDIT', date: '2026-09-02T09:00:00', total: 600, credit: 'TEST TREND - September Credit', payment: null },
     { number: 'TEST-TREND-SEP-CASH', date: '2026-09-03T14:00:00', total: 1500, credit: null, payment: 'cash' },
   ];
+  if (String((_req.query as any).large || '') === 'true') {
+    records.push({ number: 'TEST-TREND-SEP-100K-CASH', date: '2026-09-04T15:00:00', total: 100000, credit: null, payment: 'cash' });
+  }
   const existing = await db.prepare('SELECT invoice_number FROM invoices WHERE invoice_number LIKE ?').all('TEST-TREND-%') as any[];
   const existingNumbers = new Set(existing.map(row => row.invoice_number));
   const insertInvoice = db.prepare('INSERT INTO invoices (id, invoice_number, subtotal, tax_rate, tax_amount, total, status, issued_date, paid_date, credit_account_name, user_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
