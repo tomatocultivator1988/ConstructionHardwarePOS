@@ -123,7 +123,7 @@ router.post('/', async (req: Request, res: Response) => {
   if (credit_account_name !== undefined && credit_account_name !== null && (typeof credit_account_name !== 'string' || creditName.length > 120)) {
     res.status(400).json({ error: 'Credit account name must be 120 characters or fewer' }); return;
   }
-  if (buyer_address.length > 250) { res.status(400).json({ error: 'Buyer address must be 250 characters or fewer' }); return; }
+  if (buyerAddress.length > 250) { res.status(400).json({ error: 'Buyer address must be 250 characters or fewer' }); return; }
   if (invoiceNotes.length > 250) { res.status(400).json({ error: 'Invoice notes must be 250 characters or fewer' }); return; }
 
   const usedMaterialIds = new Set<string>();
