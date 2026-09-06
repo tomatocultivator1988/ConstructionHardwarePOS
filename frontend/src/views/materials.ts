@@ -2,6 +2,7 @@ import { apiGet, apiPost, apiPut, apiDel } from '../lib/api';
 import { esc, val, setErr, clearErr, disableBtn, fmtDate, fmtPeso } from '../lib/helpers';
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
 import { loadView } from '../lib/router';
+import { startBarcodeCameraScan } from './invoices';
 import type { Material, StockMovement, Supplier } from '../lib/types';
 
 let UNIT_OPTIONS = ['Each', 'Kilogram', 'Meter', 'Roll', 'Gallon', 'Pieces', 'Liter', 'Box', 'Set', 'Bag', 'Pair', 'Sack', 'Bottle', 'Pack'];
@@ -150,7 +151,11 @@ export function showMaterialModal(data?: Material) {
   `, 'material-modal');
   const modal = document.getElementById('material-modal');
   const actions = modal?.querySelector('.modal-actions');
-  if (modal && actions && !document.getElementById('mf-barcode')) actions.insertAdjacentHTML('beforebegin', '<div class="form-group"><label>Barcode / SKU <span>(optional)</span></label><input id="mf-barcode" maxlength="100" value="' + esc(data?.barcode || '') + '" placeholder="Scan or type product barcode" /><div class="helper">Use a USB or Bluetooth scanner, or enter a barcode manually.</div></div>');
+  if (modal && actions && !document.getElementById('mf-barcode')) actions.insertAdjacentHTML('beforebegin', '<div class="form-group"><label>Barcode / SKU <span>(optional)</span></label><div class="barcode-entry"><input id="mf-barcode" maxlength="100" value="' + esc(data?.barcode || '') + '" placeholder="Scan or type product barcode" /><button type="button" class="btn btn-sm" onclick="startMaterialBarcodeCamera()">Scan</button></div><div class="helper">Use a USB/Bluetooth scanner, phone camera, or type it manually.</div></div>');
+}
+
+export async function startMaterialBarcodeCamera() {
+  await startBarcodeCameraScan((code) => { const input = document.getElementById('mf-barcode') as HTMLInputElement | null; if (input) { input.value = code; input.focus(); showToast('Barcode captured. Save the product to keep it.'); } });
 }
 
 export async function createMaterial() {

@@ -31,7 +31,9 @@ export function enhancePOS() {
   });
 }
 
-export async function startPOSCameraScan() {
+export async function startPOSCameraScan() { return startBarcodeCameraScan(scanPOSCode); }
+
+export async function startBarcodeCameraScan(onDetected: (code: string) => void) {
   const BarcodeDetectorApi = (window as any).BarcodeDetector;
   if (!BarcodeDetectorApi) {
     showToast('Camera barcode scanning is not supported in this browser. Use Chrome or Edge on Android, or use a physical scanner.');
@@ -39,7 +41,12 @@ export async function startPOSCameraScan() {
   }
   if (!navigator.mediaDevices?.getUserMedia) { showToast('Camera access is not available in this browser'); return; }
   stopPOSCameraScan();
-  showModal('<h3>Scan Product Barcode</h3><p class="modal-help">Point your camera at a product barcode. The product must already have the barcode saved.</p><div class="pos-camera-wrap"><video id="pos-camera-video" autoplay muted playsinline></video><div class="pos-camera-guide"></div></div><p id="pos-camera-status" class="modal-help">Starting camera…</p><div class="modal-actions"><button class="btn" onclick="stopPOSCameraScan();closeModal()">Cancel</button></div>', 'pos-camera-modal');
+  document.getElementById('pos-camera-modal')?.remove();
+  const modal = document.createElement('div'); modal.className = 'modal'; modal.id = 'pos-camera-modal';
+  modal.innerHTML = '<div class="modal-content"><h3>Scan Product Barcode</h3><p class="modal-help">Point your camera at a product barcode. The product must already have the barcode saved.</p><div class="pos-camera-wrap"><video id="pos-camera-video" autoplay muted playsinline></video><div class="pos-camera-guide"></div></div><p id="pos-camera-status" class="modal-help">Starting camera…</p><div class="modal-actions"><button class="btn" id="pos-camera-cancel">Cancel</button></div></div>';
+  modal.addEventListener('click', event => { if (event.target === modal) { stopPOSCameraScan(); modal.remove(); } });
+  document.body.appendChild(modal);
+  document.getElementById('pos-camera-cancel')?.addEventListener('click', () => { stopPOSCameraScan(); modal.remove(); });
   try {
     posCameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
     const video = document.getElementById('pos-camera-video') as HTMLVideoElement | null;
@@ -52,14 +59,14 @@ export async function startPOSCameraScan() {
       try {
         const codes = await detector.detect(video);
         const code = codes?.[0]?.rawValue?.trim();
-        if (code) { stopPOSCameraScan(); closeModal(); const input = document.getElementById('pos-search') as HTMLInputElement | null; if (input) input.value = code; scanPOSCode(code); return; }
+        if (code) { stopPOSCameraScan(); modal.remove(); onDetected(code); return; }
       } catch { /* Keep scanning while the camera has no readable frame. */ }
       posCameraFrame = requestAnimationFrame(scan);
     };
     const status = document.getElementById('pos-camera-status'); if (status) status.textContent = 'Looking for a barcode…';
     posCameraFrame = requestAnimationFrame(scan);
   } catch (e: any) {
-    stopPOSCameraScan(); closeModal();
+    stopPOSCameraScan(); modal.remove();
     showToast(e?.name === 'NotAllowedError' ? 'Camera permission was denied' : 'Unable to open the camera');
   }
 }
