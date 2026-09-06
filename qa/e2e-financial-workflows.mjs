@@ -58,16 +58,16 @@ await req('/invoices/receivables?status=paid&page=1&pageSize=100', { token:staff
 
 // Void restores stock and is idempotently protected; reports exclude voided transactions.
 const voidSale = await req('/invoices', { token:staffToken, method:'POST', body:{ items:[{ material_id:material.id, description:material.name, quantity:2, unit_price:20 }], payment:{ amount:40, method:'bank' } }, status:201 });
-assert.equal(Number((await req(`/materials/${material.id}`, { token:staffToken })).stock), 28);
+assert.equal(Number((await req(`/materials/${material.id}`, { token:staffToken })).stock), 26);
 await req(`/invoices/${voidSale.id}/void`, { token:admin, method:'PUT', body:{ reason:`${marker} void test` }, status:200 });
-assert.equal(Number((await req(`/materials/${material.id}`, { token:staffToken })).stock), 30);
+assert.equal(Number((await req(`/materials/${material.id}`, { token:staffToken })).stock), 28);
 await req(`/invoices/${voidSale.id}/void`, { token:admin, method:'PUT', body:{ reason:'again' }, status:409 });
 
 // Pending invoice deletion restores inventory and removes the invoice.
 const pending = await req('/invoices', { token:admin, method:'POST', body:{ items:[{ material_id:material.id, description:material.name, quantity:1, unit_price:20 }] }, status:201 });
-assert.equal(Number((await req(`/materials/${material.id}`, { token:admin })).stock), 29);
+assert.equal(Number((await req(`/materials/${material.id}`, { token:admin })).stock), 27);
 await req(`/invoices/${pending.id}`, { token:admin, method:'DELETE', status:204 });
-assert.equal(Number((await req(`/materials/${material.id}`, { token:admin })).stock), 30);
+assert.equal(Number((await req(`/materials/${material.id}`, { token:admin })).stock), 28);
 
 // Expenses, reports, CSV export, payment receipts, and PO receiving/cancellation/deletion.
 const expense = await req('/expenses', { token:admin, method:'POST', body:{ category:`${marker} Utilities`, amount:25, expense_date:'2026-09-07', payment_method:'cash', description:'QA expense' }, status:201 });
@@ -81,7 +81,7 @@ const exported = await req('/reports/export?from=2020-01-01&to=2030-12-31', { to
 const receipts = await req('/payments/receipts?page=1&pageSize=100', { token:admin }); assert.ok(Array.isArray(receipts.data));
 const po = await req('/purchase-orders', { token:admin, method:'POST', body:{ supplier_id:supplier.id, order_date:'2026-09-07', items:[{ material_id:material.id, description:material.name, quantity:5, unit_cost:11 }] }, status:201 });
 await req(`/purchase-orders/${po.id}/receive`, { token:admin, method:'PUT', status:200 });
-assert.equal(Number((await req(`/materials/${material.id}`, { token:admin })).stock), 35);
+assert.equal(Number((await req(`/materials/${material.id}`, { token:admin })).stock), 33);
 await req(`/purchase-orders/${po.id}/receive`, { token:admin, method:'PUT', status:400 });
 const cancelPo = await req('/purchase-orders', { token:admin, method:'POST', body:{ supplier_id:supplier.id, order_date:'2026-09-07', items:[{ description:`${marker} nonstock`, quantity:1, unit_cost:5 }] }, status:201 });
 await req(`/purchase-orders/${cancelPo.id}/cancel`, { token:admin, method:'PUT', status:200 });
