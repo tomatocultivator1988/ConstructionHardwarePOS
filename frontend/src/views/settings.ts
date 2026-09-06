@@ -14,7 +14,7 @@ export async function renderSettings(): Promise<string> {
     </div>
     <div style="display:flex;gap:2px;background:var(--c-bg);padding:3px;border-radius:var(--radius-md);margin-bottom:var(--space-5);width:fit-content">
       <button class="nav-btn ${settingsSubTab === 'general' ? 'active' : ''}" onclick="switchSettingsTab('general')">General</button>
-      ${isAdm ? `<button class="nav-btn ${settingsSubTab === 'users' ? 'active' : ''}" onclick="switchSettingsTab('users')">Users</button>` : ''}
+      ${isAdm ? `<button class="nav-btn ${settingsSubTab === 'users' ? 'active' : ''}" onclick="switchSettingsTab('users')">Staff</button>` : ''}
       ${isAdm ? `<button class="nav-btn ${settingsSubTab === 'audit' ? 'active' : ''}" onclick="switchSettingsTab('audit')">Audit Log</button>` : ''}
       <button class="nav-btn ${settingsSubTab === 'shift' ? 'active' : ''}" onclick="switchSettingsTab('shift')">Cashier Shift</button>
     </div>
@@ -119,13 +119,13 @@ export async function saveSettings() {
   finally { disableBtn('s-save-btn', false); }
 }
 
-// ─── Users ───
+// ─── Staff accounts ───
 async function loadUsersTab() {
   const users = await apiGet<any[]>('/users');
   return `
     <div class="page-header" style="margin-bottom:var(--space-4)">
-      <h3>Users</h3>
-      <button class="btn btn-primary" onclick="showUserModal()">+ Add User</button>
+      <div><h3>Staff</h3><p class="card-sub">${users.length} staff account${users.length === 1 ? '' : 's'} available</p></div>
+      <button class="btn btn-primary" onclick="showUserModal()">+ Add Staff</button>
     </div>
     <div class="table-wrap">
       <table>
@@ -156,7 +156,7 @@ export async function showUserModal(id?: string) {
   }
   const isEdit = !!data;
   showModal(`
-    <h3>${isEdit ? 'Edit' : 'Add'} User</h3>
+    <h3>${isEdit ? 'Edit' : 'Add'} Staff</h3>
     <div class="form-group"><label>Username *</label><input id="uf-user" maxlength="50" value="${esc(data?.username || '')}" ${isEdit ? 'disabled' : ''} /><div class="field-error" id="uf-user-err"></div></div>
     <div class="form-row">
       <div class="form-group"><label>${isEdit ? 'New PIN (leave blank to keep)' : 'PIN *'}</label><input id="uf-pin" type="password" maxlength="6" placeholder="4-6 digits" /><div class="field-error" id="uf-pin-err"></div></div>
