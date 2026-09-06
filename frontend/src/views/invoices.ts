@@ -11,6 +11,41 @@ let posSearch = '';
 let posCategory = '';
 let posCart: Array<{ material: Material; quantity: number }> = [];
 
+export function enhancePOS() {
+  const search = document.getElementById('pos-search') as HTMLInputElement | null;
+  if (search) {
+    search.placeholder = 'Scan barcode or search product...';
+    search.onkeydown = (event) => { if (event.key === 'Enter') scanPOSBarcode(event); };
+  }
+  document.querySelector('.pos-walkin-label')?.remove();
+  document.querySelector('.pos-delivery-note')?.remove();
+  document.querySelectorAll('.pos-history th:nth-child(6), .pos-history td:nth-child(6)').forEach((cell) => cell.remove());
+  document.querySelector('.pos-history tbody td[colspan="7"]')?.setAttribute('colspan', '6');
+  const creditFields = document.getElementById('pos-credit-fields');
+  if (creditFields && !document.getElementById('pos-credit-address')) creditFields.insertAdjacentHTML('beforeend', '<label for="pos-credit-address">Address <span>(optional)</span></label><input id="pos-credit-address" maxlength="250" placeholder="Buyer address" /><label for="pos-credit-notes">Notes <span>(optional)</span></label><input id="pos-credit-notes" maxlength="250" placeholder="Sale notes" />');
+  document.querySelectorAll('.pos-cart-item').forEach((row, index) => {
+    const item = posCart[index]; const qty = row.querySelector('.pos-qty');
+    if (item && qty && !qty.querySelector('input')) qty.innerHTML = `<input class="pos-qty-input" type="number" min="0.01" max="${Number(item.material.stock)}" step="0.01" value="${item.quantity}" aria-label="Quantity" onchange="setPOSQty('${item.material.id}', this.value)" />`;
+  });
+}
+
+export function scanPOSBarcode(event: KeyboardEvent) {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  const input = event.currentTarget as HTMLInputElement;
+  const code = input.value.trim().toLowerCase();
+  const material = ((window as any).__invMaterials || []).find((m: Material) => String(m.barcode || '').trim().toLowerCase() === code);
+  if (material) { input.value = ''; addPOSItem(material.id); }
+  else if (code) showToast('No product found for that barcode');
+}
+
+export function setPOSQty(id: string, value: string) {
+  const item = posCart.find(entry => entry.material.id === id); const quantity = Number(value);
+  if (!item || !Number.isFinite(quantity) || quantity <= 0) { showToast('Quantity must be greater than zero'); return; }
+  if (quantity > Number(item.material.stock)) { showToast(`Only ${item.material.stock} ${item.material.unit} available`); return; }
+  item.quantity = quantity; loadView('invoices');
+}
+
 export async function renderInvoices(): Promise<string> {
   const [invoices, materials, settings] = await Promise.all([
     apiGet<Invoice[] | { data: Invoice[]; total: number }>(`/invoices?page=${invoicePage}&pageSize=${INVOICE_PAGE_SIZE}`),
@@ -38,9 +73,9 @@ export async function renderInvoices(): Promise<string> {
       <aside class="pos-categories"><div class="pos-panel-title">Categories</div><button class="pos-category ${!posCategory ? 'active' : ''}" onclick="setPOSCategory('')">All Categories</button>${categoryButtons}</aside>
       <section class="pos-products"><div class="pos-search"><input id="pos-search" type="search" value="${esc(posSearch)}" placeholder="Search material name, category, or unit..." oninput="filterPOSMaterials(this.value)" /><span>${filteredMaterials.length} item${filteredMaterials.length === 1 ? '' : 's'}</span></div><div class="pos-product-grid">${filteredMaterials.length ? filteredMaterials.map((m: Material) => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('') : '<div class="pos-empty">No materials match your search.</div>'}</div></section>
       <aside class="pos-cart-panel"><div class="pos-panel-title pos-cart-title"><span>Current Sale</span><button class="pos-cart-toggle" onclick="togglePOSCart()" aria-expanded="false">Cart · ${posCart.length} · ${fmtPeso(total)}</button></div><div class="pos-cart-items">${posCart.length ? posCart.map(item => `<div class="pos-cart-item"><div class="pos-cart-info"><strong>${esc(item.material.name)}</strong><span>${fmtPeso(item.material.price_per_unit)} · ${esc(item.material.unit)}</span></div><div class="pos-qty"><button onclick="changePOSQty('${item.material.id}',-1)">−</button><strong>${item.quantity}</strong><button onclick="changePOSQty('${item.material.id}',1)">+</button></div><strong class="pos-line-total">${fmtPeso(item.quantity * Number(item.material.price_per_unit))}</strong><button class="pos-remove" onclick="removePOSItem('${item.material.id}')" aria-label="Remove item">×</button></div>`).join('') : '<div class="pos-cart-empty">Select a material to start a sale.</div>'}</div>
-        <div class="pos-customer-box"><div class="pos-walkin-label">Sale type: <strong>Walk-in</strong></div><div class="pos-delivery-note">Delivery assignment can be added later from Sales History.</div><div id="pos-credit-fields" style="display:none"><label for="pos-credit-name">Charge To / Buyer Name *</label><input id="pos-credit-name" maxlength="120" placeholder="Name of person or business responsible for payment" /></div></div>
+        <div class="pos-customer-box"><div id="pos-credit-fields" style="display:none"><label for="pos-credit-name">Charge To / Buyer Name <span>* for credit</span></label><input id="pos-credit-name" maxlength="120" placeholder="Name of person or business responsible for payment" /></div></div>
         <div class="pos-summary"><div><span>Subtotal</span><strong>${fmtPeso(cartTotal)}</strong></div>${taxRate > 0 ? `<div><span>Tax</span><strong>${fmtPeso(tax)}</strong></div>` : ''}<div class="pos-grand-total"><span>Total</span><strong>${fmtPeso(total)}</strong></div></div>
-        <div class="pos-payment"><label for="pos-method">Payment Method</label><select id="pos-method" onchange="updatePOSPayment()"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option><option value="check">Check</option><option value="credit">Credit / On Account</option></select><div id="pos-credit-warning" class="pos-credit-warning" role="status">This will be recorded as unassigned credit. Use the invoice number to collect payment later.</div><div id="pos-cash-fields"><label for="pos-received">Amount Received</label><input id="pos-received" type="number" min="0" step="0.01" value="${total.toFixed(2)}" oninput="updatePOSPayment()" /><div class="pos-change"><span>Change</span><strong id="pos-change-value">${fmtPeso(0)}</strong></div></div></div>
+        <div class="pos-payment"><label for="pos-method">Payment Method</label><select id="pos-method" onchange="updatePOSPayment()"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option><option value="check">Check</option><option value="credit">Credit / On Account</option></select><div id="pos-credit-warning" class="pos-credit-warning" role="status">Credit sales require a Charge To / Buyer Name.</div><div id="pos-cash-fields"><label for="pos-received">Amount Received</label><input id="pos-received" type="number" min="0" step="0.01" value="${total.toFixed(2)}" oninput="updatePOSPayment()" /><div class="pos-change"><span>Change</span><strong id="pos-change-value">${fmtPeso(0)}</strong></div></div></div>
         <button class="btn btn-primary pos-complete" id="pos-complete-btn" onclick="completePOSSale()" ${posCart.length ? '' : 'disabled'}>Complete Sale</button><button class="btn pos-clear" onclick="clearPOSCart()" ${posCart.length ? '' : 'disabled'}>Clear Cart</button>
       </aside>
     </div>
@@ -76,7 +111,7 @@ function renderPOSProductGrid() {
   const grid = document.querySelector('.pos-product-grid');
   const count = document.querySelector('.pos-search span');
   const materials: Material[] = (window as any).__invMaterials || [];
-  const filtered = materials.filter(m => (!posCategory || m.category === posCategory) && (!posSearch || `${m.name} ${m.category} ${m.unit}`.toLowerCase().includes(posSearch.toLowerCase())));
+  const filtered = materials.filter(m => (!posCategory || m.category === posCategory) && (!posSearch || `${m.name} ${m.category} ${m.unit} ${m.barcode || ''}`.toLowerCase().includes(posSearch.toLowerCase())));
   if (count) count.textContent = `${filtered.length} item${filtered.length === 1 ? '' : 's'}`;
   if (grid) grid.innerHTML = filtered.length ? filtered.map(m => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('') : '<div class="pos-empty">No materials match your search.</div>';
 }
@@ -100,13 +135,15 @@ export async function completePOSSale() {
   const received = Number((document.getElementById('pos-received') as HTMLInputElement)?.value || 0);
   if (method === 'cash' && received < total) { showToast(`Amount received is short by ${fmtPeso(total - received)}`); return; }
   const credit_account_name = (document.getElementById('pos-credit-name') as HTMLInputElement)?.value.trim() || '';
+  const buyer_address = (document.getElementById('pos-credit-address') as HTMLInputElement)?.value.trim() || '';
+  const notes = (document.getElementById('pos-credit-notes') as HTMLInputElement)?.value.trim() || '';
   if (method === 'credit' && !credit_account_name) { showToast('Enter the buyer or charge-to name for a credit sale'); (document.getElementById('pos-credit-name') as HTMLInputElement)?.focus(); return; }
   const items = posCart.map(item => ({ material_id: item.material.id, description: item.material.name, quantity: item.quantity, unit_price: Number(item.material.price_per_unit) }));
   const customer_id = null;
   const btn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null; if (btn) btn.disabled = true;
   try {
     // POS checkout is committed atomically by the backend. Credit creates an unpaid invoice.
-    const checkout = await apiPost<any>('/invoices', { customer_id, due_date: null, credit_account_name: credit_account_name || null, tax_rate: Number((window as any).__invDefaultTax || 0), items, payment: { amount: method === 'credit' ? 0 : total, method, notes: '' } });
+    const checkout = await apiPost<any>('/invoices', { customer_id, due_date: null, credit_account_name: credit_account_name || null, buyer_address: buyer_address || null, notes: notes || null, tax_rate: Number((window as any).__invDefaultTax || 0), items, payment: { amount: method === 'credit' ? 0 : total, method, notes: '' } });
     const change = method === 'cash' ? received - total : 0;
     posCart = [];
     await showReceiptPreview(checkout.id);
@@ -126,7 +163,7 @@ export function showInvoiceModal() {
   showModal(`
     <h3>New Invoice</h3>
 
-    <div class="info-callout">This sale will be recorded as Walk-in / Unassigned. Use the invoice number for payment follow-up.</div>
+    <div class="info-callout">Create an invoice without taking payment. Payment can be recorded later from Receivables.</div>
     <h4>Line Items</h4>
     <div id="line-items">
       <div class="line-item">
@@ -248,7 +285,6 @@ export async function showInvoiceDetail(id: string) {
     <h3>Invoice ${esc(inv.invoice_number)}</h3>
     <div style="display:flex;gap:var(--space-4);align-items:center;margin-bottom:var(--space-4);flex-wrap:wrap">
       <span style="color:var(--c-text-secondary)">${esc(inv.customer_name)}</span>
-      <span style="font-size:var(--fs-xs);color:var(--c-text-muted)">Delivery: ${esc((inv as any).delivery_person || 'Not assigned')}</span>
       <span class="status-badge ${inv.status}">${inv.status}</span>
       <span style="font-size:var(--fs-xs);color:var(--c-text-muted)">Issued: ${fmtDate(inv.issued_date)}</span>
       ${inv.paid_date ? `<span style="font-size:var(--fs-xs);color:var(--c-success)">Paid: ${fmtDate(inv.paid_date)}</span>` : ''}

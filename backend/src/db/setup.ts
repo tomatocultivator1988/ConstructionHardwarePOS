@@ -77,6 +77,8 @@ async function initTables() {
       due_date TEXT,
       delivery_person TEXT,
       credit_account_name TEXT,
+      buyer_address TEXT,
+      notes TEXT,
       paid_date TEXT,
       user_id TEXT,
       created_at TEXT DEFAULT (datetime('now')),
@@ -317,6 +319,7 @@ async function migrateSchema() {
   const invoiceInfo = (await db.prepare("PRAGMA table_info('invoices')").all()) as any[];
   const materialInfo = (await db.prepare("PRAGMA table_info('materials')").all()) as any[];
   if (!materialInfo.some((r: any) => r.name === 'supplier_id')) await db.exec("ALTER TABLE materials ADD COLUMN supplier_id TEXT");
+  if (!materialInfo.some((r: any) => r.name === 'barcode')) await db.exec("ALTER TABLE materials ADD COLUMN barcode TEXT");
   const invoiceCols = invoiceInfo.map((r: any) => r.name);
   if (!invoiceCols.includes('delivery_person')) await db.exec("ALTER TABLE invoices ADD COLUMN delivery_person TEXT");
 
@@ -336,6 +339,8 @@ async function migrateSchema() {
   if (!invoiceCols.includes('voided_by')) await db.exec("ALTER TABLE invoices ADD COLUMN voided_by TEXT");
   if (!invoiceCols.includes('void_reason')) await db.exec("ALTER TABLE invoices ADD COLUMN void_reason TEXT");
   if (!invoiceCols.includes('credit_account_name')) await db.exec("ALTER TABLE invoices ADD COLUMN credit_account_name TEXT");
+  if (!invoiceCols.includes('buyer_address')) await db.exec("ALTER TABLE invoices ADD COLUMN buyer_address TEXT");
+  if (!invoiceCols.includes('notes')) await db.exec("ALTER TABLE invoices ADD COLUMN notes TEXT");
   const paymentInfo = (await db.prepare("PRAGMA table_info('payments')").all()) as any[];
   if (!paymentInfo.some((r: any) => r.name === 'shift_id')) await db.exec("ALTER TABLE payments ADD COLUMN shift_id TEXT");
   const expenseInfo = (await db.prepare("PRAGMA table_info('expenses')").all()) as any[];
@@ -402,6 +407,7 @@ async function migrateSchema() {
     await db.exec("CREATE INDEX idx_invoices_status ON invoices(status)");
   }
   await db.exec('CREATE INDEX IF NOT EXISTS idx_customers_tin ON customers(tin)');
+  await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_materials_barcode ON materials(barcode) WHERE barcode IS NOT NULL AND barcode <> \'\'');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_shifts_status ON cashier_shifts(status)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_cash_events_shift ON cash_drawer_events(shift_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_payments_shift ON payments(shift_id)');

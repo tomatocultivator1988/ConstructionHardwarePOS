@@ -67,6 +67,7 @@ export async function loadView(view: string) {
     const html = await VIEWS[view]();
     if (sequence !== loadSequence || currentView !== view) return;
     el.innerHTML = html;
+    if (view === 'invoices') (window as any).enhancePOS?.();
     if (view === 'receivables') (window as any).drawReceivablesTrend?.();
   } catch (err: any) {
     if (sequence !== loadSequence || currentView !== view) return;

@@ -148,6 +148,9 @@ export function showMaterialModal(data?: Material) {
       <button class="btn btn-primary" id="mf-save-btn" onclick="${isEdit ? `updateMaterial('${data!.id}')` : 'createMaterial()'}">Save</button>
     </div>
   `, 'material-modal');
+  const modal = document.getElementById('material-modal');
+  const actions = modal?.querySelector('.modal-actions');
+  if (modal && actions && !document.getElementById('mf-barcode')) actions.insertAdjacentHTML('beforebegin', '<div class="form-group"><label>Barcode / SKU <span>(optional)</span></label><input id="mf-barcode" maxlength="100" value="' + esc(data?.barcode || '') + '" placeholder="Scan or type product barcode" /><div class="helper">Use a USB or Bluetooth scanner, or enter a barcode manually.</div></div>');
 }
 
 export async function createMaterial() {
@@ -157,7 +160,7 @@ export async function createMaterial() {
   const wpriceRaw = parseFloat(val('mf-wprice')); const wprice = isNaN(wpriceRaw) ? 0 : wpriceRaw;
   const stockRaw = val('mf-stock'); const reorderRaw = val('mf-reorder');
   const stock = parseInt(stockRaw) || 0; const reorder = parseInt(reorderRaw) || 0;
-  const category = val('mf-category'); const supplier_id = val('mf-supplier') || null;
+  const category = val('mf-category'); const supplier_id = val('mf-supplier') || null; const barcode = val('mf-barcode').trim();
   if (!name) { setErr('mf-name-err', 'Name is required'); return; }
   if (name.length < 2) { setErr('mf-name-err', 'Must be at least 2 characters'); return; }
   if (!unit) { setErr('mf-unit-err', 'Unit is required'); return; }
@@ -167,7 +170,7 @@ export async function createMaterial() {
   if (isNaN(price) || price <= 0) { setErr('mf-price-err', 'Must be > 0'); return; }
   disableBtn('mf-save-btn', true);
   try {
-    await apiPost('/materials', { name, unit, stock, cost_price: cost, price_per_unit: price, wholesale_price: wprice, reorder_point: reorder, category, supplier_id });
+    await apiPost('/materials', { name, unit, stock, cost_price: cost, price_per_unit: price, wholesale_price: wprice, reorder_point: reorder, category, supplier_id, barcode: barcode || null });
     closeModal(); loadView('materials');
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('mf-save-btn', false); }
@@ -180,7 +183,7 @@ export async function updateMaterial(id: string) {
   const wpriceRaw = parseFloat(val('mf-wprice')); const wprice = isNaN(wpriceRaw) ? 0 : wpriceRaw;
   const stockRaw = val('mf-stock'); const reorderRaw = val('mf-reorder');
   const stock = parseInt(stockRaw) || 0; const reorder = parseInt(reorderRaw) || 0;
-  const category = val('mf-category'); const supplier_id = val('mf-supplier') || null;
+  const category = val('mf-category'); const supplier_id = val('mf-supplier') || null; const barcode = val('mf-barcode').trim();
   if (!name) { setErr('mf-name-err', 'Name is required'); return; }
   if (name.length < 2) { setErr('mf-name-err', 'Must be at least 2 characters'); return; }
   if (!unit) { setErr('mf-unit-err', 'Unit is required'); return; }
@@ -190,7 +193,7 @@ export async function updateMaterial(id: string) {
   if (isNaN(price) || price <= 0) { setErr('mf-price-err', 'Must be > 0'); return; }
   disableBtn('mf-save-btn', true);
   try {
-    await apiPut(`/materials/${id}`, { name, unit, stock, cost_price: cost, price_per_unit: price, wholesale_price: wprice, reorder_point: reorder, category, supplier_id });
+    await apiPut(`/materials/${id}`, { name, unit, stock, cost_price: cost, price_per_unit: price, wholesale_price: wprice, reorder_point: reorder, category, supplier_id, barcode: barcode || null });
     closeModal(); loadView('materials');
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('mf-save-btn', false); }

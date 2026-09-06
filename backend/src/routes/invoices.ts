@@ -102,8 +102,10 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 router.post('/', async (req: Request, res: Response) => {
   const db = getDb();
-  const { customer_id, items, due_date, tax_rate, issued_date, delivery_person, credit_account_name, payment } = req.body;
+  const { customer_id, items, due_date, tax_rate, issued_date, delivery_person, credit_account_name, buyer_address, notes, payment } = req.body;
   const creditName = typeof credit_account_name === 'string' ? credit_account_name.trim() : '';
+  const buyerAddress = typeof buyer_address === 'string' ? buyer_address.trim() : '';
+  const invoiceNotes = typeof notes === 'string' ? notes.trim() : '';
 
   if (!items || !items.length) {
     res.status(400).json({ error: 'At least one line item is required' });
@@ -116,6 +118,8 @@ router.post('/', async (req: Request, res: Response) => {
   if (credit_account_name !== undefined && credit_account_name !== null && (typeof credit_account_name !== 'string' || creditName.length > 120)) {
     res.status(400).json({ error: 'Credit account name must be 120 characters or fewer' }); return;
   }
+  if (buyer_address.length > 250) { res.status(400).json({ error: 'Buyer address must be 250 characters or fewer' }); return; }
+  if (invoiceNotes.length > 250) { res.status(400).json({ error: 'Invoice notes must be 250 characters or fewer' }); return; }
 
   const usedMaterialIds = new Set<string>();
   for (let i = 0; i < items.length; i++) {
@@ -194,8 +198,8 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     await     db.prepare(
-      'INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, delivery_person, credit_account_name, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(invoiceId, customer_id || null, invoice_number, 0, tax_rate ?? 0, 0, due_date || null, delivery_person?.trim() || null, creditName || null, issued_date || null, (req as any).user?.id || null);
+      'INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, delivery_person, credit_account_name, buyer_address, notes, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(invoiceId, customer_id || null, invoice_number, 0, tax_rate ?? 0, 0, due_date || null, delivery_person?.trim() || null, creditName || null, buyerAddress || null, invoiceNotes || null, issued_date || null, (req as any).user?.id || null);
 
     let subtotal = 0;
     for (const item of items) {
