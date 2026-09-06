@@ -4,6 +4,8 @@ import { showToast } from '../lib/helpers';
 
 let currentSubTab = 'daily';
 let currentReportPeriod = 'month';
+let monthlyReportData: any = null;
+let pnlChart: any = null;
 
 function reportPeriodRange(period = currentReportPeriod): { from: string; to: string } {
   const today = businessDate();
@@ -48,7 +50,7 @@ export async function switchReportTab(tab: string) {
   el.innerHTML = '<div class="loading-skeleton">${"<div class=\\"sk-item\\"></div>".repeat(4)}</div>';
   try {
     if (tab === 'daily') el.innerHTML = await loadDailyReport();
-    else if (tab === 'monthly') el.innerHTML = await loadMonthlyReport();
+    else if (tab === 'monthly') { el.innerHTML = await loadMonthlyReport(); drawPnlChart(); }
     else if (tab === 'tax') el.innerHTML = await loadTaxReport();
     else if (tab === 'range') el.innerHTML = await loadRangeForm();
     else if (tab === 'books') el.innerHTML = await loadBooksReport();
@@ -149,6 +151,7 @@ async function loadDailyReport(date?: string) {
 async function loadMonthlyReport(month?: string) {
   const m = month || reportPeriodRange().to.slice(0, 7) || businessMonth();
   const data = await apiGet<any>(`/reports/monthly?month=${m}`);
+  monthlyReportData = data;
   const netColor = data.net_profit >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
   const momColor = data.mom_change >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
   return `
@@ -163,6 +166,7 @@ async function loadMonthlyReport(month?: string) {
       <div class="dashboard-card card-danger"><div class="card-label">Expenses</div><div class="card-value">${fmtPeso(data.expenses)}</div></div>
       <div class="dashboard-card card-info"><div class="card-label">Net Profit</div><div class="card-value" style="color:${netColor}">${fmtPeso(data.net_profit)}</div><div class="card-sub">${data.mom_change >= 0 ? '↑' : '↓'} ${Math.abs(data.mom_change).toFixed(1)}% vs last month</div></div>
     </div>
+    <div class="chart-card pnl-chart-card"><div class="chart-title">P&amp;L Breakdown</div><p class="card-sub">Compare the selected month’s revenue, costs, expenses, and profit.</p><div class="pnl-chart-wrap"><canvas id="pnl-report-chart"></canvas></div></div>
     ${data.expense_by_category?.length ? `
     <div class="chart-card" style="margin-bottom:var(--space-4)">
       <div class="chart-title">Expenses by Category</div>
@@ -300,6 +304,20 @@ export async function reloadMonthly() {
   const el = document.getElementById('report-content');
   if (!el) return;
   el.innerHTML = await loadMonthlyReport(m);
+  drawPnlChart();
+}
+
+function drawPnlChart() {
+  const canvas = document.getElementById('pnl-report-chart') as HTMLCanvasElement | null;
+  const ChartCtor = (window as any).Chart;
+  if (!canvas || !ChartCtor || !monthlyReportData) return;
+  if (pnlChart) { try { pnlChart.destroy(); } catch {} }
+  const d = monthlyReportData;
+  pnlChart = new ChartCtor(canvas, {
+    type: 'bar',
+    data: { labels: ['Net Sales', 'COGS', 'Gross Profit', 'Expenses', 'Net Profit'], datasets: [{ label: 'Amount', data: [d.revenue, d.cogs, d.gross_profit, d.expenses, d.net_profit], backgroundColor: ['#f28c28', '#7690a6', '#22c55e', '#ef654a', d.net_profit >= 0 ? '#22c55e' : '#ef4444'], borderRadius: 6, borderSkipped: false }] },
+    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { color: '#a9bfd2', callback: (value: any) => '₱' + Number(value).toLocaleString() }, grid: { color: 'rgba(169,191,210,.12)' } }, x: { ticks: { color: '#a9bfd2' }, grid: { display: false } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (context: any) => ' ₱' + Number(context.raw || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) } } } }
+  });
 }
 
 export async function reloadTax() {
