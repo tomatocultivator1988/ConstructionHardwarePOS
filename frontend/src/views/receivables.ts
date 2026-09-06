@@ -40,9 +40,9 @@ export function drawReceivablesTrend() {
   const chart = (window as any).__receivablesTrendChart;
   if (chart) { try { chart.destroy(); } catch {} }
   const labels = receivablesTrend.map(row => { const [year, month] = row.month.split('-').map(Number); return new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }); });
-  (window as any).__receivablesTrendChart = new ChartCtor(canvas, { type: 'line', data: { labels, datasets: [
-    { label: 'Current Balance', data: receivablesTrend.map(row => row.current_balance), borderColor: '#f28c28', backgroundColor: 'rgba(242,140,40,.16)', fill: true, tension: .3, pointRadius: 5, pointBackgroundColor: '#f28c28' },
-    { label: 'Credit Sales', data: receivablesTrend.map(row => row.credit_sales), borderColor: '#4da3d8', backgroundColor: 'transparent', tension: .3, pointRadius: 4 },
-    { label: 'Collections', data: receivablesTrend.map(row => row.collections), borderColor: '#22c55e', backgroundColor: 'transparent', tension: .3, pointRadius: 4 },
+  (window as any).__receivablesTrendChart = new ChartCtor(canvas, { type: 'bar', data: { labels, datasets: [
+    { label: 'Current Balance', data: receivablesTrend.map(row => row.current_balance), backgroundColor: '#f28c28', borderRadius: 5 },
+    { label: 'Credit Sales', data: receivablesTrend.map(row => row.credit_sales), backgroundColor: '#4da3d8', borderRadius: 5 },
+    { label: 'Collections', data: receivablesTrend.map(row => row.collections), backgroundColor: '#22c55e', borderRadius: 5 },
   ] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { color: '#a9bfd2', callback: (value: any) => '₱' + Number(value).toLocaleString() }, grid: { color: 'rgba(169,191,210,.12)' } }, x: { ticks: { color: '#a9bfd2' }, grid: { display: false } } }, plugins: { legend: { position: 'bottom', labels: { color: '#a9bfd2', usePointStyle: true } }, tooltip: { callbacks: { label: (context: any) => ` ${context.dataset.label}: ₱${Number(context.raw || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` } } } } });
 }
