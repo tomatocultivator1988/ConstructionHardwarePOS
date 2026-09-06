@@ -49,8 +49,9 @@ router.get('/receivables', async (req: Request, res: Response) => {
     ${balance} AS balance
     FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}`;
   const total = Number((await db.prepare(`SELECT COUNT(*) AS total FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}`).get(...params) as any).total || 0);
-  const data = await db.prepare(`${select} ORDER BY CASE WHEN balance > 0 THEN 0 ELSE 1 END, i.issued_date ASC LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize);
-  res.json({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
+  const summary = await db.prepare(`SELECT COUNT(*) AS credit_sales, SUM(CASE WHEN balance > 0.005 THEN balance ELSE 0 END) AS outstanding, SUM(CASE WHEN balance > 0.005 THEN 1 ELSE 0 END) AS open_accounts, SUM(CASE WHEN balance <= 0.005 THEN 1 ELSE 0 END) AS paid_sales FROM (${select}) receivables`).get(...params) as any;
+  const data = await db.prepare(`${select} ORDER BY CASE WHEN balance > 0.005 THEN 0 ELSE 1 END, balance DESC, i.issued_date ASC LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize);
+  res.json({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize), summary: { credit_sales: Number(summary.credit_sales || 0), outstanding: Number(summary.outstanding || 0), open_accounts: Number(summary.open_accounts || 0), paid_sales: Number(summary.paid_sales || 0) } });
 });
 
 router.get('/:id', async (req: Request, res: Response) => {
@@ -239,6 +240,17 @@ router.put('/:id/delivery', async (req: Request, res: Response) => {
   await db.prepare('UPDATE invoices SET delivery_person=? WHERE id=?').run(next || null, invoiceId);
   await logAudit((req as any).user?.id || null, 'update', 'invoice', invoiceId, `Delivery person updated for ${invoice.invoice_number}`, { delivery_person: invoice.delivery_person || null }, { delivery_person: next || null });
   res.json({ ok: true, delivery_person: next || null });
+});
+
+router.put('/:id/credit-account', async (req: Request, res: Response) => {
+  const db = getDb();
+  const name = typeof req.body?.credit_account_name === 'string' ? req.body.credit_account_name.trim() : '';
+  if (!name || name.length > 120) { res.status(400).json({ error: 'Customer or account name is required and must be 120 characters or fewer' }); return; }
+  const invoice = await db.prepare('SELECT id, invoice_number, credit_account_name FROM invoices WHERE id=?').get(req.params.id) as any;
+  if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+  await db.prepare('UPDATE invoices SET credit_account_name=? WHERE id=?').run(name, String(req.params.id));
+  await logAudit((req as any).user?.id || null, 'update', 'invoice', String(req.params.id), `Credit account name updated for ${invoice.invoice_number}`, { credit_account_name: invoice.credit_account_name || null }, { credit_account_name: name });
+  res.json({ ok: true, credit_account_name: name });
 });
 
 router.post('/:id/pay', async (req: Request, res: Response) => {

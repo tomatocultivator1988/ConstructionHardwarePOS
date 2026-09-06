@@ -321,6 +321,7 @@ tr.low-stock:hover { background: rgba(245, 158, 11, 0.2); }
 .receivables-card .section-heading { margin: 0; padding: var(--space-4); border-bottom: 1px solid var(--c-border-light); }
 .receivables-card .section-heading h3 { margin: 0 0 4px; }
 .receivables-card .section-heading .card-sub { margin: 0; }
+.receivable-edit-btn { margin-left: .45rem; padding: 2px 7px; min-height: 24px; color: var(--c-primary); border-color: rgba(242,140,40,.35); }
 .money { font-family: var(--ff-mono); white-space: nowrap; }
 .positive { color: var(--c-success); }
 .negative { color: var(--c-danger); }
