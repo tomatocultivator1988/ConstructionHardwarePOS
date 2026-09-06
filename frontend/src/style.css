@@ -334,6 +334,10 @@ tr.low-stock:hover { background: rgba(245, 158, 11, 0.2); }
 .shift-history-card { max-width:100%; overflow:hidden; }
 .settings-card:has(.shift-expected-card), .shift-history-card { width:100%; max-width:none; box-sizing:border-box; }
 .shift-preview { min-width:min(100%, 420px); }
+.shift-active-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:12px 0; border-bottom:1px solid var(--c-border-light); }
+.shift-active-row > span { color:var(--c-text-muted); font-size:var(--fs-sm); }
+.shift-active-row > b { margin-left:auto; font-family:var(--ff-mono); }
+.shift-active-actions { display:flex; gap:6px; width:100%; justify-content:flex-end; }
 .shift-preview-paper { width:min(100%, 302px); box-sizing:border-box; margin:var(--space-4) auto 0; padding:18px 14px; background:#fff; color:#111; border:1px solid #d5d9dd; box-shadow:0 5px 20px rgba(0,0,0,.25); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10px; line-height:1.45; }
 .shift-paper-header { display:grid; gap:3px; text-align:center; padding-bottom:9px; border-bottom:1px dashed #111; }
 .shift-paper-header strong { font-size:13px; letter-spacing:.05em; }
