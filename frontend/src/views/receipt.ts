@@ -156,7 +156,7 @@ function buildThermalReceipt({ inv, settings, dateStr, timeStr, totalPaid, adjus
     'Hardware & Building Materials Dealer', safe(settings.business_address, 'Business address not configured'),
     settings.business_tin ? `TIN: ${safe(settings.business_tin)}` : '',
     settings.business_rdo ? `RDO/Branch: ${safe(settings.business_rdo)}` : '', '\x1b\x61\x00', line,
-    'SALES INVOICE / OFFICIAL RECEIPT', line,
+    'RECEIPT', line,
     row('Document No.', safe(inv.invoice_number)), row('Date', dateStr), row('Time', timeStr),
     row('Sold To', safe((inv as any).customer_name, 'Walk-in')),
     (inv as any).buyer_address ? row('Address', safe((inv as any).buyer_address)) : '', line,
@@ -178,7 +178,7 @@ function receiptPreviewHtml({ inv, settings, dateStr, timeStr, totalPaid, adjust
   const methods = (inv.payments || []).map((p: any) => safe(p.method)).join(', ') || '—';
   const tinLine = [settings.business_tin ? `TIN: ${safe(settings.business_tin)}` : '', settings.business_rdo ? `RDO/Branch: ${safe(settings.business_rdo)}` : ''].filter(Boolean).join(' · ');
   return `<div class="receipt-paper-header"><strong>${safe(settings.business_name, 'Jeg Enterprises')}</strong><span>Hardware &amp; Building Materials Dealer</span><span>${safe(settings.business_address, 'Business address not configured')}</span>${tinLine ? `<span>${tinLine}</span>` : ''}</div>
-    <h4>SALES INVOICE / OFFICIAL RECEIPT</h4>
+    <h4>RECEIPT</h4>
     <dl class="receipt-paper-info"><dt>Document No.</dt><dd>${safe(inv.invoice_number)}</dd><dt>Date</dt><dd>${safe(dateStr)}</dd><dt>Time</dt><dd>${safe(timeStr)}</dd><dt>Sold To</dt><dd>${safe((inv as any).customer_name, 'Walk-in')}</dd>${(inv as any).buyer_address ? `<dt>Address</dt><dd>${safe((inv as any).buyer_address)}</dd>` : ''}</dl>
     <table><thead><tr><th>Particulars</th><th>Qty</th><th>Unit Price</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="receipt-paper-total">${isVat ? `<div><span>VATable Sales</span><span>${fmtPeso(Math.max(0, adjustedTotal - vatAmount))}</span></div><div><span>VAT (${(vatRate * 100).toFixed(0)}%)</span><span>${fmtPeso(vatAmount)}</span></div>` : ''}<div class="grand"><span>TOTAL AMOUNT DUE</span><span>${fmtPeso(adjustedTotal)}</span></div></div>
