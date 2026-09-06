@@ -26,6 +26,11 @@ router.post('/login', async (req: Request, res: Response) => {
     return;
   }
 
+  if (user.role === 'staff') {
+    const shift = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id = ? AND status = 'open' ORDER BY opened_at DESC LIMIT 1").get(user.id);
+    if (!shift) { res.status(403).json({ error: 'Your shift has not been opened. Please contact the admin.' }); return; }
+  }
+
   const token = signToken({ id: user.id, username: user.username, role: user.role });
   res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
 });

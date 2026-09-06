@@ -110,6 +110,8 @@ Object.assign(window, {
   showShiftPreview: settings.showShiftPreview,
   openCashierShift: settings.openCashierShift,
   closeCashierShift: settings.closeCashierShift,
+  showCloseStaffShift: settings.showCloseStaffShift,
+  closeStaffShift: settings.closeStaffShift,
   recordCashEvent: settings.recordCashEvent,
   showUserModal: settings.showUserModal,
   createUser: settings.createUser,
@@ -193,15 +195,15 @@ if ('serviceWorker' in navigator) {
 export function applyRoleUI() {
   const admin = isAdmin();
   document.body.classList.toggle('staff-user', !admin);
-  const adminTabs = ['reports', 'settings'];
-  adminTabs.forEach(view => {
+  const staffBlockedTabs = ['dashboard', 'materials', 'product-mix', 'receipts', 'expenses', 'suppliers', 'reports', 'receivables', 'settings', '__more'];
+  staffBlockedTabs.forEach(view => {
     const btn = document.querySelector(`[data-view="${view}"]`) as HTMLElement;
     if (btn) btn.style.display = admin ? '' : 'none';
   });
 }
 
 function openMobileMore() {
-  const options = [['product-mix', 'Product Mix'], ['receipts', 'Receipts'], ['receivables', 'Receivables'], ...(isAdmin() ? [['reports', 'Reports'], ['settings', 'Settings']] : [])];
+  const options = isAdmin() ? [['product-mix', 'Product Mix'], ['receipts', 'Receipts'], ['receivables', 'Receivables'], ['reports', 'Reports'], ['settings', 'Settings']] : [];
   const modal = document.createElement('div');
   modal.className = 'modal'; modal.id = 'mobile-more-modal';
   modal.innerHTML = `<div class="modal-content"><h3>More</h3><div class="mobile-more-menu">${options.map(([view, label]) => `<button class="btn mobile-more-option" onclick="closeModal();loadView('${view}')">${label}<span>›</span></button>`).join('')}</div><div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button></div></div>`;

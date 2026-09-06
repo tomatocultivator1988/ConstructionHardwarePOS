@@ -5,6 +5,7 @@ import { requireAdmin } from '../lib/auth';
 import { logAudit } from '../lib/audit';
 
 const router = Router();
+router.use(requireAdmin);
 
 const EXPENSE_CATEGORIES = [
   'Rent', 'Utilities', 'Labor/Salary', 'Delivery/Transport',

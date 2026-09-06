@@ -5,6 +5,7 @@ import { requireAdmin } from '../lib/auth';
 import { logAudit } from '../lib/audit';
 
 const router = Router();
+router.use(requireAdmin);
 
 function validateSupplier(body: any, existing?: any) {
   const errors: string[] = [];

@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db/setup';
-import { requireAdmin } from '../lib/auth';
+import { requireAdmin, requireAdminOrPOS } from '../lib/auth';
 import { logAudit } from '../lib/audit';
 import { clearCache } from '../lib/cache';
 
 const router = Router();
+router.use(requireAdminOrPOS);
 const PAYMENT_METHODS = ['cash', 'card', 'bank', 'check', 'credit'];
 
 router.get('/', async (req: Request, res: Response) => {
@@ -102,6 +103,10 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 router.post('/', async (req: Request, res: Response) => {
   const db = getDb();
+  if (req.user?.role === 'staff') {
+    const openShift = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id=? AND status='open' LIMIT 1").get(req.user.id);
+    if (!openShift) { res.status(403).json({ error: 'Open staff shift required before making a sale' }); return; }
+  }
   const { customer_id, items, due_date, tax_rate, issued_date, delivery_person, credit_account_name, buyer_address, notes, payment } = req.body;
   const creditName = typeof credit_account_name === 'string' ? credit_account_name.trim() : '';
   const buyerAddress = typeof buyer_address === 'string' ? buyer_address.trim() : '';

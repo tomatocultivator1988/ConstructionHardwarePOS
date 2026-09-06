@@ -1,8 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { getDb } from '../db/setup';
 import { getCached, setCache } from '../lib/cache';
+import { requireAdmin } from '../lib/auth';
 
 const router = Router();
+router.use(requireAdmin);
 
 // Product mix uses the cost captured on each invoice line. This keeps historical
 // gross profit stable when a product's current cost or selling price changes.

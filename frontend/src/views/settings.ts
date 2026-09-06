@@ -33,10 +33,12 @@ export async function switchSettingsTab(tab: string) {
 }
 
 async function loadShiftTab() {
-  const [shift, history] = await Promise.all([apiGet<any>('/shifts/current'), apiGet<any[]>('/shifts/history')]);
+  const [users, active, history] = await Promise.all([apiGet<any[]>('/users'), apiGet<any[]>('/shifts/active'), apiGet<any[]>('/shifts/history')]);
+  const shift = active[0];
   const drawerAdjustment = Number(shift?.drawer_events || 0);
   const historyHtml = `<div class="settings-card shift-history-card"><h3>Recorded Shifts</h3>${history.length ? `<div class="table-wrap"><table><thead><tr><th>Opened</th><th>Closed</th><th>Cashier</th><th>Expected</th><th>Counted</th><th>Variance</th><th class="actions">Actions</th></tr></thead><tbody>${history.map((row: any) => { const variance = Number(row.variance || 0); return `<tr><td data-label="Opened">${esc(fmtDate(row.opened_at))}</td><td data-label="Closed">${esc(fmtDate(row.closed_at))}</td><td data-label="Cashier">${esc(row.username || '—')}</td><td data-label="Expected" class="money">${fmtPeso(row.expected_cash)}</td><td data-label="Counted" class="money">${fmtPeso(row.closing_cash)}</td><td data-label="Variance" class="money ${variance === 0 ? 'positive' : variance > 0 ? 'warning-value' : 'negative'}">${variance >= 0 ? '+' : '−'}${fmtPeso(Math.abs(variance))}</td><td data-label="" class="actions"><button class="btn btn-sm" onclick="showShiftPreview('${row.id}')">View</button><button class="btn btn-primary btn-sm" onclick="printShift('${row.id}')">Print Thermal</button></td></tr>`; }).join('')}</tbody></table></div>` : '<p class="empty-state">No closed shifts recorded yet.</p>'}</div>`;
-  return `<div class="settings-card"><h3>Cashier Shift</h3>${shift ? `<p>Opened: ${esc(fmtDate(shift.opened_at))}</p><div class="shift-expected-card"><span>Expected closing cash</span><strong id="shift-expected">${fmtPeso(shift.expected_cash)}</strong><small>Opening cash ${fmtPeso(shift.opening_cash)} + cash sales ${fmtPeso(shift.cash_sales)} − refunds ${fmtPeso(shift.cash_refunds)} ${drawerAdjustment >= 0 ? '+' : '−'} drawer adjustment ${fmtPeso(Math.abs(drawerAdjustment))}</small></div><div class="form-row"><div class="form-group"><label>Cash in/out amount</label><input id="shift-event-amount" type="number" min="0.01" step="0.01" /></div><div class="form-group"><label>Reason</label><input id="shift-event-reason" maxlength="200" /></div></div><button class="btn" onclick="recordCashEvent('${shift.id}','cash_in')">Cash In</button> <button class="btn" onclick="recordCashEvent('${shift.id}','cash_out')">Cash Out</button><hr><div class="form-group"><label>Counted closing cash</label><input id="shift-closing" type="number" min="0" step="0.01" oninput="updateShiftVariance(${Number(shift.expected_cash)})" /></div><div id="shift-variance" class="shift-variance">Enter counted cash to see variance.</div><div class="form-group"><label>Notes</label><input id="shift-notes" maxlength="200" /></div><button class="btn btn-warning" onclick="closeCashierShift('${shift.id}')">Close Shift</button>` : `<p style="color:var(--c-text-muted)">No open shift.</p><div class="form-group"><label>Opening cash</label><input id="shift-opening" type="number" min="0" step="0.01" value="0" /></div><button class="btn btn-primary" onclick="openCashierShift()">Open Shift</button>`}</div>${historyHtml}`;
+  const openCards = active.length ? active.map((s: any) => `<div class="shift-active-row"><strong>${esc(s.username)}</strong><span>Opened ${esc(fmtDate(s.opened_at))}</span><b>Expected ${fmtPeso(s.expected_cash)}</b><button class="btn btn-warning btn-sm" onclick="showCloseStaffShift('${s.id}', ${Number(s.expected_cash)})">Close Shift</button></div>`).join('') : '<p class="empty-state">No staff shifts are currently open.</p>';
+  return `<div class="settings-card"><h3>Open Staff Shift</h3><p class="card-sub">Only Admin can open, adjust, and close staff shifts.</p><div class="form-row"><div class="form-group"><label>Staff member *</label><select id="shift-staff"><option value="">Select staff...</option>${users.filter((u: any) => u.role === 'staff' && !active.some((s: any) => s.user_id === u.id)).map((u: any) => `<option value="${u.id}">${esc(u.username)}</option>`).join('')}</select></div><div class="form-group"><label>Opening cash</label><input id="shift-opening" type="number" min="0" step="0.01" value="0" /></div></div><button class="btn btn-primary" onclick="openCashierShift()">Open Staff Shift</button></div><div class="settings-card"><h3>Active Staff Shifts</h3>${openCards}</div>${historyHtml}`;
 }
 
 export async function showShiftPreview(id: string) {
@@ -58,7 +60,17 @@ export function updateShiftVariance(expected: number) {
 
 export async function openCashierShift() {
   const opening_cash = Number(val('shift-opening'));
-  try { await apiPost('/shifts/open', { opening_cash }); switchSettingsTab('shift'); showToast('Shift opened', 'success'); } catch (e: any) { showToast(e.message); }
+  const user_id = val('shift-staff');
+  try { await apiPost('/shifts/open', { user_id, opening_cash }); switchSettingsTab('shift'); showToast('Staff shift opened', 'success'); } catch (e: any) { showToast(e.message); }
+}
+
+export function showCloseStaffShift(id: string, expected: number) {
+  showModal(`<h3>Close Staff Shift</h3><p class="modal-help">Expected cash: <strong>${fmtPeso(expected)}</strong></p><div class="form-group"><label>Counted closing cash *</label><input id="admin-shift-closing" type="number" min="0" step="0.01" value="${expected.toFixed(2)}" /></div><div class="form-group"><label>Notes</label><input id="admin-shift-notes" maxlength="200" /></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-warning" onclick="closeStaffShift('${id}')">Close Shift</button></div>`, 'close-staff-shift-modal');
+}
+
+export async function closeStaffShift(id: string) {
+  const closing_cash = Number(val('admin-shift-closing'));
+  try { await apiPost(`/shifts/${id}/close`, { closing_cash, notes: val('admin-shift-notes') }); closeModal(); switchSettingsTab('shift'); showToast('Staff shift closed', 'success'); } catch (e: any) { showToast(e.message); }
 }
 
 export async function closeCashierShift(id: string) {

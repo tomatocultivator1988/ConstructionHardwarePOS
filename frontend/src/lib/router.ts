@@ -44,6 +44,9 @@ export function getChartInstances() { return chartInstances; }
 export async function loadView(view: string) {
   if (!isLoggedIn()) { showLogin(); return; }
 
+  const currentUser = JSON.parse(localStorage.getItem('buildpro_user') || 'null');
+  if (currentUser?.role === 'staff' && view !== 'invoices') { view = 'invoices'; }
+
   applyRoleUI();
 
   const u = localStorage.getItem('buildpro_user');

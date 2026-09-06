@@ -4,6 +4,7 @@ import { getDb } from '../db/setup';
 import { requireAdmin } from '../lib/auth';
 
 const router = Router();
+router.use(requireAdmin);
 const TYPES = ['category', 'unit', 'expense_category'];
 const DEFAULTS: Record<string, string[]> = {
   category: ['Cement', 'Steel/Rebar', 'Lumber/Wood', 'Plumbing', 'Electrical', 'Paint', 'Hardware', 'Sand/Gravel', 'Roofing', 'Tools', 'Other'],

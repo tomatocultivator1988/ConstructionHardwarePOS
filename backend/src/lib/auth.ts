@@ -46,6 +46,17 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+export function requireAdminOrPOS(req: Request, res: Response, next: NextFunction) {
+  if (req.user?.role === 'admin') return next();
+  const method = req.method;
+  const path = req.path;
+  const allowed = method === 'GET' ||
+    (path.endsWith('/pay') && method === 'POST') ||
+    (path === '/me' && method === 'GET');
+  if (allowed) return next();
+  res.status(403).json({ error: 'Staff accounts can access POS only' });
+}
+
 export function signToken(user: { id: string; username: string; role: string }): string {
   return jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '12h' });
 }

@@ -1,7 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { getDb } from '../db/setup';
+import { requireAdmin } from '../lib/auth';
 
 const router = Router();
+router.use(requireAdmin);
 
 router.get('/receipts', async (req: Request, res: Response) => {
   const db = getDb();

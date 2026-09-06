@@ -225,6 +225,7 @@ async function initTables() {
     CREATE TABLE IF NOT EXISTS cashier_shifts (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
+      opened_by TEXT,
       opened_at TEXT DEFAULT (datetime('now')),
       opening_cash REAL NOT NULL CHECK (opening_cash >= 0),
       closed_at TEXT,
@@ -233,6 +234,7 @@ async function initTables() {
       variance REAL,
       status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed')),
       notes TEXT,
+      closed_by TEXT,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
@@ -409,6 +411,9 @@ async function migrateSchema() {
   await db.exec('CREATE INDEX IF NOT EXISTS idx_customers_tin ON customers(tin)');
   await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_materials_barcode ON materials(barcode) WHERE barcode IS NOT NULL AND barcode <> \'\'');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_shifts_status ON cashier_shifts(status)');
+  const shiftCols = await db.prepare('PRAGMA table_info(cashier_shifts)').all() as any[];
+  if (!shiftCols.some((c: any) => c.name === 'opened_by')) await db.exec('ALTER TABLE cashier_shifts ADD COLUMN opened_by TEXT');
+  if (!shiftCols.some((c: any) => c.name === 'closed_by')) await db.exec('ALTER TABLE cashier_shifts ADD COLUMN closed_by TEXT');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_cash_events_shift ON cash_drawer_events(shift_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_payments_shift ON payments(shift_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_refunds_shift ON refunds(shift_id)');

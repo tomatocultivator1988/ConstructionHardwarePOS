@@ -60,10 +60,10 @@ export async function doLogin() {
     localStorage.setItem('buildpro_token', data.token);
     localStorage.setItem('buildpro_user', JSON.stringify(data.user));
     toggleChrome(true);
-    loadView('dashboard');
+    loadView(data.user.role === 'staff' ? 'invoices' : 'dashboard');
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-    const dashBtn = document.querySelector('[data-view="dashboard"]');
-    if (dashBtn) dashBtn.classList.add('active');
+    const homeBtn = document.querySelector(`[data-view="${data.user.role === 'staff' ? 'invoices' : 'dashboard'}"]`);
+    if (homeBtn) homeBtn.classList.add('active');
   } catch (e: any) {
     showToast(e.message);
     if (btn) { btn.textContent = 'Login'; btn.disabled = false; }

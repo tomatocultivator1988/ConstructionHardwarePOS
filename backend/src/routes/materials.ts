@@ -1,10 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db/setup';
-import { requireAdmin } from '../lib/auth';
+import { requireAdmin, requireAdminOrPOS } from '../lib/auth';
 import { logAudit } from '../lib/audit';
 
 const router = Router();
+router.use(requireAdminOrPOS);
 
 function validateMaterial(body: any, existing?: any) {
   const errors: string[] = [];
@@ -68,6 +69,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 router.post('/', async (req: Request, res: Response) => {
+  if (req.user?.role !== 'admin') { res.status(403).json({ error: 'Admin access required' }); return; }
   const db = getDb();
   const { name, unit, stock, cost_price, price_per_unit, reorder_point, barcode } = req.body;
   const validation = validateMaterial({ name, unit, stock, cost_price, price_per_unit, reorder_point, barcode, category: req.body.category, supplier_id: req.body.supplier_id });
@@ -89,6 +91,7 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 router.put('/:id', async (req: Request, res: Response) => {
+  if (req.user?.role !== 'admin') { res.status(403).json({ error: 'Admin access required' }); return; }
   const db = getDb();
   const existing = await db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id);
   if (!existing) { res.status(404).json({ error: 'Material not found' }); return; }

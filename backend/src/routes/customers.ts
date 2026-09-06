@@ -5,6 +5,7 @@ import { logAudit } from '../lib/audit';
 import { requireAdmin } from '../lib/auth';
 
 const router = Router();
+router.use(requireAdmin);
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

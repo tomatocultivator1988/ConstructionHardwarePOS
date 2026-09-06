@@ -5,6 +5,7 @@ import { requireAdmin } from '../lib/auth';
 import { logAudit } from '../lib/audit';
 
 const router = Router();
+router.use(requireAdmin);
 
 function validateItems(items: any[]): string | null {
   if (!Array.isArray(items) || !items.length) return 'At least one item is required';
