@@ -461,9 +461,13 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
   let shiftId: string | null = null;
   if (method.toLowerCase() === 'cash') {
     const requestedShiftId = typeof req.body?.shift_id === 'string' ? req.body.shift_id : '';
-    const shift = requestedShiftId
+    let shift = requestedShiftId
       ? await db.prepare("SELECT id FROM cashier_shifts WHERE id=? AND status='open'").get(requestedShiftId) as any
       : await db.prepare("SELECT cs.id FROM cashier_shifts cs JOIN payments p ON p.shift_id=cs.id WHERE p.invoice_id=? AND p.method='cash' AND cs.status='open' ORDER BY cs.opened_at DESC LIMIT 1").get(invoice.id) as any;
+    if (!shift && !requestedShiftId) {
+      const openShifts = await db.prepare("SELECT id FROM cashier_shifts WHERE status='open' ORDER BY opened_at DESC").all() as any[];
+      if (openShifts.length === 1) shift = openShifts[0];
+    }
     if (!shift) { res.status(409).json({ error: 'Select an active cashier shift for a cash refund' }); return; }
     shiftId = shift.id;
   }
