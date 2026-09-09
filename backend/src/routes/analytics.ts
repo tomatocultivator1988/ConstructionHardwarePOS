@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { getDb } from '../db/setup';
-import { getCached, setCache } from '../lib/cache';
 import { requireAdmin } from '../lib/auth';
 
 const router = Router();
@@ -76,10 +75,6 @@ router.get('/product-mix', async (req: Request, res: Response) => {
 });
 
 router.get('/dashboard', async (_req: Request, res: Response) => {
-  const CACHE_KEY = 'analytics:dashboard';
-  const cached = getCached<any>(CACHE_KEY);
-  if (cached) { res.json(cached); return; }
-
   try {
     const db = getDb();
     const [
@@ -299,7 +294,6 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       averageMargin: Number(averageMargin.value || 0),
     };
 
-    setCache(CACHE_KEY, result);
     res.json(result);
   } catch (e: any) {
     console.error('Analytics error:', e.message);

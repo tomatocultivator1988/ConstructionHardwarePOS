@@ -18,7 +18,7 @@ async function refreshInvoiceStatus(db: ReturnType<typeof getDb>, invoiceId: str
   const returns = await db.prepare('SELECT COALESCE(SUM(total_credit),0) total FROM invoice_returns WHERE invoice_id=?').get(invoiceId) as any;
   const payments = await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM payments WHERE invoice_id=?').get(invoiceId) as any;
   const refunds = await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id=?').get(invoiceId) as any;
-  const adjustedTotal = Math.max(0, Number(invoice.total) - Number(credits.total || 0) - Number(returns.total || 0));
+  const adjustedTotal = Math.max(0, Number(invoice.total) - Number(credits.total || 0) - Number(returns.total || 0) - Number(refunds.total || 0));
   const netPaid = Number(payments.total || 0) - Number(refunds.total || 0);
   const status = netPaid >= adjustedTotal - 0.005 ? 'paid' : netPaid > 0 ? 'partial' : 'pending';
   await db.prepare("UPDATE invoices SET status=?, paid_date=CASE WHEN ?='paid' THEN COALESCE(paid_date, datetime('now')) ELSE NULL END WHERE id=?")
