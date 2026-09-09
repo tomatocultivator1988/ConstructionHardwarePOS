@@ -226,10 +226,11 @@ export async function completePOSSale() {
 export async function showInvoiceDetail(id: string) {
   const inv = await apiGet<Invoice>(`/invoices/${id}`);
   const totalPaid = inv.payments.reduce((s: number, p: any) => s + p.amount, 0) - ((inv as any).refunds || []).reduce((s: number, r: any) => s + r.amount, 0);
-  const adjustedTotal = Number((inv as any).adjusted_total ?? inv.total);
-  const balance = adjustedTotal - totalPaid;
   const returnedTotal = (inv.items || []).reduce((s: number, item: any) => s + Number(item.returned_total || 0), 0);
   const refundedTotal = ((inv as any).refunds || []).reduce((s: number, refund: any) => s + Number(refund.amount || 0), 0);
+  const adjustedTotalBeforeRefund = Number((inv as any).adjusted_total ?? inv.total);
+  const adjustedTotal = Math.max(0, adjustedTotalBeforeRefund - refundedTotal);
+  const balance = adjustedTotal - totalPaid;
   const modalId = 'invoice-detail-modal';
   document.getElementById(modalId)?.remove();
   const modal = document.createElement('div');

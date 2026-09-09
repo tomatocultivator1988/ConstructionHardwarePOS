@@ -61,7 +61,7 @@ router.get('/receivables', async (req: Request, res: Response) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 15));
   const balance = `i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) - (COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id AND p.method <> 'credit'),0) - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0))`;
-  const conditions = ["i.status <> 'voided'", "(i.credit_account_name IS NOT NULL OR EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit') )"];
+  const conditions = ["i.status <> 'voided'", "(EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit') OR (i.credit_account_name IS NOT NULL AND NOT EXISTS (SELECT 1 FROM payments np WHERE np.invoice_id=i.id AND np.method <> 'credit'))) "];
   const params: any[] = [];
   if (search) { conditions.push("COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Unassigned Credit') LIKE ?"); params.push(`%${search}%`); }
   if (status === 'unpaid') conditions.push(`${balance} > 0 AND (COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) = 0)`);
@@ -94,9 +94,9 @@ router.get('/receivables-trend', async (_req: Request, res: Response) => {
     )
     SELECT strftime('%Y-%m', month_start) AS month,
       COALESCE((SELECT SUM(i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0))
-        FROM invoices i WHERE i.status <> 'voided' AND (i.credit_account_name IS NOT NULL OR EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit') ) AND date(i.issued_date, '+8 hours') BETWEEN months.month_start AND months.month_end), 0) AS credit_sales,
+        FROM invoices i WHERE i.status <> 'voided' AND (EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit') OR (i.credit_account_name IS NOT NULL AND NOT EXISTS (SELECT 1 FROM payments np WHERE np.invoice_id=i.id AND np.method <> 'credit'))) AND date(i.issued_date, '+8 hours') BETWEEN months.month_start AND months.month_end), 0) AS credit_sales,
       COALESCE((SELECT SUM(i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0))
-        FROM invoices i WHERE i.status <> 'voided' AND NOT (i.credit_account_name IS NOT NULL OR EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit') ) AND date(i.issued_date, '+8 hours') BETWEEN months.month_start AND months.month_end), 0) AS immediate_sales,
+        FROM invoices i WHERE i.status <> 'voided' AND NOT (EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit') OR (i.credit_account_name IS NOT NULL AND NOT EXISTS (SELECT 1 FROM payments np WHERE np.invoice_id=i.id AND np.method <> 'credit'))) AND date(i.issued_date, '+8 hours') BETWEEN months.month_start AND months.month_end), 0) AS immediate_sales,
       COALESCE((SELECT SUM(p.amount)
         FROM payments p JOIN invoices i ON i.id=p.invoice_id
         WHERE p.method <> 'credit' AND i.status <> 'voided' AND date(p.payment_date, '+8 hours') BETWEEN months.month_start AND months.month_end), 0)
@@ -104,7 +104,7 @@ router.get('/receivables-trend', async (_req: Request, res: Response) => {
         FROM refunds r JOIN invoices ri ON ri.id=r.invoice_id
         WHERE ri.status <> 'voided' AND r.method <> 'credit' AND date(r.created_at, '+8 hours') BETWEEN months.month_start AND months.month_end), 0) AS collections
       , COALESCE((SELECT SUM(i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued' AND date(cm.created_at, '+8 hours') <= months.month_end),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id AND date(ir.created_at, '+8 hours') <= months.month_end),0) - (COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id AND p.method <> 'credit' AND date(p.payment_date, '+8 hours') <= months.month_end),0) - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id AND r.method <> 'credit' AND date(r.created_at, '+8 hours') <= months.month_end),0)))
-        FROM invoices i WHERE i.status <> 'voided' AND (i.credit_account_name IS NOT NULL OR EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit')) AND date(i.issued_date, '+8 hours') <= months.month_end), 0) AS current_balance
+        FROM invoices i WHERE i.status <> 'voided' AND (EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit') OR (i.credit_account_name IS NOT NULL AND NOT EXISTS (SELECT 1 FROM payments np WHERE np.invoice_id=i.id AND np.method <> 'credit'))) AND date(i.issued_date, '+8 hours') <= months.month_end), 0) AS current_balance
     FROM months ORDER BY month_start
   `).all();
   res.json(rows.map((row: any) => ({ month: row.month, credit_sales: Number(row.credit_sales || 0), immediate_sales: Number(row.immediate_sales || 0), collections: Number(row.collections || 0), current_balance: Math.max(0, Number(row.current_balance || 0)) })));
@@ -260,6 +260,7 @@ router.post('/', async (req: Request, res: Response) => {
       const paymentMethod = checkoutPayment.method.trim().toLowerCase();
       if (paymentMethod === 'credit') {
         await db.prepare("UPDATE invoices SET status='pending' WHERE id=?").run(invoiceId);
+        await insertPayment.run(paymentId, invoiceId, 0, 'credit', checkoutPayment.notes || null, null);
       } else {
         const paymentAmount = Number(checkoutPayment.amount);
         if (Math.abs(paymentAmount - total) > 0.005) throw new Error('Payment amount must match the sale total');
