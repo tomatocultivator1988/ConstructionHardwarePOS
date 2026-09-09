@@ -236,8 +236,8 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    await     db.prepare(
-      'INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, delivery_person, credit_account_name, buyer_address, notes, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    await db.prepare(
+      "INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, delivery_person, credit_account_name, buyer_address, notes, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)"
     ).run(invoiceId, customer_id || null, invoice_number, 0, tax_rate ?? 0, 0, due_date || null, delivery_person?.trim() || null, creditName || null, buyerAddress || null, invoiceNotes || null, issued_date || null, (req as any).user?.id || null);
 
     let subtotal = 0;

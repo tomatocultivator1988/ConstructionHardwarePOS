@@ -365,6 +365,10 @@ async function migrateSchema() {
   if (!invoiceCols.includes('credit_account_name')) await db.exec("ALTER TABLE invoices ADD COLUMN credit_account_name TEXT");
   if (!invoiceCols.includes('buyer_address')) await db.exec("ALTER TABLE invoices ADD COLUMN buyer_address TEXT");
   if (!invoiceCols.includes('notes')) await db.exec("ALTER TABLE invoices ADD COLUMN notes TEXT");
+  // Older POS checkouts explicitly inserted NULL instead of allowing the
+  // column default to run. Recover those dates from the invoice creation time
+  // so they appear in reports and dashboard day totals.
+  await db.exec("UPDATE invoices SET issued_date = COALESCE(created_at, datetime('now')) WHERE issued_date IS NULL OR trim(issued_date) = ''");
   const paymentInfo = (await db.prepare("PRAGMA table_info('payments')").all()) as any[];
   if (!paymentInfo.some((r: any) => r.name === 'shift_id')) await db.exec("ALTER TABLE payments ADD COLUMN shift_id TEXT");
   const expenseInfo = (await db.prepare("PRAGMA table_info('expenses')").all()) as any[];
