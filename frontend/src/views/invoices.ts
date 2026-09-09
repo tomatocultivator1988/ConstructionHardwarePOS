@@ -306,7 +306,7 @@ export async function showInvoiceDetail(id: string) {
     <div class="field-error" id="pay-err"></div>
     ` : '<p style="color:var(--c-success);font-weight:600;margin-top:1rem">✓ Paid in Full</p>'}
 
-    ${inv.status !== 'pending' && inv.status !== 'voided' ? `
+    ${inv.status !== 'voided' ? `
     <h4 style="margin-top:var(--space-5)">Return Items</h4>
     <div id="return-items">
       ${inv.items.map((item: any) => `

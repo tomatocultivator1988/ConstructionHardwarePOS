@@ -500,11 +500,6 @@ router.post('/:id/return', async (req: Request, res: Response) => {
     const inv = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId) as any;
   if (!inv) { res.status(404).json({ error: 'Invoice not found' }); return; }
   if (inv.status === 'voided') { res.status(400).json({ error: 'Cannot return items on a voided invoice' }); return; }
-  if (inv.status === 'pending') {
-    res.status(400).json({ error: 'Cannot return items on an unpaid invoice — delete it instead' });
-    return;
-  }
-
   const requested = new Map<string, number>();
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
