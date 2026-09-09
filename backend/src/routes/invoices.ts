@@ -110,7 +110,7 @@ router.get('/receivables-trend', async (_req: Request, res: Response) => {
   res.json(rows.map((row: any) => ({ month: row.month, credit_sales: Number(row.credit_sales || 0), immediate_sales: Number(row.immediate_sales || 0), collections: Number(row.collections || 0), current_balance: Math.max(0, Number(row.current_balance || 0)) })));
 });
 
-router.get('/deliveries', async (req: Request, res: Response) => {
+router.get('/deliveries', requireAdmin, async (req: Request, res: Response) => {
   const db = getDb();
   const page = Math.max(1, Number(req.query.page) || 1);
   const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 15));
@@ -323,7 +323,7 @@ router.post('/', async (req: Request, res: Response) => {
   res.status(201).json({ ...invoice as any, items: invoiceItems, payments: invoicePayments });
 });
 
-router.put('/:id/delivery', async (req: Request, res: Response) => {
+router.put('/:id/delivery', requireAdmin, async (req: Request, res: Response) => {
   const db = getDb();
   const deliveryPerson = req.body?.delivery_person;
   if (deliveryPerson !== null && deliveryPerson !== undefined && (typeof deliveryPerson !== 'string' || deliveryPerson.trim().length > 100)) {

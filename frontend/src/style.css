@@ -470,6 +470,39 @@ tr.low-stock:hover { background: rgba(245, 158, 11, 0.2); }
 }
 
 /* ── Forms ── */
+/* Shared controls: every page uses the same navy/orange form language. */
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-md);
+  color: var(--c-text);
+  background: var(--c-surface-elevated);
+  font: inherit;
+  color-scheme: light;
+  transition: border-color .12s ease, box-shadow .12s ease, background .12s ease;
+}
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--c-primary);
+  box-shadow: 0 0 0 3px var(--c-primary-glow);
+}
+input::placeholder,
+textarea::placeholder { color: var(--c-text-muted); opacity: 1; }
+select {
+  appearance: none;
+  padding-right: 2.5rem;
+  background-image: linear-gradient(45deg, transparent 50%, var(--c-primary) 50%), linear-gradient(135deg, var(--c-primary) 50%, transparent 50%);
+  background-position: calc(100% - 17px) 17px, calc(100% - 11px) 17px;
+  background-size: 6px 6px, 6px 6px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+select option { color: var(--c-text); background: var(--c-surface); }
 .form-group { margin-bottom: var(--space-4); }
 .form-group label {
   display: block;

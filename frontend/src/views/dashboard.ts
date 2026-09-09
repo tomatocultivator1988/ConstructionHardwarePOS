@@ -176,7 +176,7 @@ export async function renderDashboard(): Promise<string> {
         <div class="card-value">${fmtPeso(analytics.todayExpenses || 0)}</div>
         <div class="card-sub">Recorded today</div>
       </div>
-      <div class="dashboard-card card-info clickable" onclick="document.querySelector('[data-view=invoices]')?.click()">
+      <div class="dashboard-card card-info clickable" onclick="document.querySelector('[data-view=deliveries]')?.click() || loadView('deliveries')">
         <div class="card-label">Delivery Status</div>
         <div class="card-value">${assignedDeliveries}</div>
         <div class="card-sub">Assigned for delivery</div>
