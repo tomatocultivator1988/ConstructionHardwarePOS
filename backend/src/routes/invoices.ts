@@ -110,6 +110,31 @@ router.get('/receivables-trend', async (_req: Request, res: Response) => {
   res.json(rows.map((row: any) => ({ month: row.month, credit_sales: Number(row.credit_sales || 0), immediate_sales: Number(row.immediate_sales || 0), collections: Number(row.collections || 0), current_balance: Math.max(0, Number(row.current_balance || 0)) })));
 });
 
+router.get('/deliveries', async (req: Request, res: Response) => {
+  const db = getDb();
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const pageSize = Math.min(50, Math.max(1, Number(req.query.pageSize) || 15));
+  const status = typeof req.query.status === 'string' ? req.query.status : 'all';
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+  const conditions = ["i.status <> 'voided'"];
+  const params: any[] = [];
+  if (status === 'assigned') conditions.push("i.delivery_person IS NOT NULL AND trim(i.delivery_person) <> ''");
+  if (status === 'unassigned') conditions.push("(i.delivery_person IS NULL OR trim(i.delivery_person) = '')");
+  if (search) { conditions.push("(i.invoice_number LIKE ? OR COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') LIKE ?)"); params.push(`%${search}%`, `%${search}%`); }
+  const where = conditions.join(' AND ');
+  const total = Number((await db.prepare(`SELECT COUNT(*) AS total FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}`).get(...params) as any).total || 0);
+  const summary = await db.prepare(`SELECT
+    SUM(CASE WHEN i.delivery_person IS NOT NULL AND trim(i.delivery_person) <> '' THEN 1 ELSE 0 END) AS assigned,
+    SUM(CASE WHEN i.delivery_person IS NULL OR trim(i.delivery_person) = '' THEN 1 ELSE 0 END) AS unassigned
+    FROM invoices i WHERE i.status <> 'voided'`).get() as any;
+  const data = await db.prepare(`SELECT i.id, i.invoice_number, i.issued_date, i.total, i.status, i.delivery_person,
+    COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') AS customer_name
+    FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}
+    ORDER BY CASE WHEN i.delivery_person IS NULL OR trim(i.delivery_person) = '' THEN 0 ELSE 1 END, i.issued_date DESC
+    LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize);
+  res.json({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize), summary: { assigned: Number(summary.assigned || 0), unassigned: Number(summary.unassigned || 0) } });
+});
+
 router.get('/:id', async (req: Request, res: Response) => {
   const db = getDb();
   const invoice = await db.prepare(`

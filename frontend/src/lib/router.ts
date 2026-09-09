@@ -8,6 +8,7 @@ import { renderReports } from '../views/reports';
 import { renderReceipts } from '../views/receipts';
 import { renderProductMix } from '../views/product-mix';
 import { renderReceivables } from '../views/receivables';
+import { renderDeliveries } from '../views/deliveries';
 import { showLogin } from '../views/login';
 import { isLoggedIn, apiGet } from './api';
 import { showToast } from './helpers';
@@ -20,6 +21,7 @@ const VIEWS: Record<string, () => Promise<string>> = {
   receivables: renderReceivables,
   invoices: renderInvoices,
   receipts: renderReceipts,
+  deliveries: renderDeliveries,
   expenses: renderExpenses,
   suppliers: renderSupplierHub,
   reports: renderReports,

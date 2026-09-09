@@ -312,6 +312,10 @@ tr.low-stock:hover { background: rgba(245, 158, 11, 0.2); }
 .status-badge.status-warning::before { background: var(--c-warning); }
 .receipt-statuses { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.3rem; }
 .receipt-statuses .status-badge { font-size: 0.65rem; }
+.deliveries-toolbar { display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; }
+.deliveries-toolbar input { flex:1 1 260px; min-width:180px; }
+.deliveries-toolbar select { min-width:170px; }
+.deliveries-card { overflow:hidden; }
 
 /* Product Mix */
 .receivables-toolbar { display: flex; gap: var(--space-2); align-items: center; margin-bottom: var(--space-4); padding: var(--space-3); }
