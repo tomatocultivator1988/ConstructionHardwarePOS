@@ -359,24 +359,19 @@ export async function submitCreditMemo(id: string) {
 }
 
 export async function recordRefund(id: string, suggestedAmount = 0, returnView = 'invoices') {
-  let shifts: any[] = [];
-  try { shifts = await apiGet<any[]>('/shifts/active'); } catch { /* non-cash refunds remain available if shift lookup fails */ }
-  const shiftOptions = shifts.map(shift => `<option value="${esc(shift.id)}">${esc(shift.username || 'Cashier')} · ${fmtPeso(shift.expected_cash)}</option>`).join('');
-  const shiftField = shifts.length > 1
-    ? `<div id="refund-shift-wrap" class="form-group"><label for="refund-shift">Cashier shift *</label><select id="refund-shift"><option value="">Select active shift...</option>${shiftOptions}</select></div>`
-    : shifts.length === 1
-      ? `<input id="refund-shift" type="hidden" value="${esc(shifts[0].id)}" />`
-      : `<div id="refund-shift-wrap" class="form-group"><p class="field-help">No active cashier shift is available for a cash refund.</p></div>`;
-  showModal(`<h3>Record Refund</h3><p class="modal-help">A refund records money returned to the buyer. It is separate from the stock return.</p>${suggestedAmount > 0 ? `<p class="field-help">Maximum available refund: <strong>${fmtPeso(suggestedAmount)}</strong></p>` : ''}<div class="form-group"><label for="refund-amount">Amount *</label><input id="refund-amount" type="number" min="0.01" ${suggestedAmount > 0 ? `max="${suggestedAmount.toFixed(2)}"` : ''} step="0.01" value="${suggestedAmount > 0 ? suggestedAmount.toFixed(2) : ''}" autofocus placeholder="0.00" /></div><div class="form-group"><label for="refund-method">Refund method *</label><select id="refund-method" onchange="document.getElementById('refund-shift-wrap')?.classList.toggle('is-hidden', this.value !== 'cash')"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option><option value="gcash">GCash</option><option value="check">Check</option></select></div>${shiftField}<div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitRefund('${id}', '${returnView}')">Record Refund</button></div>`, 'invoice-action-modal');
+  if (suggestedAmount <= 0) {
+    const invoice = await apiGet<any>(`/invoices/${id}`);
+    suggestedAmount = Math.max(0, (invoice.payments || []).reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0) - (invoice.refunds || []).reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0));
+  }
+  if (suggestedAmount <= 0) { showToast('There is no collected payment available to refund'); return; }
+  showModal(`<h3>Refund Sale</h3><p class="modal-help">This records a full refund of the remaining collected payment. Product returns are handled separately.</p><div class="form-group"><label>Refund amount</label><input id="refund-amount" type="number" value="${suggestedAmount.toFixed(2)}" readonly /></div><div class="form-group"><label for="refund-method">Refund method *</label><select id="refund-method"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option><option value="gcash">GCash</option><option value="check">Check</option></select></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitRefund('${id}', '${returnView}')">Refund ${fmtPeso(suggestedAmount)}</button></div>`, 'invoice-action-modal');
 }
 export async function submitRefund(id: string, returnView = 'invoices') {
   const amount = Number(val('refund-amount')); const method = val('refund-method');
   if (!Number.isFinite(amount) || amount <= 0 || !method) { showToast('Enter a valid amount and method'); return; }
-  const shiftId = method === 'cash' ? val('refund-shift') : undefined;
-  if (method === 'cash' && !shiftId) { showToast('Select an active cashier shift for a cash refund'); return; }
   const max = Number((document.getElementById('refund-amount') as HTMLInputElement)?.max || 0);
   if (max > 0 && amount > max + 0.005) { showToast(`Refund cannot exceed ${fmtPeso(max)}`); return; }
-  try { await apiPost(`/invoices/${id}/refund`, { amount, method, ...(shiftId ? { shift_id: shiftId } : {}) }); showToast('Refund recorded', 'success'); closeModal(); loadView(returnView); }
+  try { await apiPost(`/invoices/${id}/refund`, { amount, method }); showToast('Refund recorded', 'success'); closeModal(); loadView(returnView); }
   catch (e: any) { showToast(e.message); }
 }
 
@@ -413,6 +408,16 @@ export async function delInvoice(id: string) {
   catch (e: any) { showToast(e.message); }
 }
 
+export async function showReturnModal(invoiceId: string) {
+  try {
+    const inv = await apiGet<any>(`/invoices/${invoiceId}`);
+    if (inv.status === 'voided') { showToast('Voided invoices cannot receive returns'); return; }
+    const items = (inv.items || []).filter((item: any) => item.material_id && Number(item.remaining_quantity ?? item.quantity) > 0);
+    if (!items.length) { showToast('There are no remaining items to return'); return; }
+    showModal(`<h3>Return Items · ${esc(inv.invoice_number)}</h3><p class="modal-help">Choose the exact quantity of each item being returned. Returned quantities go back into stock and reduce this sale.</p><div id="return-items">${items.map((item: any) => { const remaining = Number(item.remaining_quantity ?? item.quantity); return `<div class="line-item" style="margin-bottom:var(--space-2)"><span style="flex:2;font-size:var(--fs-sm)">${esc(item.description)}</span><span style="flex:1;font-size:var(--fs-sm);color:var(--c-text-muted)">Sold: ${item.quantity}<br>Already returned: ${Number(item.returned_quantity || 0)}<br><strong>Available: ${remaining}</strong></span><input id="ret-qty-${item.id}" type="number" min="0" max="${remaining}" value="0" aria-label="Return quantity for ${esc(item.description)}" style="flex:1;min-height:32px;font-size:var(--fs-sm);width:70px" /></div>`; }).join('')}</div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-warning" id="ret-btn" onclick="returnItems('${invoiceId}')">Process Return</button></div>`, 'invoice-action-modal');
+  } catch (e: any) { showToast(e?.message || 'Unable to load return items'); }
+}
+
 export async function returnItems(invoiceId: string) {
   disableBtn('ret-btn', true);
   try {
@@ -429,13 +434,9 @@ export async function returnItems(invoiceId: string) {
     if (!retItems.length) { showToast('Enter return quantities'); return; }
     const ok = await showConfirmModal(`<h3>Confirm Returns</h3><p style="color:var(--c-text-secondary)">Return ${retItems.length} item(s) and restore stock?</p>`);
     if (!ok) return;
-    const returnTotal = retItems.reduce((sum, returned) => {
-      const original = inv.items.find((item: any) => item.id === returned.invoice_item_id);
-      return sum + (Number(original?.unit_price || 0) * returned.quantity * (1 + Number(inv.tax_rate || 0)));
-    }, 0);
     await apiPost(`/invoices/${invoiceId}/return`, { items: retItems });
     closeModal();
-    showModal(`<h3>Return processed</h3><p class="modal-help">The returned stock was restored successfully.</p><div class="info-callout"><strong>Money not refunded yet.</strong><br>Use Record Refund only if money will be given back to the customer. A cash refund will automatically reduce the expected cash in the selected cashier shift.</div><div class="modal-actions"><button class="btn" onclick="closeModal();loadView('invoices')">Close</button><button class="btn btn-primary" onclick="recordRefund('${invoiceId}', ${Math.round(returnTotal * 100) / 100})">Record Refund</button></div>`, 'invoice-action-modal');
+    showModal(`<h3>Return processed</h3><p class="modal-help">The selected quantity was returned and restored to inventory. If money must be given back, use the separate Refund action.</p><div class="modal-actions"><button class="btn btn-primary" onclick="closeModal();loadView('invoices')">Done</button></div>`, 'invoice-action-modal');
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('ret-btn', false); }
 }

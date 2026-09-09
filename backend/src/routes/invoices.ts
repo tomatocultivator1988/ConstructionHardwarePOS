@@ -468,8 +468,10 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
       const openShifts = await db.prepare("SELECT id FROM cashier_shifts WHERE status='open' ORDER BY opened_at DESC").all() as any[];
       if (openShifts.length === 1) shift = openShifts[0];
     }
-    if (!shift) { res.status(409).json({ error: 'Select an active cashier shift for a cash refund' }); return; }
-    shiftId = shift.id;
+    // Admin refunds are not blocked by shift availability. When a matching
+    // open drawer exists, keep the link for reconciliation; otherwise the
+    // refund is still recorded with a null shift.
+    shiftId = shift?.id || null;
   }
   const id = uuidv4();
   const createRefund = db.transaction(async () => {
