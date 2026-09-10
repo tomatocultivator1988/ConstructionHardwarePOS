@@ -82,7 +82,7 @@ export async function loadView(view: string) {
     if (view === 'receivables') (window as any).drawReceivablesTrend?.();
   } catch (err: any) {
     if (sequence !== loadSequence || currentView !== view) return;
-    el.innerHTML = '<div class="loading-skeleton"></div>';
+    el.innerHTML = `<div class="empty-state view-error"><h3>Unable to load ${view === 'dashboard' ? 'Dashboard' : view}</h3><p>${err.message || 'Please try again.'}</p><button class="btn btn-primary" onclick="loadView('${view}')">Retry</button></div>`;
     showToast(err.message || String(err));
   }
 }

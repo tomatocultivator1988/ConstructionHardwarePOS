@@ -4,11 +4,22 @@ import { getChartInstances } from '../lib/router';
 import type { Invoice, Analytics, PaySummary } from '../lib/types';
 
 export async function renderDashboard(): Promise<string> {
-  const [invoicePage, paySummary, analytics] = await Promise.all([
+  // Dashboard widgets are independent. A transient failure in one endpoint
+  // should not blank the entire home screen on a cold serverless start.
+  const [invoiceResult, payResult, analyticsResult] = await Promise.allSettled([
     apiGet<{ data: Invoice[]; total: number }>('/invoices?page=1&pageSize=5'),
     apiGet<PaySummary>('/payments/summary'),
     apiGet<Analytics>('/analytics/dashboard'),
   ]);
+  const invoicePage = invoiceResult.status === 'fulfilled' ? invoiceResult.value : { data: [], total: 0 };
+  const paySummary = payResult.status === 'fulfilled' ? payResult.value : { daily: [], todayTotal: 0 };
+  const analytics = analyticsResult.status === 'fulfilled' ? analyticsResult.value : {
+    topMaterials: [], profitTrend: [], stockValue: { total_cost: 0, total_retail: 0, material_count: 0 },
+    materialMargins: [], todaySales: 0, todayProfit: 0, todayExpenses: 0, deliverySummary: { assigned: 0 }, weekRevenue: 0,
+    monthRevenue: { revenue: 0, profit: 0 }, lastMonthRevenue: { revenue: 0, profit: 0 }, yearRevenue: { revenue: 0, profit: 0 },
+    overallRevenue: { revenue: 0, profit: 0 }, monthlyTrend: [], topCustomers: [], expenseByCategory: [], pnlTrend: [], paymentMethodTotals: [],
+    invoiceSummary: { total: 0, paid: 0, partial: 0, pending: 0, outstanding: 0 }, lowStockItems: [], averageMargin: 0,
+  } as Analytics;
   const invoices = invoicePage.data || [];
 
   const now = new Date();

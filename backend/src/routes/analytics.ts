@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getDb } from '../db/setup';
 import { requireAdmin } from '../lib/auth';
+import { getCached, setCache } from '../lib/cache';
 
 const router = Router();
 router.use(requireAdmin);
@@ -76,6 +77,8 @@ router.get('/product-mix', async (req: Request, res: Response) => {
 
 router.get('/dashboard', async (_req: Request, res: Response) => {
   try {
+    const cached = getCached<any>('analytics:dashboard');
+    if (cached) { res.json(cached); return; }
     const db = getDb();
     const [
       topMaterials,
@@ -294,6 +297,9 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       averageMargin: Number(averageMargin.value || 0),
     };
 
+    // Keep the dashboard responsive during repeated navigation and avoid
+    // re-running the full aggregate set on every cold/warm page refresh.
+    setCache('analytics:dashboard', result, 15_000);
     res.json(result);
   } catch (e: any) {
     console.error('Analytics error:', e.message);
