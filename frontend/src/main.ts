@@ -153,7 +153,6 @@ document.querySelectorAll('#desktop-nav .nav-btn').forEach(btn => {
     btn.classList.add('active');
     const view = (btn as HTMLElement).dataset.view!;
     if (view !== '__more') loadView(view);
-    if ((btn as HTMLElement).dataset.view === 'dashboard') checkLowStock();
   });
 });
 
@@ -164,7 +163,6 @@ document.querySelectorAll('#bottom-nav .nav-btn').forEach(btn => {
     btn.classList.add('active');
     const view = (btn as HTMLElement).dataset.view!;
     if (view !== '__more') loadView(view);
-    if ((btn as HTMLElement).dataset.view === 'dashboard') checkLowStock();
   });
 });
 
@@ -231,7 +229,6 @@ function openMobileMore() {
 if (isLoggedIn()) {
   applyRoleUI();
   loadView('dashboard');
-  checkLowStock();
   showUserHeader();
 } else {
   login.showLogin();

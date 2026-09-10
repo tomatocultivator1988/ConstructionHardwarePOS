@@ -44,6 +44,17 @@ export async function renderDashboard(): Promise<string> {
   const invoiceSummary = analytics.invoiceSummary || { total: invoicePage.total || 0, paid: 0, partial: 0, pending: 0, outstanding: 0 };
   const outstanding = Number(invoiceSummary.outstanding || 0);
   const lowStockMats = analytics.lowStockItems || [];
+  const lowStockCount = Number((analytics as any).lowStockCount || lowStockMats.length || 0);
+  const materialNav = document.querySelector('[data-view="materials"]');
+  if (materialNav) {
+    materialNav.querySelector('.nav-badge')?.remove();
+    if (lowStockCount > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'nav-badge';
+      badge.textContent = String(lowStockCount);
+      materialNav.appendChild(badge);
+    }
+  }
   const avgMargin = Number(analytics.averageMargin || 0);
   const pendingCount = Number(invoiceSummary.pending || 0);
   const partialCount = Number(invoiceSummary.partial || 0);
