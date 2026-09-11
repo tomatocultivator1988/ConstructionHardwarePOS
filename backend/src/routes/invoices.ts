@@ -128,6 +128,10 @@ router.get('/deliveries', requireAdmin, async (req: Request, res: Response) => {
     SUM(CASE WHEN i.delivery_person IS NULL OR trim(i.delivery_person) = '' THEN 1 ELSE 0 END) AS unassigned
     FROM invoices i WHERE i.status <> 'voided'`).get() as any;
   const data = await db.prepare(`SELECT i.id, i.invoice_number, i.issued_date, i.total, i.status, i.delivery_person,
+    MAX(0, i.total
+      - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0)
+      - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0)
+      - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0)) AS adjusted_total,
     COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') AS customer_name
     FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}
     ORDER BY CASE WHEN i.delivery_person IS NULL OR trim(i.delivery_person) = '' THEN 0 ELSE 1 END, i.issued_date DESC

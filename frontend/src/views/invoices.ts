@@ -1,7 +1,7 @@
 import { apiGet, apiPost, apiPut, apiDel } from '../lib/api';
 import { esc, val, fmtDate, fmtPeso, setErr, clearErr, disableBtn, isAdmin } from '../lib/helpers';
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
-import { loadView } from '../lib/router';
+import { getCurrentView, loadView } from '../lib/router';
 import { showReceiptPreview } from './receipt';
 import type { Invoice, Material } from '../lib/types';
 import { showExportPeriodModal, exportTable, type ExportPeriod } from '../lib/export';
@@ -13,6 +13,7 @@ let posCategory = '';
 let posCart: Array<{ material: Material; quantity: number }> = [];
 let posCameraStream: MediaStream | null = null;
 let posCameraFrame = 0;
+let deliveryEditContext: { invoiceNumber: string; amount: number } | null = null;
 
 function getPOSCurrentTotal() {
   const subtotal = posCart.reduce((sum, item) => sum + item.quantity * Number(item.material.price_per_unit), 0);
@@ -158,13 +159,22 @@ export function changeInvoicePage(page: number) { invoicePage = Math.max(1, page
 export async function showDeliveryModal(invoiceId: string) {
   try {
     const invoice = await apiGet<any>(`/invoices/${invoiceId}`);
+    deliveryEditContext = { invoiceNumber: invoice.invoice_number, amount: Number(invoice.adjusted_total ?? invoice.total ?? 0) };
     showModal(`<h3>Assign Delivery Person</h3><p class="modal-help">Delivery can be assigned or updated after the sale.</p><div class="form-group"><label for="delivery-person-edit">Delivery Person <span>(optional)</span></label><input id="delivery-person-edit" maxlength="100" value="${esc(invoice.delivery_person || '')}" placeholder="Enter delivery person name" /></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveDeliveryPerson('${invoiceId}')">Save</button></div>`, 'delivery-modal');
   } catch (e: any) { showToast(e.message || 'Unable to load invoice'); }
 }
 
 export async function saveDeliveryPerson(invoiceId: string) {
   const value = (document.getElementById('delivery-person-edit') as HTMLInputElement)?.value.trim() || null;
-  try { await apiPut(`/invoices/${invoiceId}/delivery`, { delivery_person: value }); closeModal(); showToast('Delivery person updated', 'success'); loadView('invoices'); }
+  const returnView = getCurrentView() === 'deliveries' ? 'deliveries' : 'invoices';
+  const context = deliveryEditContext;
+  try {
+    await apiPut(`/invoices/${invoiceId}/delivery`, { delivery_person: value });
+    closeModal();
+    deliveryEditContext = null;
+    showToast(`${context?.invoiceNumber || 'Sale'} — ${fmtPeso(context?.amount || 0)} ${value ? `assigned to ${value}` : 'removed from delivery assignment'}`, 'success');
+    loadView(returnView);
+  }
   catch (e: any) { showToast(e.message || 'Unable to update delivery person'); }
 }
 
