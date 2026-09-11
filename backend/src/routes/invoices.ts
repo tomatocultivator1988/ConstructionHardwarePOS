@@ -333,8 +333,9 @@ router.put('/:id/delivery', requireAdmin, async (req: Request, res: Response) =>
   if (deliveryPerson !== null && deliveryPerson !== undefined && (typeof deliveryPerson !== 'string' || deliveryPerson.trim().length > 100)) {
     res.status(400).json({ error: 'Delivery person must be 100 characters or fewer' }); return;
   }
-  const invoice = await db.prepare('SELECT id, invoice_number, delivery_person FROM invoices WHERE id=?').get(req.params.id) as any;
+  const invoice = await db.prepare('SELECT id, invoice_number, delivery_person, status FROM invoices WHERE id=?').get(req.params.id) as any;
   if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+  if (invoice.status === 'voided') { res.status(409).json({ error: 'Cannot assign delivery for a voided invoice' }); return; }
   const next = typeof deliveryPerson === 'string' ? deliveryPerson.trim() : '';
   const invoiceId = String(req.params.id);
   await db.prepare('UPDATE invoices SET delivery_person=? WHERE id=?').run(next || null, invoiceId);

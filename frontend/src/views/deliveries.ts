@@ -9,6 +9,11 @@ const PAGE_SIZE = 15;
 
 export async function renderDeliveries(): Promise<string> {
   const result = await apiGet<any>(`/invoices/deliveries?page=${deliveryPage}&pageSize=${PAGE_SIZE}&status=${deliveryStatus}&search=${encodeURIComponent(deliverySearch)}`);
+  const totalPages = Math.max(1, Number(result.totalPages || 1));
+  if (deliveryPage > totalPages) {
+    deliveryPage = totalPages;
+    return renderDeliveries();
+  }
   const rows = result.data || [];
   const summary = result.summary || { assigned: 0, unassigned: 0 };
   return `<div class="page-header"><div><h2>Deliveries</h2><p class="page-subtitle">Assign and manage delivery persons for sales.</p></div></div>

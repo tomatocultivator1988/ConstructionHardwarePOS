@@ -237,6 +237,7 @@ export async function completePOSSale() {
 
 export async function showInvoiceDetail(id: string) {
   const inv = await apiGet<Invoice>(`/invoices/${id}`);
+  const returnView = getCurrentView() || 'invoices';
   const totalPaid = inv.payments.reduce((s: number, p: any) => s + p.amount, 0) - ((inv as any).refunds || []).reduce((s: number, r: any) => s + r.amount, 0);
   const returnedTotal = (inv.items || []).reduce((s: number, item: any) => s + Number(item.returned_total || 0), 0);
   const refundedTotal = ((inv as any).refunds || []).reduce((s: number, refund: any) => s + Number(refund.amount || 0), 0);
@@ -248,7 +249,7 @@ export async function showInvoiceDetail(id: string) {
   const modal = document.createElement('div');
   modal.className = 'modal';
   modal.id = modalId;
-  modal.addEventListener('click', e => { if (e.target === modal) { modal.remove(); loadView('invoices'); } });
+  modal.addEventListener('click', e => { if (e.target === modal) { modal.remove(); loadView(returnView); } });
   document.body.appendChild(modal);
   modal.innerHTML = `<div class="modal-content invoice-detail-modal-content"><div class="invoice-detail-scroll">
     <h3>Invoice ${esc(inv.invoice_number)}</h3>
@@ -336,7 +337,7 @@ export async function showInvoiceDetail(id: string) {
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="showReceiptPreview('${inv.id}')">Print Receipt</button>
       ${isAdmin() && inv.status !== 'voided' ? `<button class="btn btn-warning" onclick="voidInvoice('${inv.id}')">Void Invoice</button><button class="btn" onclick="issueCreditMemo('${inv.id}')">Credit Memo</button>${totalPaid > 0 ? `<button class="btn" onclick="recordRefund('${inv.id}')">Refund</button>` : ''}` : ''}
-      <button class="btn" onclick="closeModal();loadView('invoices')">Close</button>
+      <button class="btn" onclick="closeModal();loadView('${returnView}')">Close</button>
     </div>
   </div><div class="modal-scroll-hint" aria-hidden="true"><span>↓</span> More details below</div></div>`;
   const detailScroll = modal.querySelector('.invoice-detail-scroll') as HTMLElement | null;
