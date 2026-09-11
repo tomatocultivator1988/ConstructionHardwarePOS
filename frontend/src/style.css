@@ -29,9 +29,9 @@
   /* ── Typography ── */
   --ff: 'Aptos', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --ff-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-  /* UI text scale: 150% of the original type ramp. Fixed-size thermal
+  /* UI text scale: 135% of the original type ramp. Fixed-size thermal
      receipt previews intentionally keep their printer-sized typography below. */
-  --ui-text-scale: 1.5;
+  --ui-text-scale: 1.35;
   --fs-xs: calc(0.75rem * var(--ui-text-scale));
   --fs-sm: calc(0.875rem * var(--ui-text-scale));
   --fs-base: calc(0.9375rem * var(--ui-text-scale));
@@ -1278,7 +1278,7 @@ tr.low-stock td:first-child { box-shadow:inset 4px 0 0 var(--c-warning); }
   .dashboard-summary-grid .dashboard-card { min-height: 92px; padding: 14px 12px 11px; border-radius: 12px; display: flex; flex-direction: column; justify-content: center; }
   .dashboard-summary-grid .dashboard-card::before { height: 2px; }
   .dashboard-summary-grid .card-label { font-size: calc(0.58rem * var(--ui-text-scale)); line-height: 1.2; letter-spacing: .045em; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dashboard-summary-grid .card-value { font-size: clamp(1.575rem, 7.5vw, 2.025rem); line-height: 1; letter-spacing: -.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dashboard-summary-grid .card-value { font-size: clamp(1.4175rem, 6.75vw, 1.8225rem); line-height: 1; letter-spacing: -.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dashboard-summary-grid .card-sub { font-size: calc(0.62rem * var(--ui-text-scale)); line-height: 1.2; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 
