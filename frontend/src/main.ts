@@ -83,6 +83,7 @@ Object.assign(window, {
   toggleDeliveryPerson: deliveries.toggleDeliveryPerson,
   markDeliveryDelivered: deliveries.markDeliveryDelivered,
   setDeliveryStatus: deliveries.setDeliveryStatus,
+  switchDeliverySection: deliveries.switchDeliverySection,
   showExpenseModal: expenses.showExpenseModal,
   exportExpenses: expenses.exportExpenses,
   createExpense: expenses.createExpense,
