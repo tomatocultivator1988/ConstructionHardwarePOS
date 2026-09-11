@@ -36,6 +36,12 @@ let loadSequence = 0;
 
 export function getCurrentView() { return currentView; }
 
+function syncActiveNavigation(view: string) {
+  document.querySelectorAll<HTMLElement>('#desktop-nav .nav-btn, #bottom-nav .nav-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === view);
+  });
+}
+
 function destroyCharts() {
   chartInstances.forEach(c => { try { c.destroy(); } catch {} });
   chartInstances = [];
@@ -56,6 +62,7 @@ export async function loadView(view: string) {
   }
 
   applyRoleUI();
+  syncActiveNavigation(view);
 
   const u = localStorage.getItem('buildpro_user');
   if (u) {

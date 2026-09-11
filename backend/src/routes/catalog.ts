@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDb } from '../db/setup';
 import { requireAdmin } from '../lib/auth';
+import { logAudit } from '../lib/audit';
 
 const router = Router();
 router.use(requireAdmin);
@@ -29,7 +30,9 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
   if (existing) { res.json(existing); return; }
   const id = uuidv4();
   await db.prepare('INSERT INTO catalog_options (id,type,name) VALUES (?,?,?)').run(id, type, name);
-  res.status(201).json({ id, type, name });
+  const created = { id, type, name };
+  await logAudit(req.user?.id || null, 'create', 'catalog_option', id, `Created ${type}: ${name}`, null, created);
+  res.status(201).json(created);
 });
 
 export default router;

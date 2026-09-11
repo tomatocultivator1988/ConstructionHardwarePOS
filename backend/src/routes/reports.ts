@@ -17,7 +17,7 @@ router.get('/export', async (req: Request, res: Response) => {
     COALESCE(c.tin,'') customer_tin, f.subtotal, f.tax_rate, f.adjusted_tax tax_amount, f.adjusted_total total, f.status,
     f.net_collections paid
     FROM v_invoice_financials f JOIN invoices i ON i.id=f.invoice_id LEFT JOIN customers c ON c.id=i.customer_id
-    WHERE date(i.issued_date) BETWEEN ? AND ? ORDER BY i.issued_date, i.invoice_number`).all(from, to) as any[];
+    WHERE f.status <> 'voided' AND date(i.issued_date, '+8 hours') BETWEEN ? AND ? ORDER BY i.issued_date, i.invoice_number`).all(from, to) as any[];
   const cell = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const csv = ['Invoice Number,Date,Buyer,Buyer TIN,Subtotal,Tax Rate,Tax Amount,Total,Status,Paid', ...rows.map(r =>
     [r.invoice_number,r.issued_date,r.customer_name,r.customer_tin,r.subtotal,r.tax_rate,r.tax_amount,r.total,r.status,r.paid].map(cell).join(','))].join('\r\n');
@@ -32,9 +32,9 @@ router.get('/books', async (req: Request, res: Response) => {
   const from = (req.query.from as string) || businessDate();
   const to = (req.query.to as string) || from;
   const [sales, receipts, expenses, receivables] = await Promise.all([
-    db.prepare(`SELECT f.invoice_number, f.issued_date, COALESCE(c.name,'Walk-in') buyer, f.net_sales, f.adjusted_tax, f.adjusted_total, f.status FROM v_invoice_financials f LEFT JOIN customers c ON c.id=f.customer_id WHERE date(f.issued_date) BETWEEN ? AND ? ORDER BY f.issued_date`).all(from,to),
-    db.prepare(`SELECT p.payment_date, i.invoice_number, p.method, p.amount FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE i.status <> 'voided' AND date(p.payment_date) BETWEEN ? AND ? ORDER BY p.payment_date`).all(from,to),
-    db.prepare(`SELECT expense_date, category, vendor, description, amount, payment_method FROM expenses WHERE date(expense_date) BETWEEN ? AND ? ORDER BY expense_date`).all(from,to),
+      db.prepare(`SELECT f.invoice_number, f.issued_date, COALESCE(c.name,'Walk-in') buyer, f.net_sales, f.adjusted_tax, f.adjusted_total, f.status FROM v_invoice_financials f LEFT JOIN customers c ON c.id=f.customer_id WHERE f.status <> 'voided' AND date(f.issued_date, '+8 hours') BETWEEN ? AND ? ORDER BY f.issued_date`).all(from,to),
+    db.prepare(`SELECT p.payment_date, i.invoice_number, p.method, p.amount FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE i.status <> 'voided' AND p.method <> 'credit' AND date(p.payment_date, '+8 hours') BETWEEN ? AND ? ORDER BY p.payment_date`).all(from,to),
+    db.prepare(`SELECT expense_date, category, vendor, description, amount, payment_method FROM expenses WHERE date(expense_date, '+8 hours') BETWEEN ? AND ? ORDER BY expense_date`).all(from,to),
     db.prepare(`SELECT f.invoice_number, COALESCE(c.name,'Walk-in') buyer, f.adjusted_total, f.net_collections paid, f.adjusted_total-f.net_collections balance FROM v_invoice_financials f LEFT JOIN customers c ON c.id=f.customer_id WHERE f.status <> 'voided' AND f.adjusted_total > f.net_collections ORDER BY f.issued_date`).all(),
   ]);
   res.json({ from, to, sales, receipts, expenses, receivables });
@@ -45,9 +45,9 @@ router.get('/cash-flow', async (req: Request, res: Response) => {
   const from = (req.query.from as string) || businessDate();
   const to = (req.query.to as string) || from;
   const [receipts, refunds, expenses] = await Promise.all([
-    db.prepare("SELECT COALESCE(SUM(p.amount),0) total FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE p.method='cash' AND i.status <> 'voided' AND date(p.payment_date) BETWEEN ? AND ?").get(from,to),
-    db.prepare("SELECT COALESCE(SUM(r.amount),0) total FROM refunds r JOIN invoices i ON i.id=r.invoice_id WHERE r.method='cash' AND i.status <> 'voided' AND date(r.created_at) BETWEEN ? AND ?").get(from,to),
-    db.prepare("SELECT COALESCE(SUM(amount),0) total FROM expenses WHERE payment_method='cash' AND date(expense_date) BETWEEN ? AND ?").get(from,to),
+    db.prepare("SELECT COALESCE(SUM(p.amount),0) total FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE p.method='cash' AND i.status <> 'voided' AND date(p.payment_date, '+8 hours') BETWEEN ? AND ?").get(from,to),
+    db.prepare("SELECT COALESCE(SUM(r.amount),0) total FROM refunds r JOIN invoices i ON i.id=r.invoice_id WHERE r.method='cash' AND i.status <> 'voided' AND date(r.created_at, '+8 hours') BETWEEN ? AND ?").get(from,to),
+    db.prepare("SELECT COALESCE(SUM(amount),0) total FROM expenses WHERE payment_method='cash' AND date(expense_date, '+8 hours') BETWEEN ? AND ?").get(from,to),
   ]);
   const cashReceipts = Number((receipts as any).total || 0);
   const cashRefunds = Number((refunds as any).total || 0);
@@ -64,12 +64,12 @@ router.get('/financial-summary', async (req: Request, res: Response) => {
     SELECT
       COALESCE(SUM(f.net_sales),0) AS net_sales,
       COALESCE(SUM(f.adjusted_tax),0) AS tax_payable,
-      COALESCE(SUM(f.payments_total),0) AS collections,
+      COALESCE(SUM(f.net_collections),0) AS collections,
       COALESCE(SUM(f.refunds_total),0) AS refunds,
       COALESCE(SUM(f.adjusted_total - f.net_collections),0) AS accounts_receivable,
-      COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price,0)) FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id WHERE i.status <> 'voided' AND date(i.issued_date) BETWEEN ? AND ?),0) AS cogs,
-      COALESCE((SELECT SUM(amount) FROM expenses WHERE date(expense_date) BETWEEN ? AND ?),0) AS expenses
-    FROM v_invoice_financials f WHERE f.status <> 'voided' AND date(f.issued_date) BETWEEN ? AND ?
+      COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price,0)) FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id WHERE i.status <> 'voided' AND date(i.issued_date, '+8 hours') BETWEEN ? AND ?),0) AS cogs,
+      COALESCE((SELECT SUM(amount) FROM expenses WHERE date(expense_date, '+8 hours') BETWEEN ? AND ?),0) AS expenses
+    FROM v_invoice_financials f WHERE f.status <> 'voided' AND date(f.issued_date, '+8 hours') BETWEEN ? AND ?
   `).get(from,to,from,to,from,to) as any;
   const netSales = Number(row.net_sales || 0), cogs = Number(row.cogs || 0), expenses = Number(row.expenses || 0);
   res.json({ from, to, net_sales: netSales, tax_payable: Number(row.tax_payable || 0), collections: Number(row.collections || 0), refunds: Number(row.refunds || 0), accounts_receivable: Number(row.accounts_receivable || 0), cogs, gross_profit: netSales - cogs, expenses, net_profit: netSales - cogs - expenses });
@@ -87,25 +87,28 @@ router.get('/daily', async (req: Request, res: Response) => {
         COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) - COALESCE((SELECT SUM(amount) FROM refunds WHERE invoice_id=i.id),0) AS paid
       FROM invoices i
       LEFT JOIN customers c ON c.id = i.customer_id
-      WHERE i.status <> 'voided' AND date(i.issued_date) = ?
+      WHERE i.status <> 'voided' AND date(i.issued_date, '+8 hours') = ?
       ORDER BY i.created_at DESC
     `).all(date) as Promise<any[]>,
     db.prepare(`
       SELECT COALESCE(SUM(i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0)), 0) AS gross_sales,
         COALESCE(SUM(i.tax_amount - COALESCE((SELECT SUM(tax_amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - CASE WHEN i.tax_rate > 0 THEN COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) * i.tax_rate / (1+i.tax_rate) ELSE 0 END), 0) AS tax_collected,
         COUNT(*) AS invoice_count
-      FROM invoices i WHERE i.status <> 'voided' AND date(i.issued_date) = ?
+      FROM invoices i WHERE i.status <> 'voided' AND date(i.issued_date, '+8 hours') = ?
     `).get(date) as Promise<any>,
     db.prepare(`
-      SELECT COALESCE(SUM(f.net_sales),0) - COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price, m.cost_price, 0)) FROM invoice_items ii JOIN invoices i2 ON i2.id=ii.invoice_id LEFT JOIN materials m ON m.id=ii.material_id WHERE i2.status <> 'voided' AND date(i2.issued_date)=?),0) AS profit
-      FROM v_invoice_financials f WHERE f.status <> 'voided' AND date(f.issued_date)=?
+      SELECT COALESCE(SUM(f.net_sales),0) - COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price, m.cost_price, 0)) FROM invoice_items ii JOIN invoices i2 ON i2.id=ii.invoice_id LEFT JOIN materials m ON m.id=ii.material_id WHERE i2.status <> 'voided' AND date(i2.issued_date, '+8 hours')=?),0) AS profit
+      FROM v_invoice_financials f WHERE f.status <> 'voided' AND date(f.issued_date, '+8 hours')=?
     `).get(date, date) as Promise<any>,
     db.prepare(`
-      SELECT p.method, SUM(p.amount) AS total
-      FROM payments p JOIN invoices i ON i.id = p.invoice_id
-      WHERE i.status <> 'voided' AND date(p.payment_date) = ?
-      GROUP BY p.method ORDER BY total DESC
-    `).all(date) as Promise<any[]>,
+      SELECT method, SUM(amount) AS total FROM (
+        SELECT p.method, p.amount FROM payments p JOIN invoices i ON i.id = p.invoice_id
+        WHERE i.status <> 'voided' AND p.method <> 'credit' AND date(p.payment_date, '+8 hours') = ?
+        UNION ALL
+        SELECT r.method, -r.amount FROM refunds r JOIN invoices i ON i.id = r.invoice_id
+        WHERE i.status <> 'voided' AND date(r.created_at, '+8 hours') = ?
+      ) flows GROUP BY method ORDER BY total DESC
+    `).all(date, date) as Promise<any[]>,
   ]);
 
   res.json({
@@ -129,21 +132,21 @@ router.get('/monthly', async (req: Request, res: Response) => {
   const [revenue, cogs, expenses, expenseByCategory, lastMonth] = await Promise.all([
     db.prepare(`
       SELECT COALESCE(SUM(net_sales), 0) AS total
-      FROM v_invoice_financials WHERE status <> 'voided' AND strftime('%Y-%m', issued_date) = ?
+      FROM v_invoice_financials WHERE status <> 'voided' AND strftime('%Y-%m', issued_date, '+8 hours') = ?
     `).get(month) as Promise<any>,
     db.prepare(`
       SELECT COALESCE(SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price, m.cost_price, 0)), 0) AS total
       FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
       LEFT JOIN materials m ON m.id = ii.material_id
-      WHERE i.status <> 'voided' AND strftime('%Y-%m', i.issued_date) = ?
+      WHERE i.status <> 'voided' AND strftime('%Y-%m', i.issued_date, '+8 hours') = ?
     `).get(month) as Promise<any>,
     db.prepare(`
       SELECT COALESCE(SUM(amount), 0) AS total
-      FROM expenses WHERE strftime('%Y-%m', expense_date) = ?
+      FROM expenses WHERE strftime('%Y-%m', expense_date, '+8 hours') = ?
     `).get(month) as Promise<any>,
     db.prepare(`
       SELECT category, SUM(amount) AS total
-      FROM expenses WHERE strftime('%Y-%m', expense_date) = ?
+      FROM expenses WHERE strftime('%Y-%m', expense_date, '+8 hours') = ?
       GROUP BY category ORDER BY total DESC
     `).all(month) as Promise<any[]>,
     db.prepare(`
@@ -185,11 +188,11 @@ router.get('/tax', async (req: Request, res: Response) => {
         COALESCE(SUM(adjusted_tax), 0) AS vat_collected,
         COALESCE(SUM(CASE WHEN tax_rate > 0 THEN net_sales ELSE 0 END), 0) AS taxable_amount,
         COALESCE(SUM(CASE WHEN tax_rate = 0 THEN net_sales ELSE 0 END), 0) AS exempt_sales
-      FROM v_invoice_financials WHERE status <> 'voided' AND strftime('%Y-%m', issued_date) = ?
+      FROM v_invoice_financials WHERE status <> 'voided' AND strftime('%Y-%m', issued_date, '+8 hours') = ?
     `).get(month) as Promise<any>,
     db.prepare(`
       SELECT tax_rate, COUNT(*) AS cnt, COALESCE(SUM(net_sales), 0) AS subtotal, COALESCE(SUM(adjusted_tax), 0) AS tax
-      FROM v_invoice_financials WHERE status <> 'voided' AND strftime('%Y-%m', issued_date) = ?
+      FROM v_invoice_financials WHERE status <> 'voided' AND strftime('%Y-%m', issued_date, '+8 hours') = ?
       GROUP BY tax_rate ORDER BY tax_rate DESC
     `).all(month) as Promise<any[]>,
   ]);
@@ -224,17 +227,17 @@ router.get('/range', async (req: Request, res: Response) => {
           COALESCE(c.name, 'Walk-in') AS customer_name,
           COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) - COALESCE((SELECT SUM(amount) FROM refunds WHERE invoice_id=i.id),0) AS paid
         FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id
-        WHERE i.status <> 'voided' AND date(i.issued_date) >= ? AND date(i.issued_date) <= ?
+        WHERE i.status <> 'voided' AND date(i.issued_date, '+8 hours') >= ? AND date(i.issued_date, '+8 hours') <= ?
         ORDER BY i.issued_date DESC
       `).all(from, to) as Promise<any[]>,
       db.prepare(`
         SELECT COALESCE(SUM(net_sales), 0) AS gross, COALESCE(SUM(adjusted_tax), 0) AS tax, COUNT(*) AS cnt
-      FROM v_invoice_financials WHERE status <> 'voided' AND date(issued_date) >= ? AND date(issued_date) <= ?
+      FROM v_invoice_financials WHERE status <> 'voided' AND date(issued_date, '+8 hours') >= ? AND date(issued_date, '+8 hours') <= ?
       `).get(from, to) as Promise<any>,
       db.prepare(`
-        SELECT COALESCE(SUM(f.net_sales),0) - COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price, m.cost_price, 0)) FROM invoice_items ii JOIN invoices i2 ON i2.id=ii.invoice_id LEFT JOIN materials m ON m.id=ii.material_id WHERE i2.status <> 'voided' AND date(i2.issued_date) >= ? AND date(i2.issued_date) <= ?),0) AS profit
+        SELECT COALESCE(SUM(f.net_sales),0) - COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price, m.cost_price, 0)) FROM invoice_items ii JOIN invoices i2 ON i2.id=ii.invoice_id LEFT JOIN materials m ON m.id=ii.material_id WHERE i2.status <> 'voided' AND date(i2.issued_date, '+8 hours') >= ? AND date(i2.issued_date, '+8 hours') <= ?),0) AS profit
         FROM v_invoice_financials f
-        WHERE f.status <> 'voided' AND date(f.issued_date) >= ? AND date(f.issued_date) <= ?
+        WHERE f.status <> 'voided' AND date(f.issued_date, '+8 hours') >= ? AND date(f.issued_date, '+8 hours') <= ?
       `).get(from, to, from, to) as Promise<any>,
     ]);
 
@@ -255,17 +258,17 @@ router.get('/range', async (req: Request, res: Response) => {
     const [revenue, cogs, expenses] = await Promise.all([
       db.prepare(`
         SELECT COALESCE(SUM(net_sales), 0) AS total FROM v_invoice_financials
-        WHERE status <> 'voided' AND date(issued_date) >= ? AND date(issued_date) <= ?
+        WHERE status <> 'voided' AND date(issued_date, '+8 hours') >= ? AND date(issued_date, '+8 hours') <= ?
       `).get(from, to) as Promise<any>,
       db.prepare(`
         SELECT COALESCE(SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price, m.cost_price, 0)), 0) AS total
         FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
         LEFT JOIN materials m ON m.id = ii.material_id
-        WHERE i.status <> 'voided' AND date(i.issued_date) >= ? AND date(i.issued_date) <= ?
+        WHERE i.status <> 'voided' AND date(i.issued_date, '+8 hours') >= ? AND date(i.issued_date, '+8 hours') <= ?
       `).get(from, to) as Promise<any>,
       db.prepare(`
         SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
-        WHERE date(expense_date) >= ? AND date(expense_date) <= ?
+        WHERE date(expense_date, '+8 hours') >= ? AND date(expense_date, '+8 hours') <= ?
       `).get(from, to) as Promise<any>,
     ]);
 

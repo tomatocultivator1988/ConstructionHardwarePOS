@@ -13,6 +13,9 @@ export async function renderDashboard(): Promise<string> {
   ]);
   const invoicePage = invoiceResult.status === 'fulfilled' ? invoiceResult.value : { data: [], total: 0 };
   const paySummary = payResult.status === 'fulfilled' ? payResult.value : { daily: [], todayTotal: 0 };
+  if (analyticsResult.status === 'rejected') {
+    throw new Error('Dashboard analytics are temporarily unavailable. Please retry.');
+  }
   const analytics = analyticsResult.status === 'fulfilled' ? analyticsResult.value : {
     topMaterials: [], profitTrend: [], stockValue: { total_cost: 0, total_retail: 0, material_count: 0 },
     materialMargins: [], todaySales: 0, todayProfit: 0, todayExpenses: 0, deliverySummary: { assigned: 0 }, weekRevenue: 0,

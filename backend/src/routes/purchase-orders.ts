@@ -105,8 +105,9 @@ router.post('/', async (req: Request, res: Response) => {
     FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id WHERE po.id = ?
   `).get(poId);
   const poItems = await db.prepare('SELECT * FROM po_items WHERE po_id = ?').all(poId);
-  await logAudit((req as any).user?.id || null, 'create', 'purchase_order', poId, poNumber);
-  res.status(201).json({ ...po as any, items: poItems });
+  const created = { ...po as any, items: poItems };
+  await logAudit((req as any).user?.id || null, 'create', 'purchase_order', poId, poNumber, null, created);
+  res.status(201).json(created);
 });
 
 router.put('/:id', async (req: Request, res: Response) => {
@@ -120,7 +121,16 @@ router.put('/:id', async (req: Request, res: Response) => {
   const { supplier_id, items, order_date } = req.body;
 
   if (order_date !== undefined && (typeof order_date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(order_date))) { res.status(400).json({ error: 'Invalid order date' }); return; }
-  if (items !== undefined) { const itemError = validateItems(items); if (itemError) { res.status(400).json({ error: itemError }); return; } }
+  if (items !== undefined) {
+    const itemError = validateItems(items);
+    if (itemError) { res.status(400).json({ error: itemError }); return; }
+    const materialIds = [...new Set(items.filter((item: any) => item.material_id).map((item: any) => item.material_id))];
+    if (materialIds.length) {
+      const placeholders = materialIds.map(() => '?').join(',');
+      const existingMaterials = await db.prepare(`SELECT id FROM materials WHERE id IN (${placeholders})`).all(...materialIds) as any[];
+      if (existingMaterials.length !== materialIds.length) { res.status(400).json({ error: 'One or more materials do not exist' }); return; }
+    }
+  }
 
   if (supplier_id) {
   const supplier = await db.prepare('SELECT * FROM suppliers WHERE id = ?').get(supplier_id);
@@ -151,7 +161,9 @@ router.put('/:id', async (req: Request, res: Response) => {
   });
 
   await txn();
-  res.json(await db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(req.params.id));
+  const updated = await db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(req.params.id);
+  await logAudit((req as any).user?.id || null, 'update', 'purchase_order', req.params.id as string, `Updated ${existing.po_number}`, existing, updated);
+  res.json(updated);
 });
 
 router.put('/:id/receive', requireAdmin, async (req: Request, res: Response) => {
@@ -185,8 +197,9 @@ router.put('/:id/receive', requireAdmin, async (req: Request, res: Response) => 
   });
 
   await txn();
-  await logAudit((req as any).user?.id || null, 'update', 'purchase_order', req.params.id as string, `Received ${existing.po_number}`);
-  res.json(await db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(req.params.id));
+  const received = await db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(req.params.id);
+  await logAudit((req as any).user?.id || null, 'update', 'purchase_order', req.params.id as string, `Received ${existing.po_number}`, existing, received);
+  res.json(received);
 });
 
 router.put('/:id/cancel', requireAdmin, async (req: Request, res: Response) => {
@@ -197,8 +210,9 @@ router.put('/:id/cancel', requireAdmin, async (req: Request, res: Response) => {
     res.status(400).json({ error: 'Only pending purchase orders can be cancelled' }); return;
   }
   await db.prepare("UPDATE purchase_orders SET status = 'cancelled' WHERE id = ?").run(req.params.id);
-  await logAudit((req as any).user?.id || null, 'update', 'purchase_order', req.params.id as string, `Cancelled ${existing.po_number}`);
-  res.json(await db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(req.params.id));
+  const cancelled = await db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(req.params.id);
+  await logAudit((req as any).user?.id || null, 'update', 'purchase_order', req.params.id as string, `Cancelled ${existing.po_number}`, existing, cancelled);
+  res.json(cancelled);
 });
 
 router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
@@ -213,7 +227,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
     await db.prepare('DELETE FROM purchase_orders WHERE id = ?').run(req.params.id);
   });
   await txn();
-  await logAudit((req as any).user?.id || null, 'delete', 'purchase_order', req.params.id as string, existing.po_number);
+  await logAudit((req as any).user?.id || null, 'delete', 'purchase_order', req.params.id as string, existing.po_number, existing, null);
   res.status(204).send();
 });
 

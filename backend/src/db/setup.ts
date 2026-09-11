@@ -79,6 +79,11 @@ async function initTables() {
       credit_account_name TEXT,
       buyer_address TEXT,
       notes TEXT,
+      idempotency_key TEXT,
+      delivery_person_id TEXT,
+      delivery_status TEXT NOT NULL DEFAULT 'unassigned' CHECK (delivery_status IN ('unassigned','assigned','delivered')),
+      delivered_at TEXT,
+      delivered_by TEXT,
       paid_date TEXT,
       user_id TEXT,
       created_at TEXT DEFAULT (datetime('now')),
@@ -105,6 +110,7 @@ async function initTables() {
       quantity REAL NOT NULL CHECK (quantity > 0),
       total_credit REAL NOT NULL DEFAULT 0,
       return_batch_id TEXT,
+      idempotency_key TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (invoice_item_id) REFERENCES invoice_items(id),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id),
@@ -119,6 +125,7 @@ async function initTables() {
       method TEXT NOT NULL,
       payment_date TEXT DEFAULT (datetime('now')),
       notes TEXT,
+      idempotency_key TEXT,
       shift_id TEXT,
       FOREIGN KEY (invoice_id) REFERENCES invoices(id)
     );
@@ -210,6 +217,15 @@ async function initTables() {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS delivery_personnel (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      phone TEXT,
+      active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0,1)),
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS attendance (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -295,6 +311,7 @@ async function initTables() {
       amount REAL NOT NULL CHECK (amount > 0),
       method TEXT NOT NULL,
       reference TEXT,
+      idempotency_key TEXT,
       created_by TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id),
@@ -348,6 +365,12 @@ async function migrateSchema() {
   if (!materialInfo.some((r: any) => r.name === 'barcode')) await db.exec("ALTER TABLE materials ADD COLUMN barcode TEXT");
   const invoiceCols = invoiceInfo.map((r: any) => r.name);
   if (!invoiceCols.includes('delivery_person')) await db.exec("ALTER TABLE invoices ADD COLUMN delivery_person TEXT");
+  if (!invoiceCols.includes('delivery_person_id')) await db.exec("ALTER TABLE invoices ADD COLUMN delivery_person_id TEXT");
+  if (!invoiceCols.includes('delivery_status')) await db.exec("ALTER TABLE invoices ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'unassigned'");
+  if (!invoiceCols.includes('delivered_at')) await db.exec("ALTER TABLE invoices ADD COLUMN delivered_at TEXT");
+  if (!invoiceCols.includes('delivered_by')) await db.exec("ALTER TABLE invoices ADD COLUMN delivered_by TEXT");
+
+  await db.exec("UPDATE invoices SET delivery_status = CASE WHEN delivery_person_id IS NOT NULL AND trim(delivery_person_id) <> '' THEN 'assigned' WHEN delivery_person IS NOT NULL AND trim(delivery_person) <> '' THEN 'assigned' ELSE 'unassigned' END WHERE delivery_status IS NULL OR trim(delivery_status) = ''");
 
   if (!invoiceCols.includes('subtotal')) {
     await db.exec("ALTER TABLE invoices ADD COLUMN subtotal REAL DEFAULT 0");
@@ -367,22 +390,26 @@ async function migrateSchema() {
   if (!invoiceCols.includes('credit_account_name')) await db.exec("ALTER TABLE invoices ADD COLUMN credit_account_name TEXT");
   if (!invoiceCols.includes('buyer_address')) await db.exec("ALTER TABLE invoices ADD COLUMN buyer_address TEXT");
   if (!invoiceCols.includes('notes')) await db.exec("ALTER TABLE invoices ADD COLUMN notes TEXT");
+  if (!invoiceCols.includes('idempotency_key')) await db.exec("ALTER TABLE invoices ADD COLUMN idempotency_key TEXT");
   // Older POS checkouts explicitly inserted NULL instead of allowing the
   // column default to run. Recover those dates from the invoice creation time
   // so they appear in reports and dashboard day totals.
   await db.exec("UPDATE invoices SET issued_date = COALESCE(created_at, datetime('now')) WHERE issued_date IS NULL OR trim(issued_date) = ''");
   const paymentInfo = (await db.prepare("PRAGMA table_info('payments')").all()) as any[];
   if (!paymentInfo.some((r: any) => r.name === 'shift_id')) await db.exec("ALTER TABLE payments ADD COLUMN shift_id TEXT");
+  if (!paymentInfo.some((r: any) => r.name === 'idempotency_key')) await db.exec("ALTER TABLE payments ADD COLUMN idempotency_key TEXT");
   const expenseInfo = (await db.prepare("PRAGMA table_info('expenses')").all()) as any[];
   if (!expenseInfo.some((r: any) => r.name === 'payment_method')) await db.exec("ALTER TABLE expenses ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'cash'");
   const refundInfo = (await db.prepare("PRAGMA table_info('refunds')").all()) as any[];
   if (!refundInfo.some((r: any) => r.name === 'shift_id')) await db.exec("ALTER TABLE refunds ADD COLUMN shift_id TEXT");
   if (!refundInfo.some((r: any) => r.name === 'return_batch_id')) await db.exec("ALTER TABLE refunds ADD COLUMN return_batch_id TEXT");
+  if (!refundInfo.some((r: any) => r.name === 'idempotency_key')) await db.exec("ALTER TABLE refunds ADD COLUMN idempotency_key TEXT");
   const creditInfo = (await db.prepare("PRAGMA table_info('credit_memos')").all()) as any[];
   if (!creditInfo.some((r: any) => r.name === 'tax_amount')) await db.exec("ALTER TABLE credit_memos ADD COLUMN tax_amount REAL NOT NULL DEFAULT 0");
   const returnInfo = (await db.prepare("PRAGMA table_info('invoice_returns')").all()) as any[];
   if (!returnInfo.some((r: any) => r.name === 'total_credit')) await db.exec("ALTER TABLE invoice_returns ADD COLUMN total_credit REAL NOT NULL DEFAULT 0");
   if (!returnInfo.some((r: any) => r.name === 'return_batch_id')) await db.exec("ALTER TABLE invoice_returns ADD COLUMN return_batch_id TEXT");
+  if (!returnInfo.some((r: any) => r.name === 'idempotency_key')) await db.exec("ALTER TABLE invoice_returns ADD COLUMN idempotency_key TEXT");
   const auditInfo = (await db.prepare("PRAGMA table_info('audit_log')").all()) as any[];
   const auditCols = auditInfo.map((r: any) => r.name);
   if (!auditCols.includes('old_values')) await db.exec("ALTER TABLE audit_log ADD COLUMN old_values TEXT");
@@ -431,6 +458,8 @@ async function migrateSchema() {
   if (!indexNames.includes('idx_invoices_issued_date')) {
     await db.exec("CREATE INDEX idx_invoices_issued_date ON invoices(issued_date)");
   }
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_delivery_person ON invoices(delivery_person_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_delivery_personnel_active ON delivery_personnel(active)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_invoices_issued_day ON invoices(date(issued_date))');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_payments_payment_day ON payments(date(payment_date))');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_refunds_created_day ON refunds(date(created_at))');
@@ -454,6 +483,10 @@ async function migrateSchema() {
   await db.exec('CREATE INDEX IF NOT EXISTS idx_refunds_return_batch ON refunds(return_batch_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_returns_batch ON invoice_returns(return_batch_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_payments_invoice_method ON payments(invoice_id, method)');
+  await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_idempotency ON invoices(idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''");
+  await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_idempotency ON payments(idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''");
+  await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_refunds_idempotency ON refunds(idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''");
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_returns_idempotency ON invoice_returns(invoice_id, idempotency_key)");
 
   // Views are created idempotently. Dropping and recreating them on every
   // serverless cold start creates a race when multiple Vercel instances
@@ -485,6 +518,21 @@ async function migrateSchema() {
     FROM invoice_items ii
     LEFT JOIN materials m ON m.id = ii.material_id
     GROUP BY ii.invoice_id
+  `);
+  await db.exec(`
+    CREATE VIEW IF NOT EXISTS v_invoice_profit_margin_returns AS
+    WITH line_values AS (
+      SELECT ii.invoice_id,
+        MAX(ii.total - COALESCE((SELECT SUM(ir.total_credit) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id), 0), 0) AS revenue,
+        MAX(ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id), 0), 0)
+          * COALESCE(ii.cost_price, m.cost_price, 0) AS cogs
+      FROM invoice_items ii
+      LEFT JOIN materials m ON m.id=ii.material_id
+      GROUP BY ii.id
+    )
+    SELECT invoice_id, SUM(revenue) AS revenue, SUM(cogs) AS cogs,
+      CASE WHEN SUM(revenue) > 0 THEN (SUM(revenue) - SUM(cogs)) / SUM(revenue) ELSE 0 END AS profit_ratio
+    FROM line_values GROUP BY invoice_id
   `);
 
   // Create default admin if no users exist

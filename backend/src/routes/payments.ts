@@ -53,7 +53,7 @@ router.get('/summary', async (_req: Request, res: Response) => {
     res.json({ daily, todayTotal: today.total });
   } catch (e: any) {
     console.error('Payments summary error:', e.message);
-    res.json({ daily: [], todayTotal: 0 });
+    res.status(503).json({ daily: [], todayTotal: 0, error: 'Payment summary temporarily unavailable', retryable: true });
   }
 });
 

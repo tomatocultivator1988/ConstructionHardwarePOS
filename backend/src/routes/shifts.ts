@@ -81,8 +81,9 @@ router.post('/open', requireAdmin, async (req: Request, res: Response) => {
   if (open) { res.status(409).json({ error: 'You already have an open shift' }); return; }
   const id = uuidv4();
   await db.prepare('INSERT INTO cashier_shifts (id, user_id, opened_by, opening_cash) VALUES (?, ?, ?, ?)').run(id, targetUserId, req.user!.id, openingCash);
-  await logAudit(req.user!.id, 'open', 'cashier_shift', id, `Opened ${target.username}; opening cash ${openingCash}`);
-  res.status(201).json(await db.prepare('SELECT * FROM cashier_shifts WHERE id = ?').get(id));
+  const opened = await db.prepare('SELECT * FROM cashier_shifts WHERE id = ?').get(id);
+  await logAudit(req.user!.id, 'open', 'cashier_shift', id, `Opened ${target.username}; opening cash ${openingCash}`, null, opened);
+  res.status(201).json(opened);
 });
 
 router.post('/:id/close', requireAdmin, async (req: Request, res: Response) => {
@@ -93,10 +94,11 @@ router.post('/:id/close', requireAdmin, async (req: Request, res: Response) => {
   if (!shift) { res.status(404).json({ error: 'Open shift not found' }); return; }
   const metrics = await getShiftMetrics(db, shift.id);
   const expected = Number(shift.opening_cash) + metrics.expected_cash_delta;
-  await db.prepare("UPDATE cashier_shifts SET closed_at = datetime('now'), expected_cash = ?, closing_cash = ?, variance = ?, status = 'closed', notes = ?, closed_by = ? WHERE id = ?")
+  await db.prepare("UPDATE cashier_shifts SET closed_at = datetime('now'), expected_cash = ?, closing_cash = ?, variance = ?, status = 'closed', notes = ?, closed_by = ? WHERE id = ? AND status='open'")
     .run(expected, closingCash, closingCash - expected, req.body?.notes || null, req.user!.id, shift.id);
-  await logAudit(req.user!.id, 'close', 'cashier_shift', shift.id, `Expected ${expected}; counted ${closingCash}`);
-  res.json(await db.prepare('SELECT * FROM cashier_shifts WHERE id = ?').get(shift.id));
+  const closed = await db.prepare('SELECT * FROM cashier_shifts WHERE id = ?').get(shift.id);
+  await logAudit(req.user!.id, 'close', 'cashier_shift', shift.id, `Expected ${expected}; counted ${closingCash}`, shift, closed);
+  res.json(closed);
 });
 
 router.post('/:id/event', requireAdmin, async (req: Request, res: Response) => {

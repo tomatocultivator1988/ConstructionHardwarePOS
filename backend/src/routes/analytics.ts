@@ -105,9 +105,9 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
     ] = await Promise.all([
       db.prepare(`
         SELECT ii.material_id, m.name, m.unit, m.cost_price,
-          SUM(ii.quantity) AS total_qty,
-          SUM(ii.total) AS total_revenue,
-          SUM(ii.quantity * COALESCE(ii.cost_price, m.cost_price, 0)) AS total_cost
+          SUM(MAX(ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id), 0), 0)) AS total_qty,
+          SUM(MAX(ii.total - COALESCE((SELECT SUM(ir.total_credit) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id), 0), 0)) AS total_revenue,
+          SUM(MAX(ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id), 0), 0) * COALESCE(ii.cost_price, m.cost_price, 0)) AS total_cost
         FROM invoice_items ii
         JOIN materials m ON m.id = ii.material_id
         WHERE ii.material_id IS NOT NULL AND EXISTS (SELECT 1 FROM invoices i WHERE i.id=ii.invoice_id AND i.status <> 'voided')
@@ -125,7 +125,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
           COALESCE(SUM(f.net_sales * COALESCE(v.profit_ratio, 0)), 0) AS profit
         FROM dates
         LEFT JOIN v_invoice_financials f ON date(f.issued_date, '+8 hours') = dates.d AND f.status <> 'voided'
-        LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
+        LEFT JOIN v_invoice_profit_margin_returns v ON v.invoice_id = f.invoice_id
         GROUP BY dates.d
         ORDER BY dates.d
       `).all() as Promise<any[]>,
@@ -150,7 +150,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       `).get() as Promise<any>,
       db.prepare(`
         SELECT COALESCE(SUM(f.net_sales * COALESCE(v.profit_ratio, 0)), 0) AS profit
-        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
+        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin_returns v ON v.invoice_id = f.invoice_id
         WHERE f.status <> 'voided' AND date(f.issued_date, '+8 hours') = date('now', '+8 hours')
       `).get() as Promise<any>,
       db.prepare(`
@@ -170,25 +170,25 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       db.prepare(`
         SELECT COALESCE(SUM(f.adjusted_total), 0) AS revenue,
           COALESCE(SUM(f.net_sales * COALESCE(v.profit_ratio, 0)), 0) AS profit
-        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
+        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin_returns v ON v.invoice_id = f.invoice_id
         WHERE f.status <> 'voided' AND strftime('%Y-%m', f.issued_date, '+8 hours') = strftime('%Y-%m', 'now', '+8 hours')
       `).get() as Promise<any>,
       db.prepare(`
         SELECT COALESCE(SUM(f.adjusted_total), 0) AS revenue,
           COALESCE(SUM(f.net_sales * COALESCE(v.profit_ratio, 0)), 0) AS profit
-        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
+        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin_returns v ON v.invoice_id = f.invoice_id
         WHERE f.status <> 'voided' AND strftime('%Y-%m', f.issued_date, '+8 hours') = strftime('%Y-%m', 'now', '+8 hours', '-1 month')
       `).get() as Promise<any>,
       db.prepare(`
         SELECT COALESCE(SUM(f.adjusted_total), 0) AS revenue,
           COALESCE(SUM(f.net_sales * COALESCE(v.profit_ratio, 0)), 0) AS profit
-        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
+        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin_returns v ON v.invoice_id = f.invoice_id
         WHERE f.status <> 'voided' AND strftime('%Y', f.issued_date, '+8 hours') = strftime('%Y', 'now', '+8 hours')
       `).get() as Promise<any>,
       db.prepare(`
         SELECT COALESCE(SUM(f.adjusted_total), 0) AS revenue,
           COALESCE(SUM(f.net_sales * COALESCE(v.profit_ratio, 0)), 0) AS profit
-        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
+        FROM v_invoice_financials f LEFT JOIN v_invoice_profit_margin_returns v ON v.invoice_id = f.invoice_id
         WHERE f.status <> 'voided'
       `).get() as Promise<any>,
       db.prepare(`
@@ -200,12 +200,13 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
           COALESCE(SUM(f.adjusted_total), 0) AS revenue,
           COALESCE(SUM(f.net_sales * COALESCE(v.profit_ratio, 0)), 0) AS profit
         FROM months LEFT JOIN v_invoice_financials f ON strftime('%Y-%m', f.issued_date, '+8 hours') = months.m AND f.status <> 'voided'
-        LEFT JOIN v_invoice_profit_margin v ON v.invoice_id = f.invoice_id
+        LEFT JOIN v_invoice_profit_margin_returns v ON v.invoice_id = f.invoice_id
         GROUP BY months.m ORDER BY months.m
       `).all() as Promise<any[]>,
       db.prepare(`
         SELECT COALESCE(c.name, 'Walk-in') AS name,
-          COUNT(DISTINCT i.id) AS invoice_count, SUM(p.amount) - COALESCE(SUM((SELECT COALESCE(SUM(r.amount),0) FROM refunds r WHERE r.invoice_id=i.id)),0) AS total_paid
+          COUNT(DISTINCT i.id) AS invoice_count,
+          SUM(p.amount) - COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id=i.id),0) AS total_paid
         FROM payments p JOIN invoices i ON i.id = p.invoice_id
         LEFT JOIN customers c ON c.id = i.customer_id
         WHERE i.status <> 'voided'
@@ -303,7 +304,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
     res.json(result);
   } catch (e: any) {
     console.error('Analytics error:', e.message);
-    res.json({
+    res.status(503).json({
       topMaterials: [], profitTrend: [],
       stockValue: { total_cost: 0, total_retail: 0, material_count: 0 },
       materialMargins: [], todaySales: 0, todayProfit: 0, todayExpenses: 0, deliverySummary: { assigned: 0 }, weekRevenue: 0,

@@ -76,9 +76,13 @@ async function fetchGet<T>(path: string): Promise<T> {
 }
 
 async function mutate(method: string, path: string, body?: any): Promise<any> {
+  const requestHeaders: Record<string, string> = body !== undefined ? { 'Content-Type': 'application/json' } : {};
+  if (method === 'POST') {
+    requestHeaders['Idempotency-Key'] = typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+  }
   const res = await fetch(API + path, {
     method,
-    headers: apiHeaders(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    headers: apiHeaders(requestHeaders),
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   await handleResponse(res);

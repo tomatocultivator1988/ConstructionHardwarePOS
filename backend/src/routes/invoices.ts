@@ -23,7 +23,8 @@ async function refreshInvoiceStatus(db: ReturnType<typeof getDb>, invoiceId: str
   // followed by its refund would be deducted twice.
   const adjustedTotal = Math.max(0, Number(invoice.total) - Number(credits.total || 0) - Number(returns.total || 0));
   const netPaid = Number(payments.total || 0) - Number(refunds.total || 0);
-  const status = netPaid >= adjustedTotal - 0.005 ? 'paid' : netPaid > 0 ? 'partial' : 'pending';
+  const hasReturns = Number(returns.total || 0) > 0.005;
+  const status = adjustedTotal <= 0.005 && hasReturns ? 'returned' : netPaid >= adjustedTotal - 0.005 ? 'paid' : netPaid > 0 ? 'partial' : 'pending';
   await db.prepare("UPDATE invoices SET status=?, paid_date=CASE WHEN ?='paid' THEN COALESCE(paid_date, datetime('now')) ELSE NULL END WHERE id=?")
     .run(status, status, invoiceId);
 }
@@ -121,24 +122,26 @@ router.get('/deliveries', requireAdmin, async (req: Request, res: Response) => {
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
   const conditions = ["i.status <> 'voided'"];
   const params: any[] = [];
-  if (status === 'assigned') conditions.push("i.delivery_person IS NOT NULL AND trim(i.delivery_person) <> ''");
+  if (status === 'assigned') conditions.push("i.delivery_status = 'assigned'");
   if (status === 'unassigned') conditions.push("(i.delivery_person IS NULL OR trim(i.delivery_person) = '')");
+  if (status === 'delivered') conditions.push("i.delivery_status = 'delivered'");
   if (search) { conditions.push("(i.invoice_number LIKE ? OR COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') LIKE ?)"); params.push(`%${search}%`, `%${search}%`); }
   const where = conditions.join(' AND ');
   const total = Number((await db.prepare(`SELECT COUNT(*) AS total FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}`).get(...params) as any).total || 0);
   const summary = await db.prepare(`SELECT
-    SUM(CASE WHEN i.delivery_person IS NOT NULL AND trim(i.delivery_person) <> '' THEN 1 ELSE 0 END) AS assigned,
+    SUM(CASE WHEN i.delivery_status = 'assigned' THEN 1 ELSE 0 END) AS assigned,
+    SUM(CASE WHEN i.delivery_status = 'delivered' THEN 1 ELSE 0 END) AS delivered,
     SUM(CASE WHEN i.delivery_person IS NULL OR trim(i.delivery_person) = '' THEN 1 ELSE 0 END) AS unassigned
     FROM invoices i WHERE i.status <> 'voided'`).get() as any;
-  const data = await db.prepare(`SELECT i.id, i.invoice_number, i.issued_date, i.total, i.status, i.delivery_person,
+  const data = await db.prepare(`SELECT i.id, i.invoice_number, i.issued_date, i.total, i.status, i.delivery_person, i.delivery_person_id, i.delivery_status, i.delivered_at,
     MAX(0, i.total
       - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0)
       - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0)) AS adjusted_total,
     COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') AS customer_name
     FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}
-    ORDER BY CASE WHEN i.delivery_person IS NULL OR trim(i.delivery_person) = '' THEN 0 ELSE 1 END, i.issued_date DESC
+    ORDER BY CASE WHEN i.delivery_status = 'unassigned' THEN 0 WHEN i.delivery_status = 'assigned' THEN 1 ELSE 2 END, i.issued_date DESC
     LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize);
-  res.json({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize), summary: { assigned: Number(summary.assigned || 0), unassigned: Number(summary.unassigned || 0) } });
+  res.json({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize), summary: { assigned: Number(summary.assigned || 0), delivered: Number(summary.delivered || 0), unassigned: Number(summary.unassigned || 0) } });
 });
 
 router.get('/:id', async (req: Request, res: Response) => {
@@ -168,6 +171,14 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 router.post('/', async (req: Request, res: Response) => {
   const db = getDb();
+  const idempotencyKey = typeof req.headers['idempotency-key'] === 'string' ? req.headers['idempotency-key'].trim().slice(0, 120) : '';
+  if (idempotencyKey) {
+    const previous = await db.prepare('SELECT id FROM invoices WHERE idempotency_key=?').get(idempotencyKey) as any;
+    if (previous) {
+      res.status(200).json(await db.prepare('SELECT * FROM invoices WHERE id=?').get(previous.id));
+      return;
+    }
+  }
   if (req.user?.role === 'staff') {
     const openShift = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id=? AND status='open' LIMIT 1").get(req.user.id);
     if (!openShift) { res.status(403).json({ error: 'Open staff shift required before making a sale' }); return; }
@@ -176,6 +187,17 @@ router.post('/', async (req: Request, res: Response) => {
   const creditName = typeof credit_account_name === 'string' ? credit_account_name.trim() : '';
   const buyerAddress = typeof buyer_address === 'string' ? buyer_address.trim() : '';
   const invoiceNotes = typeof notes === 'string' ? notes.trim() : '';
+  const normalizedTaxRate = tax_rate === undefined || tax_rate === null || tax_rate === '' ? null : Number(tax_rate);
+  const validDate = (value: unknown) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(value) && !Number.isNaN(Date.parse(value));
+  if (normalizedTaxRate !== null && (!Number.isFinite(normalizedTaxRate) || normalizedTaxRate < 0 || normalizedTaxRate > 1)) {
+    res.status(400).json({ error: 'Tax rate must be between 0 and 1' }); return;
+  }
+  if (due_date !== undefined && due_date !== null && due_date !== '' && !validDate(due_date)) {
+    res.status(400).json({ error: 'Due date must be a valid date' }); return;
+  }
+  if (issued_date !== undefined && issued_date !== null && issued_date !== '' && !validDate(issued_date)) {
+    res.status(400).json({ error: 'Issued date must be a valid date' }); return;
+  }
 
   if (!Array.isArray(items) || items.length === 0) {
     res.status(400).json({ error: 'At least one line item is required' });
@@ -257,19 +279,27 @@ router.post('/', async (req: Request, res: Response) => {
 
     if (usedMaterialIds.size > 0) {
       const placeholders = Array.from(usedMaterialIds).map(() => '?').join(',');
-      const mats = await db.prepare(`SELECT id, name, stock, unit, cost_price FROM materials WHERE id IN (${placeholders})`).all(...usedMaterialIds) as any[];
+      const mats = await db.prepare(`SELECT id, name, stock, unit, cost_price, price_per_unit, wholesale_price FROM materials WHERE id IN (${placeholders})`).all(...usedMaterialIds) as any[];
       materialMap = new Map(mats.map((m: any) => [m.id, m]));
       for (const materialId of usedMaterialIds) {
         const mat = materialMap.get(materialId);
         if (!mat) throw new Error(`Material ${materialId} not found`);
         const qtyNeeded = items.filter((it: any) => it.material_id === materialId).reduce((s: number, it: any) => s + it.quantity, 0);
         if (mat.stock < qtyNeeded) throw new Error(`Insufficient stock for ${mat.name}: have ${mat.stock} ${mat.unit}, need ${qtyNeeded} ${mat.unit}`);
+        if (req.user?.role === 'staff') {
+          for (const item of items.filter((it: any) => it.material_id === materialId)) {
+            const allowed = [Number(mat.price_per_unit), Number(mat.wholesale_price)].filter(v => v > 0);
+            if (!allowed.some(v => Math.abs(v - Number(item.unit_price)) <= 0.005)) {
+              throw new Error(`Price for ${mat.name} must match the configured retail or wholesale price`);
+            }
+          }
+        }
       }
     }
 
     await db.prepare(
-      "INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, delivery_person, credit_account_name, buyer_address, notes, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)"
-    ).run(invoiceId, customer_id || null, invoice_number, 0, tax_rate ?? 0, 0, due_date || null, delivery_person?.trim() || null, creditName || null, buyerAddress || null, invoiceNotes || null, issued_date || null, (req as any).user?.id || null);
+      "INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, delivery_person, credit_account_name, buyer_address, notes, idempotency_key, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)"
+    ).run(invoiceId, customer_id || null, invoice_number, 0, normalizedTaxRate ?? 0, 0, due_date || null, delivery_person?.trim() || null, creditName || null, buyerAddress || null, invoiceNotes || null, idempotencyKey || null, issued_date || null, (req as any).user?.id || null);
 
     let subtotal = 0;
     for (const item of items) {
@@ -279,7 +309,9 @@ router.post('/', async (req: Request, res: Response) => {
       await insertItem.run(uuidv4(), invoiceId, item.material_id || null, item.description.trim(), item.quantity, item.unit_price, cost, Math.round(lineTotal * 100) / 100);
     }
 
-    const appliedTaxRate = tax_rate ?? Number((await db.prepare("SELECT value FROM settings WHERE key = 'default_tax_rate'").get() as any)?.value ?? 0);
+    const configuredTaxRate = Number((await db.prepare("SELECT value FROM settings WHERE key = 'default_tax_rate'").get() as any)?.value ?? 0);
+    if (!Number.isFinite(configuredTaxRate) || configuredTaxRate < 0 || configuredTaxRate > 1) throw new Error('Configured default tax rate is invalid');
+    const appliedTaxRate = normalizedTaxRate ?? configuredTaxRate;
     const roundedSubtotal = Math.round(subtotal * 100) / 100;
     const taxAmount = Math.round(roundedSubtotal * Number(appliedTaxRate) * 100) / 100;
     const total = Math.round((roundedSubtotal + taxAmount) * 100) / 100;
@@ -306,7 +338,8 @@ router.post('/', async (req: Request, res: Response) => {
       const qtyNeeded = items
         .filter((it: any) => it.material_id === materialId)
         .reduce((s: number, it: any) => s + it.quantity, 0);
-      await deductStock.run(qtyNeeded, materialId);
+      const stockUpdate = await db.prepare('UPDATE materials SET stock = stock - ? WHERE id = ? AND stock >= ?').run(qtyNeeded, materialId, qtyNeeded);
+      if (stockUpdate.changes !== 1) throw new Error('Stock changed while completing the sale. Please refresh and try again.');
       await insertMovement.run(uuidv4(), materialId, 'sale', -qtyNeeded, invoiceId, 'invoice', `Sold in ${invoice_number}`);
     }
   });
@@ -314,8 +347,13 @@ router.post('/', async (req: Request, res: Response) => {
   try {
     await txn();
     clearCache('analytics:');
-    await logAudit((req as any).user?.id || null, 'create', 'invoice', invoiceId, `Created ${invoice_number}`);
+    const createdInvoice = await db.prepare('SELECT * FROM invoices WHERE id=?').get(invoiceId);
+    await logAudit((req as any).user?.id || null, 'create', 'invoice', invoiceId, `Created ${invoice_number}`, null, createdInvoice);
   } catch (e: any) {
+    if (idempotencyKey && /unique|constraint/i.test(String(e.message))) {
+      const previous = await db.prepare('SELECT id FROM invoices WHERE idempotency_key=?').get(idempotencyKey) as any;
+      if (previous) { res.status(200).json(await db.prepare('SELECT * FROM invoices WHERE id=?').get(previous.id)); return; }
+    }
     res.status(400).json({ error: e.message });
     return;
   }
@@ -331,18 +369,47 @@ router.post('/', async (req: Request, res: Response) => {
 
 router.put('/:id/delivery', requireAdmin, async (req: Request, res: Response) => {
   const db = getDb();
-  const deliveryPerson = req.body?.delivery_person;
-  if (deliveryPerson !== null && deliveryPerson !== undefined && (typeof deliveryPerson !== 'string' || deliveryPerson.trim().length > 100)) {
-    res.status(400).json({ error: 'Delivery person must be 100 characters or fewer' }); return;
+  const deliveryPersonId = req.body?.delivery_person_id;
+  if (deliveryPersonId !== null && deliveryPersonId !== undefined && typeof deliveryPersonId !== 'string') {
+    res.status(400).json({ error: 'A valid registered delivery person is required' }); return;
   }
-  const invoice = await db.prepare('SELECT id, invoice_number, delivery_person, status FROM invoices WHERE id=?').get(req.params.id) as any;
+  const invoice = await db.prepare('SELECT id, invoice_number, delivery_person, delivery_person_id, delivery_status, delivered_at, delivered_by, status FROM invoices WHERE id=?').get(req.params.id) as any;
   if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
-  if (invoice.status === 'voided') { res.status(409).json({ error: 'Cannot assign delivery for a voided invoice' }); return; }
-  const next = typeof deliveryPerson === 'string' ? deliveryPerson.trim() : '';
+  if (invoice.status === 'voided' || invoice.status === 'returned') { res.status(409).json({ error: 'Cannot assign delivery for a voided or fully returned invoice' }); return; }
+  const nextId = typeof deliveryPersonId === 'string' ? deliveryPersonId.trim() : '';
+  let nextName = '';
+  if (nextId) {
+    const person = await db.prepare('SELECT id, name, active FROM delivery_personnel WHERE id=?').get(nextId) as any;
+    if (!person) { res.status(404).json({ error: 'Delivery person not found' }); return; }
+    if (!person.active) { res.status(409).json({ error: 'This delivery person is inactive and cannot be assigned' }); return; }
+    nextName = person.name;
+  }
   const invoiceId = String(req.params.id);
-  await db.prepare('UPDATE invoices SET delivery_person=? WHERE id=?').run(next || null, invoiceId);
-  await logAudit((req as any).user?.id || null, 'update', 'invoice', invoiceId, `Delivery person updated for ${invoice.invoice_number}`, { delivery_person: invoice.delivery_person || null }, { delivery_person: next || null });
-  res.json({ ok: true, delivery_person: next || null });
+  const samePerson = Boolean(nextId && nextId === invoice.delivery_person_id);
+  const nextStatus = nextId ? (samePerson ? (invoice.delivery_status || 'assigned') : 'assigned') : 'unassigned';
+  const nextDeliveredAt = nextStatus === 'delivered' ? invoice.delivered_at : null;
+  const nextDeliveredBy = nextStatus === 'delivered' ? invoice.delivered_by : null;
+  await db.prepare('UPDATE invoices SET delivery_person=?, delivery_person_id=?, delivery_status=?, delivered_at=?, delivered_by=? WHERE id=?').run(nextName || null, nextId || null, nextStatus, nextDeliveredAt, nextDeliveredBy, invoiceId);
+  await logAudit((req as any).user?.id || null, 'update', 'invoice', invoiceId, `Delivery person updated for ${invoice.invoice_number}`, { delivery_person: invoice.delivery_person || null, delivery_person_id: invoice.delivery_person_id || null, delivery_status: invoice.delivery_status || 'unassigned', delivered_at: invoice.delivered_at || null, delivered_by: invoice.delivered_by || null }, { delivery_person: nextName || null, delivery_person_id: nextId || null, delivery_status: nextStatus, delivered_at: nextDeliveredAt, delivered_by: nextDeliveredBy });
+  res.json({ ok: true, delivery_person: nextName || null, delivery_person_id: nextId || null, delivery_status: nextStatus, delivered_at: nextDeliveredAt });
+});
+
+router.post('/:id/delivery/complete', requireAdmin, async (req: Request, res: Response) => {
+  const db = getDb();
+  const invoiceId = String(req.params.id);
+  const invoice = await db.prepare('SELECT id, invoice_number, delivery_person, delivery_person_id, delivery_status, delivered_at, delivered_by, status FROM invoices WHERE id=?').get(invoiceId) as any;
+  if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+  if (invoice.status === 'voided' || invoice.status === 'returned') { res.status(409).json({ error: 'Cannot complete delivery for a voided or fully returned invoice' }); return; }
+  if (!invoice.delivery_person_id || !invoice.delivery_person) { res.status(409).json({ error: 'Assign a registered delivery person before marking this sale delivered' }); return; }
+  if (invoice.delivery_status === 'delivered') {
+    res.json({ ok: true, delivery_status: 'delivered', delivered_at: invoice.delivered_at, alreadyDelivered: true });
+    return;
+  }
+  const deliveredAt = new Date().toISOString();
+  const deliveredBy = (req as any).user?.id || null;
+  await db.prepare("UPDATE invoices SET delivery_status='delivered', delivered_at=?, delivered_by=? WHERE id=? AND delivery_person_id IS NOT NULL AND delivery_status <> 'delivered'").run(deliveredAt, deliveredBy, invoiceId);
+  await logAudit(deliveredBy, 'update', 'invoice', invoiceId, `Marked ${invoice.invoice_number} as delivered`, { delivery_person: invoice.delivery_person, delivery_person_id: invoice.delivery_person_id, delivery_status: invoice.delivery_status || 'assigned', delivered_at: invoice.delivered_at || null, delivered_by: invoice.delivered_by || null }, { delivery_person: invoice.delivery_person, delivery_person_id: invoice.delivery_person_id, delivery_status: 'delivered', delivered_at: deliveredAt, delivered_by: deliveredBy });
+  res.json({ ok: true, delivery_status: 'delivered', delivered_at: deliveredAt });
 });
 
 router.put('/:id/credit-account', async (req: Request, res: Response) => {
@@ -359,16 +426,22 @@ router.put('/:id/credit-account', async (req: Request, res: Response) => {
 router.post('/:id/pay', async (req: Request, res: Response) => {
   const db = getDb();
   const { amount, method, notes } = req.body;
+  const idempotencyKey = typeof req.headers['idempotency-key'] === 'string' ? req.headers['idempotency-key'].trim().slice(0, 120) : '';
+  if (idempotencyKey) {
+    const previous = await db.prepare('SELECT * FROM payments WHERE idempotency_key=?').get(idempotencyKey);
+    if (previous) { res.status(200).json(previous); return; }
+  }
+  const normalizedMethod = typeof method === 'string' ? method.trim().toLowerCase() : '';
   if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
     res.status(400).json({ error: 'Amount must be greater than 0' });
     return;
   }
-  if (typeof method !== 'string' || !SETTLEMENT_METHODS.includes(method.trim().toLowerCase())) {
+  if (!SETTLEMENT_METHODS.includes(normalizedMethod)) {
     res.status(400).json({ error: 'Payment method is required' });
     return;
   }
   const insertPayment = db.prepare(
-    'INSERT INTO payments (id, invoice_id, amount, method, notes, shift_id) VALUES (?, ?, ?, ?, ?, ?)'
+    'INSERT INTO payments (id, invoice_id, amount, method, notes, idempotency_key, shift_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );
   const getTotalPaid = db.prepare(
     'SELECT COALESCE(SUM(amount), 0) as paid FROM payments WHERE invoice_id = ?'
@@ -401,8 +474,10 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
         throw new Error(`Payment of ${amount} exceeds remaining balance of ${remainingBalance}`);
       }
 
-      await insertPayment.run(paymentId, req.params.id, amount, method, notes || null, activeShift.id);
-      const totalPaid = existingPaid + amount;
+      const roundedAmount = Math.round(amount * 100) / 100;
+      if (roundedAmount <= 0) throw new Error('Amount must be at least one centavo');
+      await insertPayment.run(paymentId, req.params.id, roundedAmount, normalizedMethod, notes || null, idempotencyKey || null, activeShift.id);
+      const totalPaid = existingPaid + roundedAmount;
 
       if (totalPaid >= Number(invoice.total) - Number(credits) - Number(returnsCredit)) {
         await updateStatusPaid.run(req.params.id);
@@ -410,11 +485,15 @@ router.post('/:id/pay', async (req: Request, res: Response) => {
         await updateStatusPartial.run(req.params.id);
       }
       const invoiceAfter = await getInvoice.get(req.params.id);
-      await logAudit((req as any).user?.id || null, 'update', 'invoice', req.params.id as string, `Payment of ${amount} via ${method}`, invoiceBefore, invoiceAfter);
+      await logAudit((req as any).user?.id || null, 'update', 'invoice', req.params.id as string, `Payment of ${roundedAmount} via ${normalizedMethod}`, invoiceBefore, invoiceAfter);
     });
     await txn();
     clearCache('analytics:');
   } catch (e: any) {
+    if (idempotencyKey && /unique|constraint/i.test(String(e.message))) {
+      const previous = await db.prepare('SELECT * FROM payments WHERE idempotency_key=?').get(idempotencyKey);
+      if (previous) { res.status(200).json(previous); return; }
+    }
     res.status(400).json({ error: e.message });
     return;
   }
@@ -456,7 +535,7 @@ router.post('/:id/credit-memo', requireAdmin, async (req: Request, res: Response
   const db = getDb();
   const invoice = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as any;
   if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
-  if (invoice.status === 'voided') { res.status(400).json({ error: 'Cannot adjust a voided invoice' }); return; }
+  if (invoice.status === 'voided' || invoice.status === 'returned') { res.status(400).json({ error: 'Cannot adjust a voided or fully returned invoice' }); return; }
   const amount = Number(req.body?.amount);
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
   const existingCredit = (await db.prepare("SELECT COALESCE(SUM(amount),0) total FROM credit_memos WHERE invoice_id=? AND status='issued'").get(invoice.id) as any).total;
@@ -472,7 +551,7 @@ router.post('/:id/credit-memo', requireAdmin, async (req: Request, res: Response
     const current = await db.prepare('SELECT status, total FROM invoices WHERE id=?').get(invoice.id) as any;
     const used = await db.prepare("SELECT COALESCE(SUM(amount),0) total FROM credit_memos WHERE invoice_id=? AND status='issued'").get(invoice.id) as any;
     const returned = await db.prepare("SELECT COALESCE(SUM(total_credit),0) total FROM invoice_returns WHERE invoice_id=?").get(invoice.id) as any;
-    if (!current || current.status === 'voided') throw new Error('Cannot adjust a voided or missing invoice');
+    if (!current || current.status === 'voided' || current.status === 'returned') throw new Error('Cannot adjust a voided or fully returned invoice');
     if (creditAmount > Math.max(0, Number(current.total) - Number(used.total) - Number(returned.total)) + 0.005) throw new Error('Credit amount exceeds remaining invoice value');
     await db.prepare('INSERT INTO credit_memos (id, invoice_id, memo_number, reason, amount, tax_amount, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(id, invoice.id, number, reason, creditAmount, creditTax, (req as any).user?.id || null);
@@ -485,24 +564,30 @@ router.post('/:id/credit-memo', requireAdmin, async (req: Request, res: Response
 
 router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => {
   const db = getDb();
+  const idempotencyKey = typeof req.headers['idempotency-key'] === 'string' ? req.headers['idempotency-key'].trim().slice(0, 120) : '';
+  if (idempotencyKey) {
+    const previous = await db.prepare('SELECT * FROM refunds WHERE idempotency_key=?').get(idempotencyKey);
+    if (previous) { res.status(200).json(previous); return; }
+  }
   const invoice = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as any;
   const amount = Number(req.body?.amount);
-  const method = typeof req.body?.method === 'string' ? req.body.method.trim() : '';
+  const method = typeof req.body?.method === 'string' ? req.body.method.trim().toLowerCase() : '';
   const returnBatchId = typeof req.body?.return_batch_id === 'string' ? req.body.return_batch_id.trim() : '';
   if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
-  if (!Number.isFinite(amount) || amount <= 0 || !REFUND_METHODS.includes(method.toLowerCase())) { res.status(400).json({ error: 'Valid refund amount and method are required' }); return; }
+  const roundedAmount = Math.round(amount * 100) / 100;
+  if (!Number.isFinite(amount) || roundedAmount <= 0 || !REFUND_METHODS.includes(method)) { res.status(400).json({ error: 'Valid refund amount and method are required' }); return; }
   if (!returnBatchId) { res.status(400).json({ error: 'Refunds must be created together with a specific item return' }); return; }
   const batch = await db.prepare('SELECT COALESCE(SUM(total_credit),0) total FROM invoice_returns WHERE invoice_id=? AND return_batch_id=?').get(invoice.id, returnBatchId) as any;
   if (!Number(batch.total || 0)) { res.status(400).json({ error: 'Return batch not found for this invoice' }); return; }
   let shiftId: string | null = null;
   if (method.toLowerCase() === 'cash') {
-    const requestedShiftId = typeof req.body?.shift_id === 'string' ? req.body.shift_id : '';
-    let shift = requestedShiftId
-      ? await db.prepare("SELECT id FROM cashier_shifts WHERE id=? AND status='open'").get(requestedShiftId) as any
-      : await db.prepare("SELECT cs.id FROM cashier_shifts cs JOIN payments p ON p.shift_id=cs.id WHERE p.invoice_id=? AND p.method='cash' AND cs.status='open' ORDER BY cs.opened_at DESC LIMIT 1").get(invoice.id) as any;
-    if (!shift && !requestedShiftId) {
-      const openShifts = await db.prepare("SELECT id FROM cashier_shifts WHERE status='open' ORDER BY opened_at DESC").all() as any[];
-      if (openShifts.length === 1) shift = openShifts[0];
+      let shift = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1").get((req as any).user?.id) as any;
+      if (!shift) {
+        shift = await db.prepare("SELECT cs.id FROM cashier_shifts cs JOIN payments p ON p.shift_id=cs.id WHERE p.invoice_id=? AND p.method='cash' AND cs.status='open' ORDER BY cs.opened_at DESC LIMIT 1").get(invoice.id) as any;
+      }
+      if (!shift) {
+        const openShifts = await db.prepare("SELECT id FROM cashier_shifts WHERE status='open' ORDER BY opened_at DESC").all() as any[];
+        if (openShifts.length === 1) shift = openShifts[0];
     }
     // Admin refunds are not blocked by shift availability. When a matching
     // open drawer exists, keep the link for reconciliation; otherwise the
@@ -516,20 +601,27 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
     const refunded = await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id=?').get(invoice.id) as any;
     const batchRefunded = await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id=? AND return_batch_id=?').get(invoice.id, returnBatchId) as any;
     const availableRefund = Number(paid.total) - Number(refunded.total);
-    if (!current || current.status === 'voided') throw new Error('Cannot refund a voided or missing invoice');
-    if (amount > availableRefund + 0.005) throw new Error('Refund exceeds unapplied payments');
-    if (Number(batchRefunded.total || 0) > 0 || amount > Number(batch.total || 0) + 0.005) throw new Error('Refund exceeds the selected return value');
-    await db.prepare('INSERT INTO refunds (id, invoice_id, return_batch_id, amount, method, reference, created_by, shift_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, invoice.id, returnBatchId, amount, method, req.body?.reference || null, (req as any).user?.id || null, shiftId);
+    if (!current || current.status === 'voided' || current.status === 'returned') throw new Error('Cannot refund a voided or fully returned invoice');
+    if (roundedAmount > availableRefund + 0.005) throw new Error('Refund exceeds unapplied payments');
+    if (Number(batchRefunded.total || 0) > 0 || Math.abs(roundedAmount - Number(batch.total || 0)) > 0.005) throw new Error('Refund must equal the selected return value');
+    await db.prepare('INSERT INTO refunds (id, invoice_id, return_batch_id, amount, method, reference, idempotency_key, created_by, shift_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, invoice.id, returnBatchId, roundedAmount, method, req.body?.reference || null, idempotencyKey || null, (req as any).user?.id || null, shiftId);
     await refreshInvoiceStatus(db, invoice.id);
     await logAudit((req as any).user?.id || null, 'create', 'refund', id, `Refund ${amount} via ${method} for ${invoice.invoice_number}`, null, { invoice_id: invoice.id, amount, method, shift_id: shiftId });
   });
-  try { await createRefund(); } catch (e: any) { res.status(409).json({ error: e.message }); return; }
+  try { await createRefund(); } catch (e: any) {
+    if (idempotencyKey && /unique|constraint/i.test(String(e.message))) {
+      const previous = await db.prepare('SELECT * FROM refunds WHERE idempotency_key=?').get(idempotencyKey);
+      if (previous) { res.status(200).json(previous); return; }
+    }
+    res.status(409).json({ error: e.message }); return;
+  }
   res.status(201).json(await db.prepare('SELECT * FROM refunds WHERE id = ?').get(id));
 });
 
 router.post('/:id/return', requireAdmin, async (req: Request, res: Response) => {
   const db = getDb();
+  const idempotencyKey = typeof req.headers['idempotency-key'] === 'string' ? req.headers['idempotency-key'].trim().slice(0, 120) : '';
   const { items } = req.body || {};
   if (!Array.isArray(items) || items.length === 0) {
     res.status(400).json({ error: 'At least one return item is required' });
@@ -539,7 +631,14 @@ router.post('/:id/return', requireAdmin, async (req: Request, res: Response) => 
   const invoiceId = req.params.id as string;
   const inv = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId) as any;
   if (!inv) { res.status(404).json({ error: 'Invoice not found' }); return; }
-  if (inv.status === 'voided') { res.status(400).json({ error: 'Cannot return items on a voided invoice' }); return; }
+  if (idempotencyKey) {
+    const previous = await db.prepare('SELECT return_batch_id FROM invoice_returns WHERE invoice_id=? AND idempotency_key=? LIMIT 1').get(invoiceId, idempotencyKey) as any;
+    if (previous?.return_batch_id) {
+      res.status(200).json({ ...(await db.prepare('SELECT * FROM invoices WHERE id=?').get(invoiceId) as any), return_summary: { return_batch_id: previous.return_batch_id, duplicate: true } });
+      return;
+    }
+  }
+  if (inv.status === 'voided' || inv.status === 'returned') { res.status(400).json({ error: 'Cannot return items on a voided or fully returned invoice' }); return; }
 
   const requested = new Map<string, { material_id: string; quantity: number }>();
   for (let i = 0; i < items.length; i++) {
@@ -571,7 +670,7 @@ router.post('/:id/return', requireAdmin, async (req: Request, res: Response) => 
   const batchId = uuidv4();
   const txn = db.transaction(async () => {
     const current = await db.prepare('SELECT * FROM invoices WHERE id=?').get(invoiceId) as any;
-    if (!current || current.status === 'voided') throw new Error('Cannot return items on a voided or missing invoice');
+    if (!current || current.status === 'voided' || current.status === 'returned') throw new Error('Cannot return items on a voided or fully returned invoice');
 
     const credits = Number((await db.prepare("SELECT COALESCE(SUM(amount),0) total FROM credit_memos WHERE invoice_id=? AND status='issued'").get(invoiceId) as any).total || 0);
     const priorReturns = Number((await db.prepare('SELECT COALESCE(SUM(total_credit),0) total FROM invoice_returns WHERE invoice_id=?').get(invoiceId) as any).total || 0);
@@ -588,8 +687,8 @@ router.post('/:id/return', requireAdmin, async (req: Request, res: Response) => 
       const latest = Number((await db.prepare('SELECT COALESCE(SUM(quantity),0) total FROM invoice_returns WHERE invoice_item_id=?').get(item.invoice_item_id) as any).total || 0);
       const original = Number((await db.prepare('SELECT quantity FROM invoice_items WHERE id=? AND invoice_id=?').get(item.invoice_item_id, invoiceId) as any).quantity || 0);
       if (latest + item.quantity > original + 0.000001) throw new Error('One or more items were already returned. Refresh and try again.');
-      await db.prepare('INSERT INTO invoice_returns (id, invoice_item_id, invoice_id, material_id, quantity, total_credit, return_batch_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(uuidv4(), item.invoice_item_id, invoiceId, item.material_id, item.quantity, item.total_credit, batchId);
+      await db.prepare('INSERT INTO invoice_returns (id, invoice_item_id, invoice_id, material_id, quantity, total_credit, return_batch_id, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(uuidv4(), item.invoice_item_id, invoiceId, item.material_id, item.quantity, item.total_credit, batchId, idempotencyKey || null);
       await db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?').run(item.quantity, item.material_id);
       await db.prepare('INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(uuidv4(), item.material_id, 'return', item.quantity, invoiceId, 'invoice', `Returned from ${current.invoice_number}`);
@@ -651,7 +750,7 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   });
   await txn();
   clearCache('analytics:');
-  await logAudit((req as any).user?.id || null, 'delete', 'invoice', req.params.id as string, `Deleted ${existing.invoice_number}`);
+  await logAudit((req as any).user?.id || null, 'delete', 'invoice', req.params.id as string, `Deleted ${existing.invoice_number}`, existing, null);
   res.status(204).end();
 });
 

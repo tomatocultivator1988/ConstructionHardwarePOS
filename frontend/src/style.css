@@ -318,6 +318,8 @@ tr.low-stock:hover { background: rgba(245, 158, 11, 0.2); }
 .status-badge.partial::before { background: var(--c-warning); }
 .status-badge.paid { background: var(--c-success-bg); color: var(--c-success); }
 .status-badge.paid::before { background: var(--c-success); }
+.status-badge.returned { background: var(--c-primary-bg); color: var(--c-primary-dark); }
+.status-badge.returned::before { background: var(--c-primary); }
 .status-badge.status-success { background: var(--c-success-bg); color: var(--c-success); }
 .status-badge.status-success::before { background: var(--c-success); }
 .status-badge.status-warning { background: var(--c-warning-bg); color: var(--c-warning); }
@@ -326,7 +328,8 @@ tr.low-stock:hover { background: rgba(245, 158, 11, 0.2); }
 .receipt-statuses .status-badge { font-size: calc(0.65rem * var(--ui-text-scale)); }
 .deliveries-toolbar { display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; }
 .deliveries-toolbar input { flex:1 1 260px; min-width:180px; }
-.deliveries-toolbar select { min-width:170px; }
+.deliveries-toolbar .delivery-status-tabs { flex:1 1 100%; margin-bottom:0; }
+.delivery-status-tabs .nav-btn span { opacity:.75; font-size:.85em; }
 .deliveries-card { overflow:hidden; }
 
 /* Product Mix */

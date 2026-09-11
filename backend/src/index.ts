@@ -23,6 +23,7 @@ import seedRoutes from './routes/seed';
 import shiftRoutes from './routes/shifts';
 import catalogRoutes from './routes/catalog';
 import attendanceRoutes from './routes/attendance';
+import deliveryPersonnelRoutes from './routes/delivery-personnel';
 import { authMiddleware } from './lib/auth';
 
 const app = express();
@@ -99,6 +100,7 @@ app.use('/api/seed', seedRoutes);
 app.use('/api/shifts', shiftRoutes);
 app.use('/api/catalog', catalogRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/delivery-personnel', deliveryPersonnelRoutes);
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -113,7 +115,7 @@ app.get('/api/health', async (_req, res) => {
     }
     res.json({ status: 'ok', environment: NODE_ENV, db: 'connected', users: userCount?.cnt ?? 0 });
   } catch (e: any) {
-    res.json({ status: 'ok', environment: NODE_ENV, db: 'error', error: e.message });
+    res.status(503).json({ status: 'error', environment: NODE_ENV, db: 'error', error: 'Database unavailable', retryable: true });
   }
 });
 

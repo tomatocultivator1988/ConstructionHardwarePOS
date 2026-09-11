@@ -56,10 +56,11 @@ export interface Invoice {
   tax_rate: number;
   tax_amount: number;
   total: number;
-  status: 'pending' | 'partial' | 'paid' | 'voided';
+  status: 'pending' | 'partial' | 'paid' | 'returned' | 'voided';
   issued_date: string;
   due_date: string | null;
   delivery_person?: string | null;
+  delivery_person_id?: string | null;
   paid_date: string | null;
   created_at: string;
   customer_name: string;

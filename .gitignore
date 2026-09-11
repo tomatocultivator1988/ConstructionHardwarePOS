@@ -17,3 +17,6 @@ BuildProPOS.exe
 .env.local
 backend/.env
 backend/.env.local
+
+.vercel
+.env*

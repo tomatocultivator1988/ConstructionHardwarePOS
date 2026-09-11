@@ -159,19 +159,20 @@ export function changeInvoicePage(page: number) { invoicePage = Math.max(1, page
 export async function showDeliveryModal(invoiceId: string) {
   try {
     const invoice = await apiGet<any>(`/invoices/${invoiceId}`);
+    const personnel = await apiGet<any[]>('/delivery-personnel');
     const refundedTotal = (invoice.refunds || []).reduce((sum: number, refund: any) => sum + Number(refund.amount || 0), 0);
     const currentTotal = Math.max(0, Number(invoice.adjusted_total ?? invoice.total ?? 0) - refundedTotal);
     deliveryEditContext = { invoiceNumber: invoice.invoice_number, amount: currentTotal };
-    showModal(`<h3>Assign Delivery Person</h3><p class="modal-help">Delivery can be assigned or updated after the sale.</p><div class="form-group"><label for="delivery-person-edit">Delivery Person <span>(optional)</span></label><input id="delivery-person-edit" maxlength="100" value="${esc(invoice.delivery_person || '')}" placeholder="Enter delivery person name" /></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveDeliveryPerson('${invoiceId}')">Save</button></div>`, 'delivery-modal');
+    showModal(`<h3>Assign Delivery Person</h3><p class="modal-help">Select a registered active delivery boy. Manage the list from the Deliveries page.</p><div class="form-group"><label for="delivery-person-edit">Delivery Person <span>(optional)</span></label><select id="delivery-person-edit"><option value="">Not assigned</option>${personnel.filter((person: any) => person.active || person.id === invoice.delivery_person_id).map((person: any) => `<option value="${esc(person.id)}" ${person.id === invoice.delivery_person_id ? 'selected' : ''}>${esc(person.name)}${person.phone ? ` — ${esc(person.phone)}` : ''}</option>`).join('')}</select></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveDeliveryPerson('${invoiceId}')">Save</button></div>`, 'delivery-modal');
   } catch (e: any) { showToast(e.message || 'Unable to load invoice'); }
 }
 
 export async function saveDeliveryPerson(invoiceId: string) {
-  const value = (document.getElementById('delivery-person-edit') as HTMLInputElement)?.value.trim() || null;
+  const value = (document.getElementById('delivery-person-edit') as HTMLSelectElement)?.value || null;
   const returnView = getCurrentView() === 'deliveries' ? 'deliveries' : 'invoices';
   const context = deliveryEditContext;
   try {
-    await apiPut(`/invoices/${invoiceId}/delivery`, { delivery_person: value });
+    await apiPut(`/invoices/${invoiceId}/delivery`, { delivery_person_id: value });
     closeModal();
     deliveryEditContext = null;
     showToast(`${context?.invoiceNumber || 'Sale'} — ${fmtPeso(context?.amount || 0)} ${value ? `assigned to ${value}` : 'removed from delivery assignment'}`, 'success');
@@ -299,7 +300,7 @@ export async function showInvoiceDetail(id: string) {
     ${(inv as any).credit_memos?.length ? `<h4>Credit Memos</h4><div class="table-wrap"><table><thead><tr><th>Number</th><th>Reason</th><th>Amount</th><th>Date</th></tr></thead><tbody>${(inv as any).credit_memos.map((cm: any) => `<tr><td>${esc(cm.memo_number)}</td><td>${esc(cm.reason)}</td><td>${fmtPeso(cm.amount)}</td><td>${fmtDate(cm.created_at)}</td></tr>`).join('')}</tbody></table></div>` : ''}
     ${(inv as any).refunds?.length ? `<h4>Refunds</h4><div class="table-wrap"><table><thead><tr><th>Method</th><th>Amount</th><th>Reference</th><th>Date</th></tr></thead><tbody>${(inv as any).refunds.map((rf: any) => `<tr><td>${esc(rf.method)}</td><td>${fmtPeso(rf.amount)}</td><td>${esc(rf.reference || '—')}</td><td>${fmtDate(rf.created_at)}</td></tr>`).join('')}</tbody></table></div>` : ''}
 
-    ${balance > 0 && inv.status !== 'voided' ? `
+    ${balance > 0 && !['voided', 'returned'].includes(inv.status) ? `
     <h4>Record Payment</h4>
     <div style="display:flex;gap:0.75rem;align-items:end;flex-wrap:wrap">
       <div class="form-group" style="flex:1;min-width:120px"><label>Amount</label><input id="pay-amount" type="number" step="0.01" min="0.01" max="${balance.toFixed(2)}" value="${balance.toFixed(2)}" /></div>
@@ -318,7 +319,7 @@ export async function showInvoiceDetail(id: string) {
     <div class="field-error" id="pay-err"></div>
     ` : '<p style="color:var(--c-success);font-weight:600;margin-top:1rem">✓ Paid in Full</p>'}
 
-    ${inv.status !== 'voided' ? `
+    ${!['voided', 'returned'].includes(inv.status) ? `
     <h4 style="margin-top:var(--space-5)">Return Items</h4>
     <div id="return-items">
       ${inv.items.map((item: any) => `
@@ -335,7 +336,7 @@ export async function showInvoiceDetail(id: string) {
 
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="showReceiptPreview('${inv.id}')">Print Receipt</button>
-      ${isAdmin() && inv.status !== 'voided' ? `<button class="btn btn-warning" onclick="voidInvoice('${inv.id}')">Void Invoice</button><button class="btn" onclick="issueCreditMemo('${inv.id}')">Credit Memo</button>` : ''}
+      ${isAdmin() && !['voided', 'returned'].includes(inv.status) ? `<button class="btn btn-warning" onclick="voidInvoice('${inv.id}')">Void Invoice</button><button class="btn" onclick="issueCreditMemo('${inv.id}')">Credit Memo</button>` : ''}
       <button class="btn" onclick="closeModal();loadView('${returnView}')">Close</button>
     </div>
   </div><div class="modal-scroll-hint" aria-hidden="true"><span>↓</span> More details below</div></div>`;
@@ -356,7 +357,8 @@ export async function voidInvoice(id: string) {
 }
 export async function submitVoidInvoice(id: string) {
   const reason = val('void-reason').trim(); if (reason.length < 3) { setErr('void-reason-err', 'Enter at least 3 characters'); return; }
-  try { await apiPut(`/invoices/${id}/void`, { reason }); showToast('Invoice voided and stock restored', 'success'); closeModal(); loadView('invoices'); }
+  const returnView = getCurrentView() || 'invoices';
+  try { await apiPut(`/invoices/${id}/void`, { reason }); showToast('Invoice voided and stock restored', 'success'); closeModal(); loadView(returnView); }
   catch (e: any) { showToast(e.message); }
 }
 
@@ -366,14 +368,15 @@ export async function issueCreditMemo(id: string) {
 export async function submitCreditMemo(id: string) {
   const amount = Number(val('memo-amount')); const reason = val('memo-reason').trim();
   if (!Number.isFinite(amount) || amount <= 0 || reason.length < 3) { showToast('Enter a valid amount and reason'); return; }
-  try { await apiPost(`/invoices/${id}/credit-memo`, { amount, reason }); showToast('Credit memo issued', 'success'); closeModal(); loadView('invoices'); }
+  const returnView = getCurrentView() || 'invoices';
+  try { await apiPost(`/invoices/${id}/credit-memo`, { amount, reason }); showToast('Credit memo issued', 'success'); closeModal(); loadView(returnView); }
   catch (e: any) { showToast(e.message); }
 }
 
 export async function recordRefund(id: string, suggestedAmount = 0, returnView = 'invoices') {
   showToast('Select the item quantity to return. The system will calculate the refund for those items.');
 }
-export async function submitRefund(id: string, returnView = 'invoices') {
+export async function submitRefund(id: string, returnView = getCurrentView() || 'invoices') {
   const amount = Number(val('refund-amount')); const method = val('refund-method');
   if (!Number.isFinite(amount) || amount <= 0 || !method) { showToast('Enter a valid amount and method'); return; }
   const max = Number((document.getElementById('refund-amount') as HTMLInputElement)?.max || 0);
@@ -400,10 +403,11 @@ export async function recordPayment(invoiceId: string) {
   `;
   if (!(await showConfirmModal(confirmHtml))) return;
   disableBtn('pay-btn', true);
+  const returnView = getCurrentView() || 'invoices';
   try {
     await apiPost(`/invoices/${invoiceId}/pay`, { amount, method, notes });
     closeModal();
-    loadView('invoices');
+    loadView(returnView);
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('pay-btn', false); }
 }
@@ -411,19 +415,20 @@ export async function recordPayment(invoiceId: string) {
 export async function delInvoice(id: string) {
   const ok = await showConfirmModal(`<h3>Delete Invoice</h3><p style="color:var(--c-text-secondary)">Are you sure you want to delete this invoice? Stock will be restored.</p>`);
   if (!ok) return;
-  try { await apiDel(`/invoices/${id}`); loadView('invoices'); }
+  const returnView = getCurrentView() || 'invoices';
+  try { await apiDel(`/invoices/${id}`); loadView(returnView); }
   catch (e: any) { showToast(e.message); }
 }
 
-export async function showReturnModal(invoiceId: string) {
+export async function showReturnModal(invoiceId: string, returnView = getCurrentView() || 'invoices') {
   try {
     const inv = await apiGet<any>(`/invoices/${invoiceId}`);
-    if (inv.status === 'voided') { showToast('Voided invoices cannot receive returns'); return; }
+    if (['voided', 'returned'].includes(inv.status)) { showToast('This invoice cannot receive more returns'); return; }
     const items = (inv.items || []).filter((item: any) => item.material_id && Number(item.remaining_quantity ?? item.quantity) > 0);
     if (!items.length) { showToast('There are no remaining items to return'); return; }
     const adjustedTotal = Math.max(0, Number(inv.adjusted_total ?? inv.total ?? 0));
     const netPaid = Math.max(0, Number(inv.net_paid ?? 0));
-    showModal(`<h3>Return Items · ${esc(inv.invoice_number)}</h3><p class="modal-help">Choose the exact quantity being returned. Stock is restored automatically. If the sale was paid, the refund is calculated only from the selected items.</p><div id="return-items" data-adjusted-total="${adjustedTotal}" data-net-paid="${netPaid}" data-tax-rate="${Number(inv.tax_rate || 0)}">${items.map((item: any) => { const remaining = Number(item.remaining_quantity ?? item.quantity); return `<div class="line-item" style="margin-bottom:var(--space-2)"><span style="flex:2;font-size:var(--fs-sm)">${esc(item.description)}</span><span style="flex:1;font-size:var(--fs-sm);color:var(--c-text-muted)">Sold: ${item.quantity}<br>Already returned: ${Number(item.returned_quantity || 0)}<br><strong>Available: ${remaining}</strong></span><input id="ret-qty-${item.id}" data-unit-price="${Number(item.unit_price || 0)}" type="number" min="0" max="${remaining}" step="any" value="0" oninput="updateReturnPreview()" aria-label="Return quantity for ${esc(item.description)}" style="flex:1;min-height:32px;font-size:var(--fs-sm);width:70px" /></div>`; }).join('')}</div><div id="return-preview" class="summary-line" style="margin-top:var(--space-3)"><span>Return value</span><strong>₱0.00</strong></div><div id="return-refund-wrap" class="form-group" style="display:none;margin-top:var(--space-3)"><label for="return-refund-method">Refund method *</label><select id="return-refund-method" onchange="updateReturnPreview()"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option><option value="gcash">GCash</option><option value="check">Check</option></select><small id="return-refund-help" class="field-help"></small></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-warning" id="ret-btn" onclick="returnItems('${invoiceId}')">Process Return</button></div>`, 'invoice-action-modal');
+    showModal(`<h3>Return Items · ${esc(inv.invoice_number)}</h3><p class="modal-help">Choose the exact quantity being returned. Stock is restored automatically. If the sale was paid, the refund is calculated only from the selected items.</p><div id="return-items" data-adjusted-total="${adjustedTotal}" data-net-paid="${netPaid}" data-tax-rate="${Number(inv.tax_rate || 0)}">${items.map((item: any) => { const remaining = Number(item.remaining_quantity ?? item.quantity); return `<div class="line-item" style="margin-bottom:var(--space-2)"><span style="flex:2;font-size:var(--fs-sm)">${esc(item.description)}</span><span style="flex:1;font-size:var(--fs-sm);color:var(--c-text-muted)">Sold: ${item.quantity}<br>Already returned: ${Number(item.returned_quantity || 0)}<br><strong>Available: ${remaining}</strong></span><input id="ret-qty-${item.id}" data-unit-price="${Number(item.unit_price || 0)}" type="number" min="0" max="${remaining}" step="any" value="0" oninput="updateReturnPreview()" aria-label="Return quantity for ${esc(item.description)}" style="flex:1;min-height:32px;font-size:var(--fs-sm);width:70px" /></div>`; }).join('')}</div><div id="return-preview" class="summary-line" style="margin-top:var(--space-3)"><span>Return value</span><strong>₱0.00</strong></div><div id="return-refund-wrap" class="form-group" style="display:none;margin-top:var(--space-3)"><label for="return-refund-method">Refund method *</label><select id="return-refund-method" onchange="updateReturnPreview()"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option><option value="gcash">GCash</option><option value="check">Check</option></select><small id="return-refund-help" class="field-help"></small></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-warning" id="ret-btn" onclick="returnItems('${invoiceId}', '${returnView}')">Process Return</button></div>`, 'invoice-action-modal');
     updateReturnPreview();
   } catch (e: any) { showToast(e?.message || 'Unable to load return items'); }
 }
@@ -454,7 +459,7 @@ export function updateReturnPreview() {
   if (button) button.textContent = refundDue > 0 ? `Process Return & Refund ${fmtPeso(refundDue)}` : 'Process Return';
 }
 
-export async function returnItems(invoiceId: string) {
+export async function returnItems(invoiceId: string, returnView = getCurrentView() || 'invoices') {
   disableBtn('ret-btn', true);
   try {
     const inv = await apiGet<any>(`/invoices/${invoiceId}`);
@@ -476,7 +481,7 @@ export async function returnItems(invoiceId: string) {
     const result = await apiPost<any>(`/invoices/${invoiceId}/return`, { items: retItems, refund_method: refundDue > 0 ? refundMethod : null });
     closeModal();
     const summary = result.return_summary || {};
-    showModal(`<h3>Return processed</h3><p class="modal-help">The selected quantity was returned and restored to inventory.</p><div class="summary-line"><span>Returned value</span><strong>${fmtPeso(summary.returnCredit || 0)}</strong></div>${Number(summary.refundAmount || 0) > 0 ? `<div class="summary-line"><span>Refund recorded</span><strong>${fmtPeso(summary.refundAmount)} via ${esc(summary.refund_method || refundMethod)}</strong></div>` : '<p class="field-help">No cash refund was due. The invoice balance was reduced.</p>'}<div class="modal-actions"><button class="btn btn-primary" onclick="closeModal();loadView('invoices')">Done</button></div>`, 'invoice-action-modal');
+    showModal(`<h3>Return processed</h3><p class="modal-help">The selected quantity was returned and restored to inventory.</p><div class="summary-line"><span>Returned value</span><strong>${fmtPeso(summary.returnCredit || 0)}</strong></div>${Number(summary.refundAmount || 0) > 0 ? `<div class="summary-line"><span>Refund recorded</span><strong>${fmtPeso(summary.refundAmount)} via ${esc(summary.refund_method || refundMethod)}</strong></div>` : '<p class="field-help">No cash refund was due. The invoice balance was reduced.</p>'}<div class="modal-actions"><button class="btn btn-primary" onclick="closeModal();loadView('${returnView}')">Done</button></div>`, 'invoice-action-modal');
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('ret-btn', false); }
 }
