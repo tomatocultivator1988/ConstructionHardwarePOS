@@ -159,7 +159,9 @@ export function changeInvoicePage(page: number) { invoicePage = Math.max(1, page
 export async function showDeliveryModal(invoiceId: string) {
   try {
     const invoice = await apiGet<any>(`/invoices/${invoiceId}`);
-    deliveryEditContext = { invoiceNumber: invoice.invoice_number, amount: Number(invoice.adjusted_total ?? invoice.total ?? 0) };
+    const refundedTotal = (invoice.refunds || []).reduce((sum: number, refund: any) => sum + Number(refund.amount || 0), 0);
+    const currentTotal = Math.max(0, Number(invoice.adjusted_total ?? invoice.total ?? 0) - refundedTotal);
+    deliveryEditContext = { invoiceNumber: invoice.invoice_number, amount: currentTotal };
     showModal(`<h3>Assign Delivery Person</h3><p class="modal-help">Delivery can be assigned or updated after the sale.</p><div class="form-group"><label for="delivery-person-edit">Delivery Person <span>(optional)</span></label><input id="delivery-person-edit" maxlength="100" value="${esc(invoice.delivery_person || '')}" placeholder="Enter delivery person name" /></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveDeliveryPerson('${invoiceId}')">Save</button></div>`, 'delivery-modal');
   } catch (e: any) { showToast(e.message || 'Unable to load invoice'); }
 }
