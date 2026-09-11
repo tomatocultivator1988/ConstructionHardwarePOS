@@ -241,8 +241,7 @@ export async function showInvoiceDetail(id: string) {
   const totalPaid = inv.payments.reduce((s: number, p: any) => s + p.amount, 0) - ((inv as any).refunds || []).reduce((s: number, r: any) => s + r.amount, 0);
   const returnedTotal = (inv.items || []).reduce((s: number, item: any) => s + Number(item.returned_total || 0), 0);
   const refundedTotal = ((inv as any).refunds || []).reduce((s: number, refund: any) => s + Number(refund.amount || 0), 0);
-  const adjustedTotalBeforeRefund = Number((inv as any).adjusted_total ?? inv.total);
-  const adjustedTotal = Math.max(0, adjustedTotalBeforeRefund - refundedTotal);
+  const adjustedTotal = Math.max(0, Number((inv as any).adjusted_total ?? inv.total));
   const balance = adjustedTotal - totalPaid;
   const modalId = 'invoice-detail-modal';
   document.getElementById(modalId)?.remove();
@@ -336,7 +335,7 @@ export async function showInvoiceDetail(id: string) {
 
     <div class="modal-actions">
       <button class="btn btn-primary" onclick="showReceiptPreview('${inv.id}')">Print Receipt</button>
-      ${isAdmin() && inv.status !== 'voided' ? `<button class="btn btn-warning" onclick="voidInvoice('${inv.id}')">Void Invoice</button><button class="btn" onclick="issueCreditMemo('${inv.id}')">Credit Memo</button>${totalPaid > 0 ? `<button class="btn" onclick="recordRefund('${inv.id}')">Refund</button>` : ''}` : ''}
+      ${isAdmin() && inv.status !== 'voided' ? `<button class="btn btn-warning" onclick="voidInvoice('${inv.id}')">Void Invoice</button><button class="btn" onclick="issueCreditMemo('${inv.id}')">Credit Memo</button>` : ''}
       <button class="btn" onclick="closeModal();loadView('${returnView}')">Close</button>
     </div>
   </div><div class="modal-scroll-hint" aria-hidden="true"><span>↓</span> More details below</div></div>`;
@@ -372,12 +371,7 @@ export async function submitCreditMemo(id: string) {
 }
 
 export async function recordRefund(id: string, suggestedAmount = 0, returnView = 'invoices') {
-  if (suggestedAmount <= 0) {
-    const invoice = await apiGet<any>(`/invoices/${id}`);
-    suggestedAmount = Math.max(0, (invoice.payments || []).reduce((sum: number, p: any) => sum + Number(p.amount || 0), 0) - (invoice.refunds || []).reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0));
-  }
-  if (suggestedAmount <= 0) { showToast('There is no collected payment available to refund'); return; }
-  showModal(`<h3>Refund Sale</h3><p class="modal-help">This records a full refund of the remaining collected payment. Product returns are handled separately.</p><div class="form-group"><label>Refund amount</label><input id="refund-amount" type="number" value="${suggestedAmount.toFixed(2)}" readonly /></div><div class="form-group"><label for="refund-method">Refund method *</label><select id="refund-method"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option><option value="gcash">GCash</option><option value="check">Check</option></select></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="submitRefund('${id}', '${returnView}')">Refund ${fmtPeso(suggestedAmount)}</button></div>`, 'invoice-action-modal');
+  showToast('Select the item quantity to return. The system will calculate the refund for those items.');
 }
 export async function submitRefund(id: string, returnView = 'invoices') {
   const amount = Number(val('refund-amount')); const method = val('refund-method');
@@ -427,8 +421,37 @@ export async function showReturnModal(invoiceId: string) {
     if (inv.status === 'voided') { showToast('Voided invoices cannot receive returns'); return; }
     const items = (inv.items || []).filter((item: any) => item.material_id && Number(item.remaining_quantity ?? item.quantity) > 0);
     if (!items.length) { showToast('There are no remaining items to return'); return; }
-    showModal(`<h3>Return Items · ${esc(inv.invoice_number)}</h3><p class="modal-help">Choose the exact quantity of each item being returned. Returned quantities go back into stock and reduce this sale.</p><div id="return-items">${items.map((item: any) => { const remaining = Number(item.remaining_quantity ?? item.quantity); return `<div class="line-item" style="margin-bottom:var(--space-2)"><span style="flex:2;font-size:var(--fs-sm)">${esc(item.description)}</span><span style="flex:1;font-size:var(--fs-sm);color:var(--c-text-muted)">Sold: ${item.quantity}<br>Already returned: ${Number(item.returned_quantity || 0)}<br><strong>Available: ${remaining}</strong></span><input id="ret-qty-${item.id}" type="number" min="0" max="${remaining}" value="0" aria-label="Return quantity for ${esc(item.description)}" style="flex:1;min-height:32px;font-size:var(--fs-sm);width:70px" /></div>`; }).join('')}</div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-warning" id="ret-btn" onclick="returnItems('${invoiceId}')">Process Return</button></div>`, 'invoice-action-modal');
+    const adjustedTotal = Math.max(0, Number(inv.adjusted_total ?? inv.total ?? 0));
+    const netPaid = Math.max(0, Number(inv.net_paid ?? 0));
+    showModal(`<h3>Return Items · ${esc(inv.invoice_number)}</h3><p class="modal-help">Choose the exact quantity being returned. Stock is restored automatically. If the sale was paid, the refund is calculated only from the selected items.</p><div id="return-items" data-adjusted-total="${adjustedTotal}" data-net-paid="${netPaid}" data-tax-rate="${Number(inv.tax_rate || 0)}">${items.map((item: any) => { const remaining = Number(item.remaining_quantity ?? item.quantity); return `<div class="line-item" style="margin-bottom:var(--space-2)"><span style="flex:2;font-size:var(--fs-sm)">${esc(item.description)}</span><span style="flex:1;font-size:var(--fs-sm);color:var(--c-text-muted)">Sold: ${item.quantity}<br>Already returned: ${Number(item.returned_quantity || 0)}<br><strong>Available: ${remaining}</strong></span><input id="ret-qty-${item.id}" data-unit-price="${Number(item.unit_price || 0)}" type="number" min="0" max="${remaining}" step="any" value="0" oninput="updateReturnPreview()" aria-label="Return quantity for ${esc(item.description)}" style="flex:1;min-height:32px;font-size:var(--fs-sm);width:70px" /></div>`; }).join('')}</div><div id="return-preview" class="summary-line" style="margin-top:var(--space-3)"><span>Return value</span><strong>₱0.00</strong></div><div id="return-refund-wrap" class="form-group" style="display:none;margin-top:var(--space-3)"><label for="return-refund-method">Refund method *</label><select id="return-refund-method" onchange="updateReturnPreview()"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option><option value="gcash">GCash</option><option value="check">Check</option></select><small id="return-refund-help" class="field-help"></small></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-warning" id="ret-btn" onclick="returnItems('${invoiceId}')">Process Return</button></div>`, 'invoice-action-modal');
+    updateReturnPreview();
   } catch (e: any) { showToast(e?.message || 'Unable to load return items'); }
+}
+
+export function updateReturnPreview() {
+  const container = document.getElementById('return-items') as HTMLElement | null;
+  const preview = document.getElementById('return-preview');
+  const refundWrap = document.getElementById('return-refund-wrap');
+  const refundHelp = document.getElementById('return-refund-help');
+  const button = document.getElementById('ret-btn') as HTMLButtonElement | null;
+  if (!container || !preview) return;
+  const adjustedTotal = Number(container.dataset.adjustedTotal || 0);
+  const netPaid = Number(container.dataset.netPaid || 0);
+  const taxRate = Number(container.dataset.taxRate || 0);
+  let returnValue = 0;
+  container.querySelectorAll<HTMLInputElement>('input[id^="ret-qty-"]').forEach(input => {
+    const quantity = Number(input.value || 0);
+    const unitPrice = Number(input.dataset.unitPrice || 0);
+    if (Number.isFinite(quantity) && quantity > 0) returnValue += Math.round(unitPrice * quantity * (1 + taxRate) * 100) / 100;
+  });
+  returnValue = Math.round(returnValue * 100) / 100;
+  const nextTotal = Math.max(0, adjustedTotal - returnValue);
+  const refundDue = Math.round(Math.min(returnValue, Math.max(0, netPaid - nextTotal)) * 100) / 100;
+  preview.dataset.refundDue = String(refundDue);
+  preview.innerHTML = `<span>Return value</span><strong>${fmtPeso(returnValue)}</strong>`;
+  if (refundWrap) refundWrap.style.display = refundDue > 0 ? 'grid' : 'none';
+  if (refundHelp) refundHelp.textContent = refundDue > 0 ? `Refund due: ${fmtPeso(refundDue)}. This will be recorded automatically with the return.` : 'No cash refund is due; the remaining credit balance will be reduced.';
+  if (button) button.textContent = refundDue > 0 ? `Process Return & Refund ${fmtPeso(refundDue)}` : 'Process Return';
 }
 
 export async function returnItems(invoiceId: string) {
@@ -445,11 +468,15 @@ export async function returnItems(invoiceId: string) {
       }
     }
     if (!retItems.length) { showToast('Enter return quantities'); return; }
-    const ok = await showConfirmModal(`<h3>Confirm Returns</h3><p style="color:var(--c-text-secondary)">Return ${retItems.length} item(s) and restore stock?</p>`);
+    updateReturnPreview();
+    const refundMethod = val('return-refund-method');
+    const refundDue = Number((document.getElementById('return-preview') as HTMLElement | null)?.dataset.refundDue || 0);
+    const ok = await showConfirmModal(`<h3>Confirm Return</h3><p style="color:var(--c-text-secondary)">Return ${retItems.length} selected item line(s) and restore stock?</p>${refundDue > 0 ? `<p style="color:var(--c-warning);font-weight:600">Refund due: ${fmtPeso(refundDue)} via ${esc(refundMethod)}</p>` : '<p style="color:var(--c-text-secondary)">No cash refund will be issued. The invoice balance will be reduced.</p>'}`);
     if (!ok) return;
-    await apiPost(`/invoices/${invoiceId}/return`, { items: retItems });
+    const result = await apiPost<any>(`/invoices/${invoiceId}/return`, { items: retItems, refund_method: refundDue > 0 ? refundMethod : null });
     closeModal();
-    showModal(`<h3>Return processed</h3><p class="modal-help">The selected quantity was returned and restored to inventory. If money must be given back, use the separate Refund action.</p><div class="modal-actions"><button class="btn btn-primary" onclick="closeModal();loadView('invoices')">Done</button></div>`, 'invoice-action-modal');
+    const summary = result.return_summary || {};
+    showModal(`<h3>Return processed</h3><p class="modal-help">The selected quantity was returned and restored to inventory.</p><div class="summary-line"><span>Returned value</span><strong>${fmtPeso(summary.returnCredit || 0)}</strong></div>${Number(summary.refundAmount || 0) > 0 ? `<div class="summary-line"><span>Refund recorded</span><strong>${fmtPeso(summary.refundAmount)} via ${esc(summary.refund_method || refundMethod)}</strong></div>` : '<p class="field-help">No cash refund was due. The invoice balance was reduced.</p>'}<div class="modal-actions"><button class="btn btn-primary" onclick="closeModal();loadView('invoices')">Done</button></div>`, 'invoice-action-modal');
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('ret-btn', false); }
 }

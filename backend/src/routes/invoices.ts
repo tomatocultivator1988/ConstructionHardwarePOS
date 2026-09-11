@@ -18,7 +18,10 @@ async function refreshInvoiceStatus(db: ReturnType<typeof getDb>, invoiceId: str
   const returns = await db.prepare('SELECT COALESCE(SUM(total_credit),0) total FROM invoice_returns WHERE invoice_id=?').get(invoiceId) as any;
   const payments = await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM payments WHERE invoice_id=?').get(invoiceId) as any;
   const refunds = await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id=?').get(invoiceId) as any;
-  const adjustedTotal = Math.max(0, Number(invoice.total) - Number(credits.total || 0) - Number(returns.total || 0) - Number(refunds.total || 0));
+  // Refunds change collections, not the value of the remaining goods. The
+  // invoice total is reduced by returns/credit memos only; otherwise a return
+  // followed by its refund would be deducted twice.
+  const adjustedTotal = Math.max(0, Number(invoice.total) - Number(credits.total || 0) - Number(returns.total || 0));
   const netPaid = Number(payments.total || 0) - Number(refunds.total || 0);
   const status = netPaid >= adjustedTotal - 0.005 ? 'paid' : netPaid > 0 ? 'partial' : 'pending';
   await db.prepare("UPDATE invoices SET status=?, paid_date=CASE WHEN ?='paid' THEN COALESCE(paid_date, datetime('now')) ELSE NULL END WHERE id=?")
@@ -130,8 +133,7 @@ router.get('/deliveries', requireAdmin, async (req: Request, res: Response) => {
   const data = await db.prepare(`SELECT i.id, i.invoice_number, i.issued_date, i.total, i.status, i.delivery_person,
     MAX(0, i.total
       - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0)
-      - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0)
-      - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0)) AS adjusted_total,
+      - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0)) AS adjusted_total,
     COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') AS customer_name
     FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}
     ORDER BY CASE WHEN i.delivery_person IS NULL OR trim(i.delivery_person) = '' THEN 0 ELSE 1 END, i.issued_date DESC
@@ -486,8 +488,12 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
   const invoice = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id) as any;
   const amount = Number(req.body?.amount);
   const method = typeof req.body?.method === 'string' ? req.body.method.trim() : '';
+  const returnBatchId = typeof req.body?.return_batch_id === 'string' ? req.body.return_batch_id.trim() : '';
   if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
   if (!Number.isFinite(amount) || amount <= 0 || !REFUND_METHODS.includes(method.toLowerCase())) { res.status(400).json({ error: 'Valid refund amount and method are required' }); return; }
+  if (!returnBatchId) { res.status(400).json({ error: 'Refunds must be created together with a specific item return' }); return; }
+  const batch = await db.prepare('SELECT COALESCE(SUM(total_credit),0) total FROM invoice_returns WHERE invoice_id=? AND return_batch_id=?').get(invoice.id, returnBatchId) as any;
+  if (!Number(batch.total || 0)) { res.status(400).json({ error: 'Return batch not found for this invoice' }); return; }
   let shiftId: string | null = null;
   if (method.toLowerCase() === 'cash') {
     const requestedShiftId = typeof req.body?.shift_id === 'string' ? req.body.shift_id : '';
@@ -508,11 +514,13 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
     const current = await db.prepare('SELECT status FROM invoices WHERE id=?').get(invoice.id) as any;
     const paid = await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM payments WHERE invoice_id=?').get(invoice.id) as any;
     const refunded = await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id=?').get(invoice.id) as any;
+    const batchRefunded = await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id=? AND return_batch_id=?').get(invoice.id, returnBatchId) as any;
     const availableRefund = Number(paid.total) - Number(refunded.total);
     if (!current || current.status === 'voided') throw new Error('Cannot refund a voided or missing invoice');
     if (amount > availableRefund + 0.005) throw new Error('Refund exceeds unapplied payments');
-    await db.prepare('INSERT INTO refunds (id, invoice_id, amount, method, reference, created_by, shift_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(id, invoice.id, amount, method, req.body?.reference || null, (req as any).user?.id || null, shiftId);
+    if (Number(batchRefunded.total || 0) > 0 || amount > Number(batch.total || 0) + 0.005) throw new Error('Refund exceeds the selected return value');
+    await db.prepare('INSERT INTO refunds (id, invoice_id, return_batch_id, amount, method, reference, created_by, shift_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, invoice.id, returnBatchId, amount, method, req.body?.reference || null, (req as any).user?.id || null, shiftId);
     await refreshInvoiceStatus(db, invoice.id);
     await logAudit((req as any).user?.id || null, 'create', 'refund', id, `Refund ${amount} via ${method} for ${invoice.invoice_number}`, null, { invoice_id: invoice.id, amount, method, shift_id: shiftId });
   });
@@ -520,57 +528,96 @@ router.post('/:id/refund', requireAdmin, async (req: Request, res: Response) => 
   res.status(201).json(await db.prepare('SELECT * FROM refunds WHERE id = ?').get(id));
 });
 
-router.post('/:id/return', async (req: Request, res: Response) => {
+router.post('/:id/return', requireAdmin, async (req: Request, res: Response) => {
   const db = getDb();
-  const { items } = req.body;
+  const { items } = req.body || {};
   if (!Array.isArray(items) || items.length === 0) {
     res.status(400).json({ error: 'At least one return item is required' });
     return;
   }
 
   const invoiceId = req.params.id as string;
-    const inv = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId) as any;
+  const inv = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId) as any;
   if (!inv) { res.status(404).json({ error: 'Invoice not found' }); return; }
   if (inv.status === 'voided') { res.status(400).json({ error: 'Cannot return items on a voided invoice' }); return; }
-  const requested = new Map<string, number>();
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    if (!item.material_id) { res.status(400).json({ error: `Return item ${i + 1}: material is required` }); return; }
-    if (!item.quantity || item.quantity <= 0) { res.status(400).json({ error: `Return item ${i + 1}: quantity must be > 0` }); return; }
 
-    const lineItem = await db.prepare('SELECT * FROM invoice_items WHERE id = ? AND invoice_id = ? AND material_id = ?')
-      .get(item.invoice_item_id || '', invoiceId, item.material_id) as any;
-    const itemKey = lineItem?.id || item.material_id;
-    requested.set(itemKey, (requested.get(itemKey) || 0) + item.quantity);
-    if (!lineItem) { res.status(400).json({ error: `Material not found on this invoice` }); return; }
-    const returned = (await db.prepare('SELECT COALESCE(SUM(quantity), 0) AS total FROM invoice_returns WHERE invoice_item_id = ?').get(lineItem.id) as any).total;
-    if (requested.get(itemKey)! + returned > lineItem.quantity) {
-      res.status(400).json({ error: `Cannot return more than purchased (${lineItem.quantity})` });
-      return;
-    }
+  const requested = new Map<string, { material_id: string; quantity: number }>();
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i] || {};
+    const quantity = Number(item.quantity);
+    if (!item.invoice_item_id || !item.material_id) { res.status(400).json({ error: `Return item ${i + 1}: invoice item and material are required` }); return; }
+    if (!Number.isFinite(quantity) || quantity <= 0) { res.status(400).json({ error: `Return item ${i + 1}: quantity must be greater than zero` }); return; }
+    const key = String(item.invoice_item_id);
+    const previous = requested.get(key);
+    requested.set(key, { material_id: String(item.material_id), quantity: (previous?.quantity || 0) + quantity });
   }
 
-  const restoreStock = db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?');
-  const insertMovement = db.prepare(
-    'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  );
+  const normalizedItems: Array<{ invoice_item_id: string; material_id: string; quantity: number; unit_price: number; total_credit: number }> = [];
+  for (const [invoiceItemId, request] of requested) {
+    const lineItem = await db.prepare('SELECT id, material_id, quantity, unit_price FROM invoice_items WHERE id = ? AND invoice_id = ? AND material_id = ?')
+      .get(invoiceItemId, invoiceId, request.material_id) as any;
+    if (!lineItem) { res.status(400).json({ error: 'Every returned item must belong to this invoice' }); return; }
+    const returned = Number((await db.prepare('SELECT COALESCE(SUM(quantity), 0) AS total FROM invoice_returns WHERE invoice_item_id = ?').get(lineItem.id) as any).total || 0);
+    if (request.quantity + returned > Number(lineItem.quantity) + 0.000001) {
+      res.status(400).json({ error: `Cannot return more than the remaining quantity (${Math.max(0, Number(lineItem.quantity) - returned)})` });
+      return;
+    }
+    const totalCredit = Math.round(Number(lineItem.unit_price) * request.quantity * (1 + Number(inv.tax_rate || 0)) * 100) / 100;
+    normalizedItems.push({ invoice_item_id: lineItem.id, material_id: request.material_id, quantity: request.quantity, unit_price: Number(lineItem.unit_price), total_credit: totalCredit });
+  }
 
+  const requestedRefundMethod = typeof req.body?.refund_method === 'string' ? req.body.refund_method.trim().toLowerCase() : '';
+  if (requestedRefundMethod && !REFUND_METHODS.includes(requestedRefundMethod)) { res.status(400).json({ error: 'Invalid refund method' }); return; }
+  const batchId = uuidv4();
   const txn = db.transaction(async () => {
-    for (const item of items) {
-      const lineItem = await db.prepare('SELECT id, unit_price FROM invoice_items WHERE id = ? AND invoice_id = ?').get(item.invoice_item_id || '', invoiceId) as any;
-      const totalCredit = Math.round(Number(lineItem.unit_price) * Number(item.quantity) * (1 + Number(inv.tax_rate || 0)) * 100) / 100;
-      await db.prepare('INSERT INTO invoice_returns (id, invoice_item_id, invoice_id, material_id, quantity, total_credit) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(uuidv4(), lineItem.id, invoiceId, item.material_id, item.quantity, totalCredit);
-      await restoreStock.run(item.quantity, item.material_id);
-      await insertMovement.run(uuidv4(), item.material_id, 'return', item.quantity, invoiceId, 'invoice', `Returned from ${inv.invoice_number}`);
+    const current = await db.prepare('SELECT * FROM invoices WHERE id=?').get(invoiceId) as any;
+    if (!current || current.status === 'voided') throw new Error('Cannot return items on a voided or missing invoice');
+
+    const credits = Number((await db.prepare("SELECT COALESCE(SUM(amount),0) total FROM credit_memos WHERE invoice_id=? AND status='issued'").get(invoiceId) as any).total || 0);
+    const priorReturns = Number((await db.prepare('SELECT COALESCE(SUM(total_credit),0) total FROM invoice_returns WHERE invoice_id=?').get(invoiceId) as any).total || 0);
+    const payments = Number((await db.prepare("SELECT COALESCE(SUM(amount),0) total FROM payments WHERE invoice_id=? AND method <> 'credit'").get(invoiceId) as any).total || 0);
+    const refunds = Number((await db.prepare('SELECT COALESCE(SUM(amount),0) total FROM refunds WHERE invoice_id=?').get(invoiceId) as any).total || 0);
+    const currentTotal = Math.max(0, Number(current.total) - credits - priorReturns);
+    const returnCredit = normalizedItems.reduce((sum, item) => sum + item.total_credit, 0);
+    const nextTotal = Math.max(0, currentTotal - returnCredit);
+    const netPaid = Math.max(0, payments - refunds);
+    const refundAmount = Math.round(Math.min(returnCredit, Math.max(0, netPaid - nextTotal)) * 100) / 100;
+    if (refundAmount > 0 && !requestedRefundMethod) throw new Error(`This return requires a refund method for ₱${refundAmount.toFixed(2)}`);
+
+    for (const item of normalizedItems) {
+      const latest = Number((await db.prepare('SELECT COALESCE(SUM(quantity),0) total FROM invoice_returns WHERE invoice_item_id=?').get(item.invoice_item_id) as any).total || 0);
+      const original = Number((await db.prepare('SELECT quantity FROM invoice_items WHERE id=? AND invoice_id=?').get(item.invoice_item_id, invoiceId) as any).quantity || 0);
+      if (latest + item.quantity > original + 0.000001) throw new Error('One or more items were already returned. Refresh and try again.');
+      await db.prepare('INSERT INTO invoice_returns (id, invoice_item_id, invoice_id, material_id, quantity, total_credit, return_batch_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(uuidv4(), item.invoice_item_id, invoiceId, item.material_id, item.quantity, item.total_credit, batchId);
+      await db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?').run(item.quantity, item.material_id);
+      await db.prepare('INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(uuidv4(), item.material_id, 'return', item.quantity, invoiceId, 'invoice', `Returned from ${current.invoice_number}`);
     }
 
+    if (refundAmount > 0) {
+      let shiftId: string | null = null;
+      if (requestedRefundMethod === 'cash') {
+        const linked = await db.prepare("SELECT cs.id FROM cashier_shifts cs JOIN payments p ON p.shift_id=cs.id WHERE p.invoice_id=? AND p.method='cash' AND cs.status='open' ORDER BY cs.opened_at DESC LIMIT 1").get(invoiceId) as any;
+        if (linked) shiftId = linked.id;
+        if (!shiftId) {
+          const openShifts = await db.prepare("SELECT id FROM cashier_shifts WHERE status='open' ORDER BY opened_at DESC").all() as any[];
+          if (openShifts.length === 1) shiftId = openShifts[0].id;
+        }
+      }
+      await db.prepare('INSERT INTO refunds (id, invoice_id, return_batch_id, amount, method, reference, created_by, shift_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(uuidv4(), invoiceId, batchId, refundAmount, requestedRefundMethod, `Return ${current.invoice_number}`, (req as any).user?.id || null, shiftId);
+    }
     await refreshInvoiceStatus(db, invoiceId);
+    return { returnCredit, refundAmount, nextTotal };
   });
 
-  await txn();
-  clearCache('analytics:');
-  res.json(await db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId));
+  try {
+    const summary = await txn();
+    clearCache('analytics:');
+    await logAudit((req as any).user?.id || null, 'create', 'invoice_return', batchId, `Returned items from ${inv.invoice_number}`, null, { invoice_id: invoiceId, return_batch_id: batchId, ...summary, refund_method: requestedRefundMethod || null });
+    res.json({ ...(await db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId) as any), return_summary: { return_batch_id: batchId, ...summary, refund_method: requestedRefundMethod || null } });
+  } catch (e: any) { res.status(409).json({ error: e.message || 'Unable to process return' }); }
 });
 
 router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {

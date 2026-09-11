@@ -58,12 +58,13 @@ export class Database {
     await executor().executeMultiple(sql);
   }
 
-  transaction(fn: () => void | Promise<void>): () => Promise<void> {
+  transaction<T>(fn: () => T | Promise<T>): () => Promise<T> {
     return async () => {
       const txn = await client.transaction('write');
       try {
-        await transactionStore.run(txn, fn);
+        const result = await transactionStore.run(txn, fn);
         await txn.commit();
+        return result;
       } catch (e) {
         await txn.rollback();
         throw e;

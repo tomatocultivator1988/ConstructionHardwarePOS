@@ -165,13 +165,13 @@ test('staff sale -> admin return -> updated receipt, recorded as a video', async
   }
   await salesHistory.locator('button', { hasText: 'View' }).first().click();
   await expect(page.getByText('Return Items', { exact: true })).toBeVisible();
-  await showStep(page, 'Process one returned item', 'Enter quantity 1 and confirm the return. Stock and invoice totals update.');
+  await showStep(page, 'Process one returned item', 'Enter quantity 1 and confirm the return. Stock is restored and the item-level refund is calculated.');
   const returnInput = page.locator('input[id^="ret-qty-"]').first();
   await returnInput.fill('1');
-  await page.getByRole('button', { name: 'Process Returns', exact: true }).click();
+  await page.getByRole('button', { name: /Process Return & Refund/ }).click();
   await page.locator('#confirm-yes').click();
   await expect(page.getByText('Return processed', { exact: true })).toBeVisible();
-  await expect(page.getByText('Money not refunded yet.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Refund recorded', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Close', exact: true }).click();
 
   await showStep(page, 'View the updated receipt', 'Open the invoice again to verify Returned 1, Remaining 1, and the receipt adjustment.');

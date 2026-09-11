@@ -101,7 +101,7 @@ async function loadReceiptContext(id: string): Promise<ReceiptContext> {
   const totalPaid = (inv.payments || []).reduce((s: number, p: any) => s + Number(p.amount || 0), 0) - ((inv as any).refunds || []).reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
   const adjustedTotalBeforeRefund = Number((inv as any).adjusted_total ?? inv.total ?? 0);
   const refundedTotal = ((inv as any).refunds || []).reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
-  const adjustedTotal = Math.max(0, adjustedTotalBeforeRefund - refundedTotal);
+  const adjustedTotal = Math.max(0, adjustedTotalBeforeRefund);
   const balance = adjustedTotal - totalPaid;
   const issuedDate = new Date(String(inv.issued_date || new Date().toISOString()).replace(' ', 'T'));
   const isVat = settings.vat_registered === '1' || Number(inv.tax_rate) > 0;

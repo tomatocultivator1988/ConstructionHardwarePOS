@@ -66,6 +66,7 @@ Object.assign(window, {
   setPOSQty: invoices.setPOSQty,
   returnItems: invoices.returnItems,
   showReturnModal: invoices.showReturnModal,
+  updateReturnPreview: invoices.updateReturnPreview,
   voidInvoice: invoices.voidInvoice,
   submitVoidInvoice: invoices.submitVoidInvoice,
   issueCreditMemo: invoices.issueCreditMemo,

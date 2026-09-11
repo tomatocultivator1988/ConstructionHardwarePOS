@@ -104,6 +104,7 @@ async function initTables() {
       material_id TEXT NOT NULL,
       quantity REAL NOT NULL CHECK (quantity > 0),
       total_credit REAL NOT NULL DEFAULT 0,
+      return_batch_id TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (invoice_item_id) REFERENCES invoice_items(id),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id),
@@ -289,6 +290,7 @@ async function initTables() {
       id TEXT PRIMARY KEY,
       invoice_id TEXT NOT NULL,
       credit_memo_id TEXT,
+      return_batch_id TEXT,
       shift_id TEXT,
       amount REAL NOT NULL CHECK (amount > 0),
       method TEXT NOT NULL,
@@ -375,10 +377,12 @@ async function migrateSchema() {
   if (!expenseInfo.some((r: any) => r.name === 'payment_method')) await db.exec("ALTER TABLE expenses ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'cash'");
   const refundInfo = (await db.prepare("PRAGMA table_info('refunds')").all()) as any[];
   if (!refundInfo.some((r: any) => r.name === 'shift_id')) await db.exec("ALTER TABLE refunds ADD COLUMN shift_id TEXT");
+  if (!refundInfo.some((r: any) => r.name === 'return_batch_id')) await db.exec("ALTER TABLE refunds ADD COLUMN return_batch_id TEXT");
   const creditInfo = (await db.prepare("PRAGMA table_info('credit_memos')").all()) as any[];
   if (!creditInfo.some((r: any) => r.name === 'tax_amount')) await db.exec("ALTER TABLE credit_memos ADD COLUMN tax_amount REAL NOT NULL DEFAULT 0");
   const returnInfo = (await db.prepare("PRAGMA table_info('invoice_returns')").all()) as any[];
   if (!returnInfo.some((r: any) => r.name === 'total_credit')) await db.exec("ALTER TABLE invoice_returns ADD COLUMN total_credit REAL NOT NULL DEFAULT 0");
+  if (!returnInfo.some((r: any) => r.name === 'return_batch_id')) await db.exec("ALTER TABLE invoice_returns ADD COLUMN return_batch_id TEXT");
   const auditInfo = (await db.prepare("PRAGMA table_info('audit_log')").all()) as any[];
   const auditCols = auditInfo.map((r: any) => r.name);
   if (!auditCols.includes('old_values')) await db.exec("ALTER TABLE audit_log ADD COLUMN old_values TEXT");
@@ -447,6 +451,8 @@ async function migrateSchema() {
   await db.exec('CREATE INDEX IF NOT EXISTS idx_credit_memos_invoice ON credit_memos(invoice_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_returns_invoice ON invoice_returns(invoice_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_refunds_invoice_method ON refunds(invoice_id, method)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_refunds_return_batch ON refunds(return_batch_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_invoice_returns_batch ON invoice_returns(return_batch_id)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_payments_invoice_method ON payments(invoice_id, method)');
 
   // Views are created idempotently. Dropping and recreating them on every
