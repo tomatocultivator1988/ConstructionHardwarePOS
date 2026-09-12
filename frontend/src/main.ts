@@ -24,6 +24,7 @@ Object.assign(window, {
   doLogin: login.doLogin,
   showMaterialModal: materials.showMaterialModal,
   toggleCustomUnit: materials.toggleCustomUnit,
+  toggleAccountMenu,
   addProductCatalogOption: materials.addProductCatalogOption,
   saveProductCatalogOption: materials.saveProductCatalogOption,
   createMaterial: materials.createMaterial,
@@ -249,6 +250,19 @@ function showUserHeader() {
   if (el) el.style.display = 'flex';
   if (nameEl) nameEl.textContent = user.username + (user.role === 'admin' ? ' (admin)' : '');
 }
+
+function toggleAccountMenu() {
+  const menu = document.getElementById('account-menu');
+  if (!menu) return;
+  menu.hidden = !menu.hidden;
+}
+
+document.addEventListener('click', event => {
+  const target = event.target as Node;
+  const headerUser = document.getElementById('header-user');
+  const menu = document.getElementById('account-menu');
+  if (menu && headerUser && !headerUser.contains(target)) menu.hidden = true;
+});
 
 async function checkLowStock() {
   try {
