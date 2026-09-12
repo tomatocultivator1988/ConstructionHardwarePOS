@@ -179,7 +179,7 @@ function buildThermalReceipt({ inv, settings, dateStr, timeStr, totalPaid, adjus
     settings.business_tin ? `TIN: ${safe(settings.business_tin)}` : '',
     settings.business_rdo ? `RDO/Branch: ${safe(settings.business_rdo)}` : '', '\x1b\x61\x00', line,
     'RECEIPT', line,
-    row('Document No.', safe(inv.invoice_number)), row('Date', dateStr), row('Time', timeStr),
+    row('Document No.', safe(inv.invoice_number)), row('Date & Time', `${dateStr} ${timeStr}`),
     row('Buyer', buyerName),
     buyerAddress ? row('Address', buyerAddress) : '', line,
     'ITEMS', ...itemLines, line,
@@ -209,7 +209,7 @@ function receiptPreviewHtml({ inv, settings, dateStr, timeStr, totalPaid, adjust
   const tinLine = [settings.business_tin ? `TIN: ${safe(settings.business_tin)}` : '', settings.business_rdo ? `RDO/Branch: ${safe(settings.business_rdo)}` : ''].filter(Boolean).join(' · ');
   return `<div class="receipt-paper-header"><strong>${safe(settings.business_name, 'Jeg Enterprises')}</strong><span>Hardware &amp; Building Materials Dealer</span><span>${safe(settings.business_address, 'Business address not configured')}</span>${tinLine ? `<span>${tinLine}</span>` : ''}</div>
     <h4>RECEIPT</h4>
-    <dl class="receipt-paper-info"><dt>Document No.</dt><dd>${safe(inv.invoice_number)}</dd><dt>Date</dt><dd>${safe(dateStr)}</dd><dt>Time</dt><dd>${safe(timeStr)}</dd><dt>Buyer</dt><dd>${buyerName}</dd>${buyerAddress ? `<dt>Address</dt><dd>${buyerAddress}</dd>` : ''}</dl>
+    <dl class="receipt-paper-info"><dt>Document No.</dt><dd>${safe(inv.invoice_number)}</dd><dt>Date &amp; Time</dt><dd>${safe(`${dateStr} ${timeStr}`)}</dd><dt>Buyer</dt><dd>${buyerName}</dd>${buyerAddress ? `<dt>Address</dt><dd>${buyerAddress}</dd>` : ''}</dl>
     <table><thead><tr><th colspan="4">ITEMS</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="receipt-paper-total">${isVat ? `<div><span>VATable Sales</span><span>${fmtPeso(Math.max(0, adjustedTotal - vatAmount))}</span></div><div><span>VAT (${(vatRate * 100).toFixed(0)}%)</span><span>${fmtPeso(vatAmount)}</span></div>` : ''}${returnedTotal > 0 ? `<div><span>Returns</span><span>-${fmtPeso(returnedTotal)}</span></div>` : ''}${refundedTotal > 0 ? `<div><span>Refunded</span><span>-${fmtPeso(refundedTotal)}</span></div>` : ''}<div class="grand"><span>TOTAL AMOUNT DUE</span><span>${fmtPeso(adjustedTotal)}</span></div></div>
     <p class="receipt-paper-words">Amount in Words: <strong>${safe(numberToWords(adjustedTotal))}</strong></p>

@@ -91,8 +91,8 @@ body {
 
 /* ── Header ── */
 header {
-  background: var(--c-surface);
-  border-bottom: 1px solid var(--c-border);
+  background: var(--c-text);
+  border-bottom: 3px solid var(--c-primary);
   height: var(--header-h);
   padding: 0 var(--space-8);
   display: flex;
@@ -103,20 +103,20 @@ header {
 }
 .header-left { display: flex; align-items: center; gap: var(--space-8); flex: 1 1 auto; min-width: 0; }
 .header-right { display: flex; align-items: center; gap: var(--space-3); margin-left: var(--space-4); flex: 0 0 auto; }
-.header-right .user-name { font-size: var(--fs-sm); color: var(--c-text-secondary); font-weight: 500; white-space: nowrap; }
+.header-right .user-name { font-size: var(--fs-sm); color: #eaf3fb; font-weight: 500; white-space: nowrap; }
 .header-brand { display: flex; align-items: center; gap: var(--space-3); flex-shrink: 0; }
 .header-logo { width: 36px; height: 36px; flex-shrink: 0; }
 .header-title { display: flex; flex-direction: column; line-height: 1.2; }
 .ht-main { font-size: var(--fs-lg); font-weight: 800; letter-spacing: -0.03em; background: linear-gradient(135deg, var(--c-primary), var(--c-primary-light)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-.ht-sub { font-size: calc(0.6rem * var(--ui-text-scale)); font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--c-text-muted); }
-nav { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; background: var(--c-bg); padding: 3px; border-radius: var(--radius-md); }
+.ht-sub { font-size: calc(0.6rem * var(--ui-text-scale)); font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: #a9c2d8; }
+nav { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; background: rgba(255,255,255,.10); padding: 3px; border-radius: var(--radius-md); }
 nav::-webkit-scrollbar { display: none; }
 .nav-btn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   background: transparent;
-  color: var(--c-text-muted);
+  color: #b9cee0;
   border: none;
   padding: var(--space-2) var(--space-3);
   border-radius: 6px;
@@ -129,10 +129,10 @@ nav::-webkit-scrollbar { display: none; }
   flex: 0 0 auto;
 }
 .nav-btn svg { opacity: 0.6; transition: opacity 0.15s; }
-.nav-btn:hover { background: var(--c-surface); color: var(--c-text-secondary); }
+.nav-btn:hover { background: rgba(255,255,255,.14); color: #fff; }
 .nav-btn:hover svg { opacity: 0.8; }
-.nav-btn.active { background: var(--c-surface-hover); color: var(--c-text); box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
-.nav-btn.active svg { opacity: 1; color: var(--c-primary); }
+.nav-btn.active { background: var(--c-primary); color: var(--c-text); box-shadow: 0 2px 8px rgba(242,140,40,.32); }
+.nav-btn.active svg { opacity: 1; color: var(--c-text); }
 .nav-badge {
   display: inline-flex;
   align-items: center;
@@ -865,8 +865,8 @@ body.offline .offline-banner { display: flex; }
   left: 0;
   right: 0;
   height: var(--bottom-nav-h);
-  background: var(--c-surface);
-  border-top: 1px solid var(--c-border);
+  background: var(--c-text);
+  border-top: 3px solid var(--c-primary);
   z-index: 100;
   align-items: center;
   justify-content: space-around;
@@ -879,12 +879,14 @@ body.offline .offline-banner { display: flex; }
   font-size: calc(10px * var(--ui-text-scale));
   border-radius: 0;
   background: transparent;
+  color: #b9cee0;
   height: 100%;
   flex: 1;
   justify-content: center;
 }
 #bottom-nav .nav-btn svg { width: 20px; height: 20px; opacity: 0.6; }
 #bottom-nav .nav-btn.active svg { opacity: 1; color: var(--c-primary); }
+#bottom-nav .nav-btn.active { background: rgba(242,140,40,.16); color: #fff; }
 #bottom-nav .nav-btn span { font-size: calc(9px * var(--ui-text-scale)); line-height: 1; }
 
 /* ── Install Prompt ── */
