@@ -1,11 +1,11 @@
 :root {
   /* ── Jeg Enterprises navy and orange theme ── */
-  --c-bg: #f4f8fc;
+  --c-bg: #eef5fb;
   --c-surface: #ffffff;
-  --c-surface-hover: #edf4fb;
-  --c-surface-elevated: #f8fbff;
-  --c-border: #c9d9e8;
-  --c-border-light: #9db7cf;
+  --c-surface-hover: #e4eff8;
+  --c-surface-elevated: #f5f9fd;
+  --c-border: #b8cfe2;
+  --c-border-light: #769bb9;
 
   --c-primary: #f28c28;
   --c-primary-dark: #d96f12;
@@ -219,6 +219,12 @@ nav::-webkit-scrollbar { display: none; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.dashboard-card, .settings-card, .pnl-chart-card, .pnl-expense-chart-card, .pnl-cash-snapshot, .report-payment-methods, .receivables-trend-card, .receivables-card, .pos-history, .delivery-people-card, .deliveries-card {
+  box-shadow: 0 2px 10px rgba(11,41,69,.06);
+}
+.dashboard-card:not([class*="card-"]), .settings-card, .pnl-chart-card, .pnl-expense-chart-card, .pnl-cash-snapshot, .report-payment-methods, .receivables-trend-card, .receivables-card, .pos-history, .delivery-people-card, .deliveries-card {
+  border-top: 3px solid var(--c-text);
+}
 .dashboard-card.card-success .card-value { color: var(--c-success); }
 .dashboard-card.card-danger .card-value { color: var(--c-danger); }
 .dashboard-card.card-warning .card-value { color: var(--c-warning); }
@@ -245,6 +251,7 @@ nav::-webkit-scrollbar { display: none; }
   padding: var(--space-5);
   transition: border-color 0.2s;
 }
+.chart-card, .modal-content { border-top: 3px solid var(--c-primary); }
 .chart-card:hover { border-color: var(--c-border-light); }
 .chart-card.full { grid-column: 1 / -1; }
 .chart-card .chart-title {
@@ -276,13 +283,13 @@ nav::-webkit-scrollbar { display: none; }
 }
 table { width: 100%; border-collapse: collapse; }
 thead th {
-  background: var(--c-surface-hover);
+  background: #e1edf6;
   padding: var(--space-3) var(--space-4);
   text-align: left;
   font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--c-text-muted);
+  color: var(--c-text-secondary);
   font-weight: 600;
   border-bottom: 1px solid var(--c-border);
   position: sticky;
@@ -390,6 +397,8 @@ tr.low-stock:hover { background: rgba(245, 158, 11, 0.2); }
   .shift-history-card td.actions .btn { flex:1 1 auto; }
   .shift-preview { min-width:0; }
 }
+.table-wrap thead th:first-child { border-top-left-radius: var(--radius-lg); }
+.table-wrap thead th:last-child { border-top-right-radius: var(--radius-lg); }
 .receivable-edit-btn { margin-left: .45rem; padding: 2px 7px; min-height: 24px; color: var(--c-primary); border-color: rgba(242,140,40,.35); }
 .money { font-family: var(--ff-mono); white-space: nowrap; }
 .positive { color: var(--c-success); }
