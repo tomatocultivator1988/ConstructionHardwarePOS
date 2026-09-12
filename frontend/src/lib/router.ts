@@ -42,7 +42,7 @@ function syncActiveNavigation(view: string) {
   });
 }
 
-function destroyCharts() {
+export function destroyCharts() {
   chartInstances.forEach(c => { try { c.destroy(); } catch {} });
   chartInstances = [];
 }
@@ -73,7 +73,7 @@ export async function loadView(view: string) {
     if (nameEl) nameEl.textContent = user.username + (user.role === 'admin' ? ' (admin)' : '');
   }
 
-  if (currentView === 'dashboard' && view !== 'dashboard') {
+  if (currentView === 'dashboard') {
     destroyCharts();
   }
 

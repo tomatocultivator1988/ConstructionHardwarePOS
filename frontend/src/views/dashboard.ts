@@ -1,9 +1,12 @@
 import { apiGet } from '../lib/api';
 import { esc, fmtDate, fmtPeso, businessDate } from '../lib/helpers';
-import { getChartInstances } from '../lib/router';
+import { getChartInstances, getCurrentView } from '../lib/router';
 import type { Invoice, Analytics, PaySummary } from '../lib/types';
 
+let dashboardRenderSequence = 0;
+
 export async function renderDashboard(): Promise<string> {
+  const renderSequence = ++dashboardRenderSequence;
   // Dashboard widgets are independent. A transient failure in one endpoint
   // should not blank the entire home screen on a cold serverless start.
   const [invoiceResult, payResult, analyticsResult] = await Promise.allSettled([
@@ -99,10 +102,22 @@ export async function renderDashboard(): Promise<string> {
   const methodData = JSON.stringify((analytics.paymentMethodTotals || []).map((e: any) => e.total));
 
   setTimeout(() => {
+    // The dashboard can be re-rendered while its API calls or timer are still
+    // finishing. Do not attach charts to a newer view/render.
+    if (renderSequence !== dashboardRenderSequence || getCurrentView() !== 'dashboard') return;
     const chartInstances = getChartInstances();
+
+    const destroyCanvasChart = (canvas: HTMLCanvasElement) => {
+      const Chart = (window as any).Chart;
+      const existing = Chart?.getChart?.(canvas);
+      if (existing) {
+        try { existing.destroy(); } catch {}
+      }
+    };
 
     const ctx1 = (document.getElementById('chart-revenue') as HTMLCanvasElement)?.getContext('2d');
     if (ctx1) {
+      destroyCanvasChart(ctx1.canvas);
       const g = ctx1.createLinearGradient(0, 0, 0, 200);
       g.addColorStop(0, 'rgba(240, 180, 41, 0.3)');
       g.addColorStop(1, 'rgba(240, 180, 41, 0)');
@@ -129,6 +144,7 @@ export async function renderDashboard(): Promise<string> {
 
     const ctx2 = (document.getElementById('chart-status') as HTMLCanvasElement)?.getContext('2d');
     if (ctx2) {
+      destroyCanvasChart(ctx2.canvas);
       chartInstances.push(new (window as any).Chart(ctx2, {
         type: 'doughnut',
         data: { labels: ['Pending', 'Partial', 'Paid'], datasets: [{ data: [pendingCount, partialCount, paidCount], backgroundColor: ['#ef4444', '#f0b429', '#22c55e'], borderColor: '#ffffff', borderWidth: 3, hoverOffset: 8 }] },
@@ -138,6 +154,7 @@ export async function renderDashboard(): Promise<string> {
 
     const ctx3 = (document.getElementById('chart-topmats') as HTMLCanvasElement)?.getContext('2d');
     if (ctx3 && topMats.length) {
+      destroyCanvasChart(ctx3.canvas);
       chartInstances.push(new (window as any).Chart(ctx3, {
         type: 'bar',
         data: { labels: JSON.parse(topMatLabels), datasets: [
@@ -150,6 +167,7 @@ export async function renderDashboard(): Promise<string> {
 
     const ctx4 = (document.getElementById('chart-margins') as HTMLCanvasElement)?.getContext('2d');
     if (ctx4 && margins.length) {
+      destroyCanvasChart(ctx4.canvas);
       const barColors = JSON.parse(marginData).map((v: number) => v >= 40 ? 'rgba(34, 197, 94, 0.7)' : v >= 20 ? 'rgba(240, 180, 41, 0.7)' : 'rgba(239, 68, 68, 0.7)');
       chartInstances.push(new (window as any).Chart(ctx4, {
         type: 'bar',
@@ -160,6 +178,7 @@ export async function renderDashboard(): Promise<string> {
 
     const ctx5 = (document.getElementById('chart-lowstock') as HTMLCanvasElement)?.getContext('2d');
     if (ctx5 && lowStockMats.length) {
+      destroyCanvasChart(ctx5.canvas);
       chartInstances.push(new (window as any).Chart(ctx5, {
         type: 'bar',
         data: { labels: JSON.parse(lowNames), datasets: [
@@ -172,14 +191,17 @@ export async function renderDashboard(): Promise<string> {
 
     const ctx6 = (document.getElementById('chart-expenses') as HTMLCanvasElement)?.getContext('2d');
     if (ctx6 && (analytics.expenseByCategory || []).length) {
+      destroyCanvasChart(ctx6.canvas);
       chartInstances.push(new (window as any).Chart(ctx6, { type: 'doughnut', data: { labels: JSON.parse(expenseLabels), datasets: [{ data: JSON.parse(expenseData), backgroundColor: ['#ef4444','#8b5cf6','#06b6d4','#22c55e','#f0b429','#94a3b8','#ec4899'], borderColor: '#ffffff', borderWidth: 3 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: { legend: { position: 'right', labels: { color: '#385671', font: { size: 10 }, usePointStyle: true } } } } }));
     }
     const ctx7 = (document.getElementById('chart-pnl') as HTMLCanvasElement)?.getContext('2d');
     if (ctx7) {
+      destroyCanvasChart(ctx7.canvas);
       chartInstances.push(new (window as any).Chart(ctx7, { type: 'line', data: { labels: JSON.parse(pnlLabels), datasets: [{ label: 'Income', data: JSON.parse(pnlIncome), borderColor: '#06b6d4', backgroundColor: 'rgba(6,182,212,.12)', fill: true, tension: .3 }, { label: 'Expenses', data: JSON.parse(pnlExpenses), borderColor: '#ef654a', backgroundColor: 'rgba(239,101,74,.08)', fill: true, tension: .3 }] }, options: { responsive: true, maintainAspectRatio: false, interaction: { intersect: false, mode: 'index' }, scales: { y: { beginAtZero: true, ticks: { color: '#637d95', callback: (v: any) => '₱' + v.toFixed(0) }, grid: { color: 'rgba(11,41,69,.10)' } }, x: { ticks: { color: '#637d95' }, grid: { display: false } } }, plugins: { legend: { position: 'bottom', labels: { color: '#385671', usePointStyle: true } } } } }));
     }
     const ctx8 = (document.getElementById('chart-payment-methods') as HTMLCanvasElement)?.getContext('2d');
     if (ctx8 && (analytics.paymentMethodTotals || []).length) {
+      destroyCanvasChart(ctx8.canvas);
       chartInstances.push(new (window as any).Chart(ctx8, { type: 'bar', data: { labels: JSON.parse(methodLabels), datasets: [{ label: 'Collected', data: JSON.parse(methodData), backgroundColor: ['#f28c28','#06b6d4','#8b5cf6','#22c55e','#94a3b8'], borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { color: '#637d95', callback: (v: any) => '₱' + v.toFixed(0) }, grid: { color: 'rgba(11,41,69,.10)' } }, x: { ticks: { color: '#637d95' }, grid: { display: false } } }, plugins: { legend: { display: false } } } }));
     }
   }, 50);
