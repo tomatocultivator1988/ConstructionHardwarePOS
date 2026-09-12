@@ -82,6 +82,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+#app { width: 100%; min-width: 0; }
 
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -161,6 +162,7 @@ nav::-webkit-scrollbar { display: none; }
 /* ── Main Content ── */
 #main-content {
   padding: var(--space-6);
+  width: 100%;
   max-width: var(--content-max-w);
   margin: 0 auto;
   animation: fadeIn 0.2s ease;
@@ -968,8 +970,17 @@ body.show-install #install-prompt { display: flex; }
 
 /* Tablet portrait */
 @media (max-width: 1024px) {
+  #main-content { max-width: none; }
   .chart-grid { grid-template-columns: 1fr; }
   .chart-card canvas { max-height: 200px; }
+}
+
+/* Tablet portrait/landscape: use the full viewport without changing the
+   phone-specific navigation and card rules below 820px. */
+@media (min-width: 821px) and (max-width: 1200px) {
+  #main-content { padding-inline: clamp(16px, 3vw, 32px); }
+  .dashboard-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dashboard-card { min-width: 0; }
 }
 
 /* Mobile: show bottom nav, hide desktop nav, adjust layout */
