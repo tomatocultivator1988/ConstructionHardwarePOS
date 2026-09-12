@@ -135,6 +135,7 @@ export interface PoItem {
   description: string;
   quantity: number;
   unit_cost: number;
+  selling_price?: number | null;
   total: number;
 }
 

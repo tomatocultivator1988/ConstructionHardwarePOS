@@ -10,16 +10,14 @@ export async function renderPurchaseOrders(): Promise<string> {
   const pos = await apiGet<PurchaseOrder[]>('/purchase-orders');
   const materials = await apiGet<Material[]>('/materials');
   (window as any).__poMaterialNames = Object.fromEntries(materials.map((m: Material) => [m.id, `${m.name} (₱${(m.cost_price || 0).toFixed(2)})`]));
-  return `
-    <div class="page-header">
-      <h2>Purchase Orders</h2>
-      <button class="btn btn-primary" onclick="showPOModal()">+ New PO</button>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>PO #</th><th>Supplier</th><th>Total</th><th>Status</th><th>Order Date</th><th>Received</th><th class="actions">Actions</th></tr></thead>
-        <tbody>
-          ${pos.length ? pos.map((po: PurchaseOrder) => `
+  const grouped = new Map<string, PurchaseOrder[]>();
+  [...pos].sort((a, b) => String(b.order_date).localeCompare(String(a.order_date))).forEach(po => {
+    const month = String(po.order_date || '').slice(0, 7) || 'unknown';
+    if (!grouped.has(month)) grouped.set(month, []);
+    grouped.get(month)!.push(po);
+  });
+  const monthLabel = (month: string) => month === 'unknown' ? 'Undated' : new Date(`${month}-01T00:00:00`).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' });
+  const poRows = [...grouped.entries()].map(([month, monthPOs]) => `<tr class="po-month-divider"><td colspan="7"><strong>${esc(monthLabel(month))}</strong><span>${monthPOs.length} purchase order${monthPOs.length === 1 ? '' : 's'}</span></td></tr>${monthPOs.map((po: PurchaseOrder) => `
             <tr>
               <td data-label="PO #" style="font-weight:600">${esc(po.po_number)}</td>
               <td data-label="Supplier">${esc(po.supplier_name)}</td>
@@ -29,13 +27,20 @@ export async function renderPurchaseOrders(): Promise<string> {
               <td data-label="Received">${po.received_date ? fmtDate(po.received_date) : '-'}</td>
               <td data-label="" class="actions">
                 <button class="btn btn-primary btn-sm" onclick="showPODetail('${po.id}')">View</button>
-                ${po.status === 'pending' ? `
-                  <button class="btn btn-success btn-sm" onclick="receivePO('${po.id}')">Receive</button>
-                  <button class="btn btn-danger btn-sm" onclick="cancelPO('${po.id}')">Cancel</button>
-                ` : ''}
+                ${po.status === 'pending' ? `<button class="btn btn-success btn-sm" onclick="receivePO('${po.id}')">Receive</button><button class="btn btn-danger btn-sm" onclick="cancelPO('${po.id}')">Cancel</button>` : ''}
               </td>
             </tr>
-          `).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--c-text-muted);padding:2rem">No purchase orders yet</td></tr>'}
+          `).join('')}`).join('');
+  return `
+    <div class="page-header">
+      <h2>Purchase Orders</h2>
+      <button class="btn btn-primary" onclick="showPOModal()">+ New PO</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>PO #</th><th>Supplier</th><th>Total</th><th>Status</th><th>Order Date</th><th>Received</th><th class="actions">Actions</th></tr></thead>
+        <tbody>
+          ${pos.length ? poRows : '<tr><td colspan="7" style="text-align:center;color:var(--c-text-muted);padding:2rem">No purchase orders yet</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -94,7 +99,13 @@ function renderLineItem(n: number, matOpts: string, data?: any) {
         <input id="po-qty-${n}" type="number" min="1" placeholder="Qty" value="${data?.quantity || ''}" style="width:100%;min-height:36px;font-size:var(--fs-sm)" />
       </div>
       <div style="flex:1">
-        <input id="po-cost-${n}" type="number" step="0.01" min="0" placeholder="Cost" value="${data?.unit_cost || ''}" style="width:100%;min-height:36px;font-size:var(--fs-sm)" />
+        <label class="po-line-label">Unit Cost</label><input id="po-cost-${n}" type="number" step="0.01" min="0" placeholder="Cost" value="${data?.unit_cost || ''}" oninput="updatePOMargin(${n})" style="width:100%;min-height:36px;font-size:var(--fs-sm)" />
+      </div>
+      <div class="po-reference-field">
+        <label class="po-line-label">Selling Price</label><strong id="po-selling-${n}">—</strong>
+      </div>
+      <div class="po-reference-field">
+        <label class="po-line-label">Margin</label><strong id="po-margin-${n}">—</strong>
       </div>
       <div style="display:flex;align-items:center;min-height:36px">
         <button class="btn btn-danger btn-sm" onclick="removePOLineItem(${n})">✕</button>
@@ -117,13 +128,31 @@ export function poMaterialChanged(n: number) {
   const select = document.getElementById(`po-mat-${n}`) as HTMLSelectElement;
   const desc = document.getElementById(`po-desc-${n}`) as HTMLInputElement;
   const cost = document.getElementById(`po-cost-${n}`) as HTMLInputElement;
-  if (!select || !desc || !cost) return;
+  const selling = document.getElementById(`po-selling-${n}`);
+  if (!select || !desc || !cost || !selling) return;
   const materials = (window as any).__poMaterials || [];
   const mat = materials.find((m: Material) => m.id === select.value);
   if (mat) {
     if (!desc.value) desc.value = mat.name;
     if (!cost.value) cost.value = (mat.cost_price || 0).toString();
+    selling.textContent = fmtPeso(mat.price_per_unit || 0);
+    updatePOMargin(n);
+  } else {
+    selling.textContent = '—';
+    const margin = document.getElementById(`po-margin-${n}`);
+    if (margin) margin.textContent = '—';
   }
+}
+
+export function updatePOMargin(n: number) {
+  const select = document.getElementById(`po-mat-${n}`) as HTMLSelectElement | null;
+  const costInput = document.getElementById(`po-cost-${n}`) as HTMLInputElement | null;
+  const margin = document.getElementById(`po-margin-${n}`);
+  if (!select || !costInput || !margin) return;
+  const material = ((window as any).__poMaterials || []).find((m: Material) => m.id === select.value);
+  const selling = Number(material?.price_per_unit || 0);
+  const cost = Number(costInput.value);
+  margin.textContent = selling > 0 && Number.isFinite(cost) ? `${Math.max(0, ((selling - cost) / selling) * 100).toFixed(1)}%` : '—';
 }
 
 export function removePOLineItem(n: number) {
@@ -169,7 +198,7 @@ export async function showPODetail(id: string) {
     ${po.received_date ? `<div class="summary-line"><span>Received</span><span>${fmtDate(po.received_date)}</span></div>` : ''}
     <h4 style="margin-top:var(--space-4)">Items</h4>
     <table style="margin-top:var(--space-2)">
-      <thead><tr><th>Material</th><th>Description</th><th>Qty</th><th>Unit Cost</th><th>Total</th></tr></thead>
+      <thead><tr><th>Material</th><th>Description</th><th>Qty</th><th>Unit Cost</th><th>Selling Price</th><th>Margin</th><th>Total</th></tr></thead>
       <tbody>
         ${(po.items || []).map((item: any) => `
           <tr>
@@ -177,6 +206,8 @@ export async function showPODetail(id: string) {
             <td data-label="Description">${esc(item.description)}</td>
             <td data-label="Qty">${item.quantity}</td>
             <td data-label="Unit Cost" style="font-family:var(--ff-mono)">${fmtPeso(item.unit_cost)}</td>
+            <td data-label="Selling Price" style="font-family:var(--ff-mono)">${item.selling_price == null ? '—' : fmtPeso(item.selling_price)}</td>
+            <td data-label="Margin" style="font-family:var(--ff-mono)">${item.selling_price > 0 ? `${Math.max(0, ((Number(item.selling_price) - Number(item.unit_cost)) / Number(item.selling_price)) * 100).toFixed(1)}%` : '—'}</td>
             <td data-label="Total" style="font-family:var(--ff-mono);font-weight:700">${fmtPeso(item.total)}</td>
           </tr>
         `).join('')}

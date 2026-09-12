@@ -39,7 +39,7 @@ router.get('/:id', async (req: Request, res: Response) => {
   `).get(req.params.id);
   if (!po) { res.status(404).json({ error: 'Purchase order not found' }); return; }
   const items = await db.prepare(`
-    SELECT pi.*, COALESCE(m.name, pi.description) AS material_name, m.unit
+    SELECT pi.*, COALESCE(m.name, pi.description) AS material_name, m.unit, m.price_per_unit AS selling_price
     FROM po_items pi
     LEFT JOIN materials m ON m.id = pi.material_id
     WHERE pi.po_id = ?
