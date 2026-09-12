@@ -1079,8 +1079,8 @@ body.show-install #install-prompt { display: flex; }
 /* Contextual user manual */
 .help-fab {
   position: fixed;
-  right: 1.25rem;
-  bottom: 1.25rem;
+  right: max(1rem, env(safe-area-inset-right, 0px));
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
   z-index: 80;
   display: inline-flex;
   align-items: center;
@@ -1093,6 +1093,9 @@ body.show-install #install-prompt { display: flex; }
   box-shadow: 0 8px 24px rgba(0,0,0,.28);
   font: inherit;
   font-weight: 700;
+  max-width: calc(100vw - 2rem);
+  white-space: nowrap;
+  box-sizing: border-box;
   cursor: pointer;
 }
 .help-fab span { display:grid; place-items:center; width:1.25rem; height:1.25rem; border:2px solid currentColor; border-radius:50%; font-size:calc(.82rem * var(--ui-text-scale)); }
@@ -1193,7 +1196,7 @@ tr.low-stock td:first-child { box-shadow:inset 4px 0 0 var(--c-warning); }
 .pos-history summary span { color:var(--c-text-muted); font-size:var(--fs-xs); font-weight:400; }
 .pos-history .table-wrap { border-top:1px solid var(--c-border); }
 @media (max-width: 700px) {
-  .help-fab { right:1rem; bottom:calc(4.75rem + env(safe-area-inset-bottom)); padding:.58rem .75rem; }
+  .help-fab { right:max(1rem, env(safe-area-inset-right, 0px)); bottom:calc(4.75rem + env(safe-area-inset-bottom, 0px)); padding:.58rem .75rem; }
   .help-drawer { padding:1rem; }
 }
 
