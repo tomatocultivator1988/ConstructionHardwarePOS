@@ -204,7 +204,7 @@ export async function showPODetail(id: string) {
     ${po.received_date ? `<div class="summary-line"><span>Received</span><span>${fmtDate(po.received_date)}</span></div>` : ''}
     <h4 style="margin-top:var(--space-4)">Items</h4>
     <table style="margin-top:var(--space-2)">
-      <thead><tr><th>Material</th><th>Description</th><th>Qty</th><th>Unit Cost</th><th>Selling Price</th><th>Average Cost</th><th>Margin</th><th>Total</th></tr></thead>
+      <thead><tr><th>Material</th><th>Description</th><th>Qty</th><th>Unit Cost</th><th>Selling Price</th><th>Average Price</th><th>Margin</th><th>Total</th></tr></thead>
       <tbody>
         ${(po.items || []).map((item: any) => `
           <tr>
@@ -213,7 +213,7 @@ export async function showPODetail(id: string) {
             <td data-label="Qty">${item.quantity}</td>
             <td data-label="Unit Cost" style="font-family:var(--ff-mono)">${fmtPeso(item.unit_cost)}</td>
             <td data-label="Selling Price" style="font-family:var(--ff-mono)">${item.selling_price == null ? '—' : fmtPeso(item.selling_price)}</td>
-            <td data-label="Average Cost" style="font-family:var(--ff-mono)">${item.average_cost == null ? '—' : fmtPeso(item.average_cost)}</td>
+            <td data-label="Average Price" style="font-family:var(--ff-mono)">${item.average_cost == null ? '—' : fmtPeso(item.average_cost)}</td>
             <td data-label="Margin" style="font-family:var(--ff-mono)">${item.selling_price > 0 ? `${Math.max(0, ((Number(item.selling_price) - Number(item.unit_cost)) / Number(item.selling_price)) * 100).toFixed(1)}%` : '—'}</td>
             <td data-label="Total" style="font-family:var(--ff-mono);font-weight:700">${fmtPeso(item.total)}</td>
           </tr>
