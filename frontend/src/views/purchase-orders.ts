@@ -223,7 +223,7 @@ export async function showPODetail(id: string) {
     <div class="summary-line total"><span>Total</span><span>${fmtPeso(po.total)}</span></div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Close</button>
-      ${po.status === 'pending' ? `<button class="btn btn-primary" onclick="closeModal();showPOModal('${po.id}')">Edit PO</button>` : ''}
+      ${po.status !== 'cancelled' ? `<button class="btn btn-primary" onclick="closeModal();showPOModal('${po.id}')">Edit PO</button>` : ''}
     </div>
   `, 'po-detail-modal');
 }

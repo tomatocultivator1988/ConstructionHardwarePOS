@@ -118,8 +118,8 @@ router.put('/:id', async (req: Request, res: Response) => {
   const db = getDb();
   const existing = await db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(req.params.id) as any;
   if (!existing) { res.status(404).json({ error: 'Purchase order not found' }); return; }
-  if (existing.status !== 'pending') {
-    res.status(400).json({ error: 'Only pending purchase orders can be edited' }); return;
+  if (existing.status === 'cancelled') {
+    res.status(400).json({ error: 'Cancelled purchase orders cannot be edited' }); return;
   }
 
   const { supplier_id, items, order_date } = req.body;
@@ -142,6 +142,9 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 
   const txn = db.transaction(async () => {
+    const oldItems = await db.prepare('SELECT material_id, quantity FROM po_items WHERE po_id = ?').all(req.params.id) as any[];
+    const oldQty = new Map<string, number>();
+    oldItems.forEach((item: any) => { if (item.material_id) oldQty.set(item.material_id, (oldQty.get(item.material_id) || 0) + Number(item.quantity || 0)); });
     if (supplier_id) {
       await db.prepare('UPDATE purchase_orders SET supplier_id = ?, order_date = ? WHERE id = ?')
         .run(supplier_id, order_date || existing.order_date, req.params.id);
@@ -161,6 +164,26 @@ router.put('/:id', async (req: Request, res: Response) => {
       }
       total = Math.round(total * 100) / 100;
       await db.prepare('UPDATE purchase_orders SET total = ? WHERE id = ?').run(total, req.params.id);
+
+      if (existing.status === 'received') {
+        const newQty = new Map<string, number>();
+        items.forEach((item: any) => { if (item.material_id) newQty.set(item.material_id, (newQty.get(item.material_id) || 0) + Number(item.quantity || 0)); });
+        const ids = new Set([...oldQty.keys(), ...newQty.keys()]);
+        const adjustStock = db.prepare('UPDATE materials SET stock = stock + ?, cost_price = ?, price_per_unit = COALESCE(?, price_per_unit), updated_at = datetime(\'now\') WHERE id = ?');
+        const insertAdjustment = db.prepare('INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        for (const materialId of ids) {
+          const delta = (newQty.get(materialId) || 0) - (oldQty.get(materialId) || 0);
+          const latest = items.find((item: any) => item.material_id === materialId);
+          if (!latest) {
+            const current = await db.prepare('SELECT cost_price FROM materials WHERE id = ?').get(materialId) as any;
+            await db.prepare('UPDATE materials SET stock = stock + ?, updated_at = datetime(\'now\') WHERE id = ?').run(delta, materialId);
+            await insertAdjustment.run(uuidv4(), materialId, 'po_adjustment', delta, req.params.id, 'purchase_order', `Adjusted received PO ${existing.po_number}`);
+            continue;
+          }
+          await adjustStock.run(delta, latest.unit_cost, latest.selling_price, materialId);
+          if (Math.abs(delta) > 0.000001) await insertAdjustment.run(uuidv4(), materialId, 'po_adjustment', delta, req.params.id, 'purchase_order', `Adjusted received PO ${existing.po_number}`);
+        }
+      }
     }
   });
 
