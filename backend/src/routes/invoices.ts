@@ -303,8 +303,8 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     await db.prepare(
-      "INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, due_date, delivery_person, credit_account_name, buyer_address, notes, idempotency_key, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)"
-    ).run(invoiceId, customer_id || null, invoice_number, 0, normalizedTaxRate ?? 0, 0, due_date || null, delivery_person?.trim() || null, creditName || null, buyerAddress || null, invoiceNotes || null, idempotencyKey || null, issued_date || null, (req as any).user?.id || null);
+      "INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, amount_received, change_amount, due_date, delivery_person, credit_account_name, buyer_address, notes, idempotency_key, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)"
+    ).run(invoiceId, customer_id || null, invoice_number, 0, normalizedTaxRate ?? 0, 0, checkoutPayment?.received_amount ?? checkoutPayment?.amount ?? null, 0, due_date || null, delivery_person?.trim() || null, creditName || null, buyerAddress || null, invoiceNotes || null, idempotencyKey || null, issued_date || null, (req as any).user?.id || null);
 
     let subtotal = 0;
     for (const item of items) {
@@ -332,10 +332,12 @@ router.post('/', async (req: Request, res: Response) => {
       } else {
         const paymentAmount = Number(checkoutPayment.amount);
         if (Math.abs(paymentAmount - total) > 0.005) throw new Error('Payment amount must match the sale total');
+        const receivedAmount = Number(checkoutPayment.received_amount ?? paymentAmount);
+        if (!Number.isFinite(receivedAmount) || receivedAmount < total - 0.005) throw new Error('Amount received cannot be less than the sale total');
         const activeShift = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1").get((req as any).user?.id) as any;
         if (!activeShift) throw new Error('Open a cashier shift before completing a paid sale');
         await insertPayment.run(paymentId, invoiceId, total, paymentMethod, checkoutPayment.notes || null, activeShift.id);
-        await db.prepare("UPDATE invoices SET status='paid', paid_date=datetime('now') WHERE id=?").run(invoiceId);
+        await db.prepare("UPDATE invoices SET amount_received=?, change_amount=?, status='paid', paid_date=datetime('now') WHERE id=?").run(receivedAmount, Math.max(0, receivedAmount - total), invoiceId);
       }
     }
 

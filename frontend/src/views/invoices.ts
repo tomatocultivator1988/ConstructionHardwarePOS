@@ -226,7 +226,7 @@ export async function completePOSSale() {
   const btn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null; if (btn) btn.disabled = true;
   try {
     // POS checkout is committed atomically by the backend. Credit creates an unpaid invoice.
-    const checkout = await apiPost<any>('/invoices', { customer_id, due_date: null, credit_account_name: credit_account_name || null, buyer_address: buyer_address || null, notes: notes || null, tax_rate: Number((window as any).__invDefaultTax || 0), items, payment: { amount: method === 'credit' ? 0 : total, method, notes: '' } });
+    const checkout = await apiPost<any>('/invoices', { customer_id, due_date: null, credit_account_name: credit_account_name || null, buyer_address: buyer_address || null, notes: notes || null, tax_rate: Number((window as any).__invDefaultTax || 0), items, payment: { amount: method === 'credit' ? 0 : total, received_amount: method === 'credit' ? 0 : received, method, notes: '' } });
     const change = method === 'cash' ? received - total : 0;
     posCart = [];
     await showReceiptPreview(checkout.id);
