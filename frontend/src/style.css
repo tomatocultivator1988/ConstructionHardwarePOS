@@ -302,7 +302,7 @@ thead th {
 tbody tr { transition: background 0.1s ease; }
 tbody tr:nth-child(even) { background: rgba(11,41,69,0.025); }
 tbody tr:hover { background: var(--c-primary-bg); }
-.po-month-divider td { padding: var(--space-5) var(--space-4) var(--space-2); border-bottom: 1px solid var(--c-primary); background: var(--c-bg); color: var(--c-text); }
+.po-month-divider td { padding: 2rem var(--space-4) .7rem; border-top: 3px solid var(--c-primary); border-bottom: 1px solid var(--c-primary); background: linear-gradient(90deg, var(--c-primary-bg), var(--c-bg) 65%); color: var(--c-text); }
 .po-month-divider:first-child td { padding-top: var(--space-3); }
 .po-month-divider:hover { background: var(--c-bg); }
 .po-month-divider strong { margin-right: var(--space-3); color: var(--c-text); font-size: var(--fs-base); }

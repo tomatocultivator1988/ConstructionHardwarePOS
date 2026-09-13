@@ -77,10 +77,16 @@ export async function loadView(view: string) {
     destroyCharts();
   }
 
+  const previousView = currentView;
   const sequence = ++loadSequence;
   currentView = view;
   const el = document.getElementById('main-content')!;
-  el.innerHTML = `<div class="loading-skeleton">${'<div class="sk-item"></div>'.repeat(6)}</div>`;
+  // Same-view actions such as pagination and filters should keep the page
+  // visible while the refreshed data is loading instead of flashing the
+  // entire screen with a new-page skeleton.
+  if (previousView !== view || !el.innerHTML.trim()) {
+    el.innerHTML = `<div class="loading-skeleton">${'<div class="sk-item"></div>'.repeat(6)}</div>`;
+  }
   try {
     const html = await VIEWS[view]();
     if (sequence !== loadSequence || currentView !== view) return;
