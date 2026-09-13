@@ -192,7 +192,22 @@ export async function renderDashboard(): Promise<string> {
     const ctx6 = (document.getElementById('chart-expenses') as HTMLCanvasElement)?.getContext('2d');
     if (ctx6 && (analytics.expenseByCategory || []).length) {
       destroyCanvasChart(ctx6.canvas);
-      chartInstances.push(new (window as any).Chart(ctx6, { type: 'doughnut', data: { labels: JSON.parse(expenseLabels), datasets: [{ data: JSON.parse(expenseData), backgroundColor: ['#ef4444','#8b5cf6','#06b6d4','#22c55e','#f0b429','#94a3b8','#ec4899'], borderColor: '#ffffff', borderWidth: 3 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: { legend: { position: 'right', labels: { color: '#385671', font: { size: 10 }, usePointStyle: true } } } } }));
+      const expenseValues = JSON.parse(expenseData).map((value: any) => Number(value) || 0);
+      const expenseTotal = expenseValues.reduce((sum: number, value: number) => sum + value, 0);
+      chartInstances.push(new (window as any).Chart(ctx6, { type: 'doughnut', data: { labels: JSON.parse(expenseLabels), datasets: [{ data: expenseValues, backgroundColor: ['#ef4444','#8b5cf6','#06b6d4','#22c55e','#f0b429','#94a3b8','#ec4899'], borderColor: '#ffffff', borderWidth: 3 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '62%', plugins: {
+        legend: { position: 'right', labels: { color: '#385671', font: { size: 10 }, usePointStyle: true, generateLabels: (chart: any) => {
+          const labels = chart.data.labels || [];
+          return labels.map((label: string, index: number) => ({
+            text: `${label} (${expenseTotal > 0 ? ((expenseValues[index] / expenseTotal) * 100).toFixed(1) : '0.0'}%)`,
+            fillStyle: chart.data.datasets[0].backgroundColor[index],
+            strokeStyle: chart.data.datasets[0].borderColor,
+            lineWidth: chart.data.datasets[0].borderWidth,
+            hidden: !chart.getDataVisibility(index),
+            index,
+          }));
+        } } },
+        tooltip: { callbacks: { label: (context: any) => { const value = Number(context.raw) || 0; const percentage = expenseTotal > 0 ? ((value / expenseTotal) * 100).toFixed(1) : '0.0'; return ` ${context.label}: ₱${value.toFixed(2)} (${percentage}%)`; } } }
+      } } }));
     }
     const ctx7 = (document.getElementById('chart-pnl') as HTMLCanvasElement)?.getContext('2d');
     if (ctx7) {
