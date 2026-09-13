@@ -1063,11 +1063,13 @@ body.show-install #install-prompt { display: flex; }
 .receipt-paper-info dt { font-size:8px; font-weight:700; text-transform:uppercase; }
 .receipt-paper-info dd { margin:0; text-align:right; overflow-wrap:anywhere; }
 .receipt-paper table { width:100%; table-layout:fixed; border-collapse:collapse; margin:7px 0; }
+.receipt-paper table th:nth-child(1), .receipt-paper table td:nth-child(1) { width:54%; }
+.receipt-paper table th:nth-child(2), .receipt-paper table td:nth-child(2) { width:20%; }
+.receipt-paper table th:nth-child(3), .receipt-paper table td:nth-child(3) { width:26%; }
 .receipt-paper th, .receipt-paper td { padding:3px 1px; background:#fff; color:#111; font-size:9px; text-align:right; overflow-wrap:anywhere; }
 .receipt-paper th { border-top:1px solid #111; border-bottom:1px solid #111; text-align:left; letter-spacing:.04em; }
-.receipt-paper .receipt-item-name td { padding-top:5px; text-align:left; }
-.receipt-paper .receipt-item-meta td { border-bottom:1px dotted #888; padding-bottom:4px; }
-.receipt-paper .receipt-item-meta td:first-child { text-align:left; }
+.receipt-paper .receipt-item-row td { border-bottom:1px dotted #888; padding:4px 1px; white-space:nowrap; }
+.receipt-paper .receipt-item-row td:first-child { text-align:left; overflow:hidden; text-overflow:ellipsis; }
 .receipt-paper-total, .receipt-paper-payments { border-top:1px solid #111; margin-top:7px; padding-top:5px; }
 .receipt-paper-total > div, .receipt-paper-payments > div { display:flex; justify-content:space-between; gap:6px; padding:2px 0; }
 .receipt-paper-total .grand { margin-top:3px; padding:6px 0; border-top:2px solid #111; border-bottom:2px solid #111; font-weight:800; font-size:11px; }
