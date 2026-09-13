@@ -208,7 +208,7 @@ function receiptPreviewHtml({ inv, settings, dateStr, timeStr, totalPaid, amount
   const safe = (value: any, fallback = '') => esc(String(value ?? fallback));
   const returnedTotal = (inv.items || []).reduce((sum: number, item: any) => sum + Number(item.returned_total || 0), 0);
   const refundedTotal = ((inv as any).refunds || []).reduce((sum: number, refund: any) => sum + Number(refund.amount || 0), 0);
-  const rows = (inv.items || []).filter((item: any) => Number(item.remaining_quantity ?? item.quantity) > 0).map((item: any) => { const quantity = Math.max(0, Number(item.remaining_quantity ?? item.quantity)); return `<tr class="receipt-item-row"><td colspan="2">${quantity} x ${safe(item.description, 'Item')}</td><td>${fmtPeso(item.unit_price)}</td><td>${fmtPeso(quantity * Number(item.unit_price))}</td></tr>`; }).join('');
+  const rows = (inv.items || []).filter((item: any) => Number(item.remaining_quantity ?? item.quantity) > 0).map((item: any) => { const quantity = Math.max(0, Number(item.remaining_quantity ?? item.quantity)); return `<tr class="receipt-item-row"><td>${quantity} x ${safe(item.description, 'Item')}</td><td>${fmtPeso(item.unit_price)}</td><td>${fmtPeso(quantity * Number(item.unit_price))}</td></tr>`; }).join('');
   const methods = (inv.payments || []).map((p: any) => safe(p.method)).join(', ') || '—';
   const buyerName = safe((inv as any).customer_name, 'Walk-in');
   const buyerAddress = safe((inv as any).buyer_address || (inv as any).customer_address);
@@ -217,7 +217,7 @@ function receiptPreviewHtml({ inv, settings, dateStr, timeStr, totalPaid, amount
   return `<div class="receipt-paper-header"><strong>${safe(settings.business_name, 'Jeg Enterprises')}</strong><span>Hardware &amp; Building Materials Dealer</span><span>${safe(settings.business_address, 'Business address not configured')}</span>${tinLine ? `<span>${tinLine}</span>` : ''}</div>
     <h4>RECEIPT</h4>
     <dl class="receipt-paper-info"><dt>Document No.</dt><dd>${safe(inv.invoice_number)}</dd><dt>Date &amp; Time</dt><dd>${safe(`${dateStr} ${timeStr}`)}</dd><dt>Buyer</dt><dd>${buyerName}</dd>${buyerAddress ? `<dt>Address</dt><dd>${buyerAddress}</dd>` : ''}</dl>
-    <table><thead><tr><th colspan="2">ITEM</th><th>RATE</th><th>AMOUNT</th></tr></thead><tbody>${rows}</tbody></table>
+    <table><thead><tr><th>ITEM</th><th>RATE</th><th>AMOUNT</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="receipt-paper-total">${isVat ? `<div><span>VATable Sales</span><span>${fmtPeso(Math.max(0, adjustedTotal - vatAmount))}</span></div><div><span>VAT (${(vatRate * 100).toFixed(0)}%)</span><span>${fmtPeso(vatAmount)}</span></div>` : ''}${returnedTotal > 0 ? `<div><span>Returns</span><span>-${fmtPeso(returnedTotal)}</span></div>` : ''}${refundedTotal > 0 ? `<div><span>Refunded</span><span>-${fmtPeso(refundedTotal)}</span></div>` : ''}<div class="grand"><span>TOTAL AMOUNT DUE</span><span>${fmtPeso(adjustedTotal)}</span></div></div>
     <p class="receipt-paper-words">Amount in Words: <strong>${safe(numberToWords(adjustedTotal))}</strong></p>
     <div class="receipt-paper-payments"><div><span>Payment Received</span><span>${fmtPeso(amountReceived)}</span></div><div><span>Change</span><span>${fmtPeso(change)}</span></div><div><span>Outstanding Balance</span><span>${fmtPeso(balance)}</span></div><div><span>Mode of Payment</span><span>${methods}</span></div></div>

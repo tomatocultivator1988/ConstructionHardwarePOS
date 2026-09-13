@@ -1063,9 +1063,9 @@ body.show-install #install-prompt { display: flex; }
 .receipt-paper-info dt { font-size:8px; font-weight:700; text-transform:uppercase; }
 .receipt-paper-info dd { margin:0; text-align:right; overflow-wrap:anywhere; }
 .receipt-paper table { width:100%; table-layout:fixed; border-collapse:collapse; margin:7px 0; }
-.receipt-paper table th:nth-child(1), .receipt-paper table td:nth-child(1) { width:54%; }
-.receipt-paper table th:nth-child(2), .receipt-paper table td:nth-child(2) { width:20%; }
-.receipt-paper table th:nth-child(3), .receipt-paper table td:nth-child(3) { width:26%; }
+.receipt-paper table th:nth-child(1), .receipt-paper table td:nth-child(1) { width:56%; text-align:left; }
+.receipt-paper table th:nth-child(2), .receipt-paper table td:nth-child(2) { width:22%; text-align:right; }
+.receipt-paper table th:nth-child(3), .receipt-paper table td:nth-child(3) { width:22%; text-align:right; }
 .receipt-paper th, .receipt-paper td { padding:3px 1px; background:#fff; color:#111; font-size:9px; text-align:right; overflow-wrap:anywhere; }
 .receipt-paper th { border-top:1px solid #111; border-bottom:1px solid #111; text-align:left; letter-spacing:.04em; }
 .receipt-paper .receipt-item-row td { border-bottom:1px dotted #888; padding:4px 1px; white-space:nowrap; }
