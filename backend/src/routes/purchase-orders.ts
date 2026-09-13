@@ -14,6 +14,7 @@ function validateItems(items: any[]): string | null {
     if (!item || typeof item.description !== 'string' || !item.description.trim()) return `Item ${i + 1}: description is required`;
     if (typeof item.quantity !== 'number' || !Number.isFinite(item.quantity) || item.quantity <= 0) return `Item ${i + 1}: quantity must be greater than 0`;
     if (typeof item.unit_cost !== 'number' || !Number.isFinite(item.unit_cost) || item.unit_cost < 0) return `Item ${i + 1}: unit cost must be >= 0`;
+    if (item.selling_price !== undefined && (typeof item.selling_price !== 'number' || !Number.isFinite(item.selling_price) || item.selling_price < 0)) return `Item ${i + 1}: selling price must be >= 0`;
   }
   return null;
 }
@@ -39,7 +40,10 @@ router.get('/:id', async (req: Request, res: Response) => {
   `).get(req.params.id);
   if (!po) { res.status(404).json({ error: 'Purchase order not found' }); return; }
   const items = await db.prepare(`
-    SELECT pi.*, COALESCE(m.name, pi.description) AS material_name, m.unit, m.price_per_unit AS selling_price
+    SELECT pi.*, COALESCE(m.name, pi.description) AS material_name, m.unit, m.price_per_unit,
+      (SELECT COALESCE(SUM(received_pi.quantity * received_pi.unit_cost),0) / NULLIF(SUM(received_pi.quantity),0)
+       FROM po_items received_pi JOIN purchase_orders received_po ON received_po.id=received_pi.po_id
+       WHERE received_po.status='received' AND received_pi.material_id=pi.material_id) AS average_cost
     FROM po_items pi
     LEFT JOIN materials m ON m.id = pi.material_id
     WHERE pi.po_id = ?
@@ -69,7 +73,7 @@ router.post('/', async (req: Request, res: Response) => {
 
   const poId = uuidv4();
   const insertItem = db.prepare(
-    'INSERT INTO po_items (id, po_id, material_id, description, quantity, unit_cost, total) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO po_items (id, po_id, material_id, description, quantity, unit_cost, selling_price, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const getSeq = db.prepare('SELECT next_number FROM po_sequence WHERE id = 1');
   const updateSeq = db.prepare('UPDATE po_sequence SET next_number = next_number + 1 WHERE id = 1');
@@ -94,7 +98,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     for (const item of items) {
       const lineTotal = Math.round((item.quantity * item.unit_cost) * 100) / 100;
-      await insertItem.run(uuidv4(), poId, item.material_id || null, item.description.trim(), item.quantity, item.unit_cost, lineTotal);
+      await insertItem.run(uuidv4(), poId, item.material_id || null, item.description.trim(), item.quantity, item.unit_cost, item.selling_price ?? null, lineTotal);
     }
   });
 
@@ -152,8 +156,8 @@ router.put('/:id', async (req: Request, res: Response) => {
         const lineTotal = Math.round((item.quantity * item.unit_cost) * 100) / 100;
         total += lineTotal;
         await db.prepare(
-          'INSERT INTO po_items (id, po_id, material_id, description, quantity, unit_cost, total) VALUES (?, ?, ?, ?, ?, ?, ?)'
-        ).run(uuidv4(), req.params.id, item.material_id || null, item.description.trim(), item.quantity, item.unit_cost, lineTotal);
+          'INSERT INTO po_items (id, po_id, material_id, description, quantity, unit_cost, selling_price, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(uuidv4(), req.params.id, item.material_id || null, item.description.trim(), item.quantity, item.unit_cost, item.selling_price ?? null, lineTotal);
       }
       total = Math.round(total * 100) / 100;
       await db.prepare('UPDATE purchase_orders SET total = ? WHERE id = ?').run(total, req.params.id);
@@ -181,7 +185,7 @@ router.put('/:id/receive', requireAdmin, async (req: Request, res: Response) => 
     const existingMaterials = await db.prepare(`SELECT id FROM materials WHERE id IN (${placeholders})`).all(...materialIds) as any[];
     if (existingMaterials.length !== materialIds.length) { res.status(409).json({ error: 'Purchase order contains a missing material' }); return; }
   }
-  const updateStock = db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?');
+  const updateStock = db.prepare('UPDATE materials SET stock = stock + ?, cost_price = ?, price_per_unit = COALESCE(?, price_per_unit), updated_at = datetime(\'now\') WHERE id = ?');
   const insertMovement = db.prepare(
     'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );
@@ -189,7 +193,7 @@ router.put('/:id/receive', requireAdmin, async (req: Request, res: Response) => 
   const txn = db.transaction(async () => {
     for (const item of poItems) {
       if (item.material_id) {
-        await updateStock.run(item.quantity, item.material_id);
+        await updateStock.run(item.quantity, item.unit_cost, item.selling_price, item.material_id);
         await insertMovement.run(uuidv4(), item.material_id, 'po', item.quantity, req.params.id, 'purchase_order', `Received from PO ${existing.po_number}`);
       }
     }

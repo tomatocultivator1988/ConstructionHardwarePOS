@@ -87,7 +87,7 @@ router.get('/receivables', async (req: Request, res: Response) => {
   const summary = await db.prepare(`SELECT COUNT(*) AS credit_sales, SUM(CASE WHEN balance > 0.005 THEN balance ELSE 0 END) AS outstanding, SUM(CASE WHEN balance > 0.005 THEN 1 ELSE 0 END) AS open_accounts, SUM(CASE WHEN balance <= 0.005 THEN 1 ELSE 0 END) AS paid_sales FROM (${select}) receivables`).get(...params) as any;
   const data = exportMode
     ? await db.prepare(`${select} ORDER BY CASE WHEN balance > 0.005 THEN 0 ELSE 1 END, balance DESC, i.issued_date ASC`).all(...params)
-    : await db.prepare(`${select} ORDER BY CASE WHEN balance > 0.005 THEN 0 ELSE 1 END, balance DESC, i.issued_date ASC LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize);
+    : await db.prepare(`${select} ORDER BY substr(i.issued_date,1,7) DESC, CASE WHEN balance > 0.005 THEN 0 ELSE 1 END, balance DESC, i.issued_date ASC LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize);
   res.json({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize), summary: { credit_sales: Number(summary.credit_sales || 0), outstanding: Number(summary.outstanding || 0), open_accounts: Number(summary.open_accounts || 0), paid_sales: Number(summary.paid_sales || 0) } });
 });
 

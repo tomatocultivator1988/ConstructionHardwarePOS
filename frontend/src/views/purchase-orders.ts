@@ -5,6 +5,7 @@ import { loadView } from '../lib/router';
 import type { PurchaseOrder, Supplier, Material } from '../lib/types';
 
 let lineItemCount = 0;
+let editingPOId: string | null = null;
 
 export async function renderPurchaseOrders(): Promise<string> {
   const pos = await apiGet<PurchaseOrder[]>('/purchase-orders');
@@ -48,17 +49,19 @@ export async function renderPurchaseOrders(): Promise<string> {
 }
 
 
-export async function showPOModal() {
+export async function showPOModal(editId?: string) {
   const suppliers = await apiGet<Supplier[]>('/suppliers');
   const materials = await apiGet<Material[]>('/materials');
+  const editing = editId ? await apiGet<PurchaseOrder>(`/purchase-orders/${editId}`) : null;
+  editingPOId = editId || null;
   (window as any).__poMaterials = materials;
   lineItemCount = 0;
 
-  const supplierOpts = suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  const supplierOpts = suppliers.map(s => `<option value="${s.id}" ${editing?.supplier_id === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
   const matOpts = materials.map(m => `<option value="${m.id}">${esc(m.name)} (₱${(m.cost_price || 0).toFixed(2)})</option>`).join('');
 
   showModal(`
-    <h3>New Purchase Order</h3>
+    <h3>${editing ? `Edit ${esc(editing.po_number)}` : 'New Purchase Order'}</h3>
     <div class="form-row">
       <div class="form-group">
         <label>Supplier *</label>
@@ -73,12 +76,12 @@ export async function showPOModal() {
     </div>
     <h4>Line Items</h4>
     <div id="po-line-items">
-      ${renderLineItem(++lineItemCount, matOpts)}
+      ${editing?.items?.length ? editing.items.map((item: any) => renderLineItem(++lineItemCount, matOpts, item)).join('') : renderLineItem(++lineItemCount, matOpts)}
     </div>
     <button class="btn btn-sm" onclick="addPOLineItem()" style="margin-bottom:var(--space-4)">+ Add Item</button>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" id="pof-save-btn" onclick="createPO()">Create PO</button>
+      <button class="btn btn-primary" id="pof-save-btn" onclick="createPO()">${editing ? 'Save Changes' : 'Create PO'}</button>
     </div>
   `, 'po-modal');
 }
@@ -89,7 +92,7 @@ function renderLineItem(n: number, matOpts: string, data?: any) {
       <div style="flex:2">
         <select id="po-mat-${n}" style="width:100%;min-height:36px;font-size:var(--fs-sm)" onchange="poMaterialChanged(${n})">
           <option value="">Select material...</option>
-          ${matOpts}
+          ${matOpts.replace(`value="${data?.material_id || ''}"`, `value="${data?.material_id || ''}" selected`)}
         </select>
       </div>
       <div style="flex:2">
@@ -101,8 +104,8 @@ function renderLineItem(n: number, matOpts: string, data?: any) {
       <div style="flex:1">
         <label class="po-line-label">Unit Cost</label><input id="po-cost-${n}" type="number" step="0.01" min="0" placeholder="Cost" value="${data?.unit_cost || ''}" oninput="updatePOMargin(${n})" style="width:100%;min-height:36px;font-size:var(--fs-sm)" />
       </div>
-      <div class="po-reference-field">
-        <label class="po-line-label">Selling Price</label><strong id="po-selling-${n}">—</strong>
+      <div style="flex:1">
+        <label class="po-line-label">Selling Price</label><input id="po-selling-${n}" type="number" step="0.01" min="0" placeholder="Selling" value="${data?.selling_price ?? ''}" oninput="updatePOMargin(${n})" style="width:100%;min-height:36px;font-size:var(--fs-sm)" />
       </div>
       <div class="po-reference-field">
         <label class="po-line-label">Margin</label><strong id="po-margin-${n}">—</strong>
@@ -128,17 +131,17 @@ export function poMaterialChanged(n: number) {
   const select = document.getElementById(`po-mat-${n}`) as HTMLSelectElement;
   const desc = document.getElementById(`po-desc-${n}`) as HTMLInputElement;
   const cost = document.getElementById(`po-cost-${n}`) as HTMLInputElement;
-  const selling = document.getElementById(`po-selling-${n}`);
+  const selling = document.getElementById(`po-selling-${n}`) as HTMLInputElement;
   if (!select || !desc || !cost || !selling) return;
   const materials = (window as any).__poMaterials || [];
   const mat = materials.find((m: Material) => m.id === select.value);
   if (mat) {
     if (!desc.value) desc.value = mat.name;
     if (!cost.value) cost.value = (mat.cost_price || 0).toString();
-    selling.textContent = fmtPeso(mat.price_per_unit || 0);
+    if (!selling.value) selling.value = (mat.price_per_unit || 0).toString();
     updatePOMargin(n);
   } else {
-    selling.textContent = '—';
+    selling.value = '';
     const margin = document.getElementById(`po-margin-${n}`);
     if (margin) margin.textContent = '—';
   }
@@ -147,10 +150,10 @@ export function poMaterialChanged(n: number) {
 export function updatePOMargin(n: number) {
   const select = document.getElementById(`po-mat-${n}`) as HTMLSelectElement | null;
   const costInput = document.getElementById(`po-cost-${n}`) as HTMLInputElement | null;
+  const sellingInput = document.getElementById(`po-selling-${n}`) as HTMLInputElement | null;
   const margin = document.getElementById(`po-margin-${n}`);
-  if (!select || !costInput || !margin) return;
-  const material = ((window as any).__poMaterials || []).find((m: Material) => m.id === select.value);
-  const selling = Number(material?.price_per_unit || 0);
+  if (!select || !costInput || !sellingInput || !margin) return;
+  const selling = Number(sellingInput.value);
   const cost = Number(costInput.value);
   margin.textContent = selling > 0 && Number.isFinite(cost) ? `${Math.max(0, ((selling - cost) / selling) * 100).toFixed(1)}%` : '—';
 }
@@ -173,16 +176,19 @@ export async function createPO() {
     const desc = (document.getElementById(`po-desc-${i}`) as HTMLInputElement)?.value?.trim();
     const qty = parseFloat((document.getElementById(`po-qty-${i}`) as HTMLInputElement)?.value);
     const cost = parseFloat((document.getElementById(`po-cost-${i}`) as HTMLInputElement)?.value);
+    const selling = parseFloat((document.getElementById(`po-selling-${i}`) as HTMLInputElement)?.value);
     if (!desc) continue;
     if (isNaN(qty) || qty <= 0) { showToast(`Line ${i}: quantity must be > 0`); return; }
     if (isNaN(cost) || cost < 0) { showToast(`Line ${i}: cost must be >= 0`); return; }
-    items.push({ material_id: matId || null, description: desc, quantity: qty, unit_cost: cost });
+    if (isNaN(selling) || selling < 0) { showToast(`Line ${i}: selling price must be >= 0`); return; }
+    items.push({ material_id: matId || null, description: desc, quantity: qty, unit_cost: cost, selling_price: selling });
   }
   if (!items.length) { showToast('Add at least one line item'); return; }
 
   disableBtn('pof-save-btn', true);
   try {
-    await apiPost('/purchase-orders', { supplier_id: supplierId, items, order_date: orderDate });
+    if (editingPOId) await apiPut(`/purchase-orders/${editingPOId}`, { supplier_id: supplierId, items, order_date: orderDate });
+    else await apiPost('/purchase-orders', { supplier_id: supplierId, items, order_date: orderDate });
     closeModal(); loadView('purchase-orders');
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('pof-save-btn', false); }
@@ -198,7 +204,7 @@ export async function showPODetail(id: string) {
     ${po.received_date ? `<div class="summary-line"><span>Received</span><span>${fmtDate(po.received_date)}</span></div>` : ''}
     <h4 style="margin-top:var(--space-4)">Items</h4>
     <table style="margin-top:var(--space-2)">
-      <thead><tr><th>Material</th><th>Description</th><th>Qty</th><th>Unit Cost</th><th>Selling Price</th><th>Margin</th><th>Total</th></tr></thead>
+      <thead><tr><th>Material</th><th>Description</th><th>Qty</th><th>Unit Cost</th><th>Selling Price</th><th>Average Cost</th><th>Margin</th><th>Total</th></tr></thead>
       <tbody>
         ${(po.items || []).map((item: any) => `
           <tr>
@@ -207,6 +213,7 @@ export async function showPODetail(id: string) {
             <td data-label="Qty">${item.quantity}</td>
             <td data-label="Unit Cost" style="font-family:var(--ff-mono)">${fmtPeso(item.unit_cost)}</td>
             <td data-label="Selling Price" style="font-family:var(--ff-mono)">${item.selling_price == null ? '—' : fmtPeso(item.selling_price)}</td>
+            <td data-label="Average Cost" style="font-family:var(--ff-mono)">${item.average_cost == null ? '—' : fmtPeso(item.average_cost)}</td>
             <td data-label="Margin" style="font-family:var(--ff-mono)">${item.selling_price > 0 ? `${Math.max(0, ((Number(item.selling_price) - Number(item.unit_cost)) / Number(item.selling_price)) * 100).toFixed(1)}%` : '—'}</td>
             <td data-label="Total" style="font-family:var(--ff-mono);font-weight:700">${fmtPeso(item.total)}</td>
           </tr>
@@ -216,6 +223,7 @@ export async function showPODetail(id: string) {
     <div class="summary-line total"><span>Total</span><span>${fmtPeso(po.total)}</span></div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Close</button>
+      ${po.status === 'pending' ? `<button class="btn btn-primary" onclick="closeModal();showPOModal('${po.id}')">Edit PO</button>` : ''}
     </div>
   `, 'po-detail-modal');
 }

@@ -410,6 +410,8 @@ async function migrateSchema() {
   if (!returnInfo.some((r: any) => r.name === 'total_credit')) await db.exec("ALTER TABLE invoice_returns ADD COLUMN total_credit REAL NOT NULL DEFAULT 0");
   if (!returnInfo.some((r: any) => r.name === 'return_batch_id')) await db.exec("ALTER TABLE invoice_returns ADD COLUMN return_batch_id TEXT");
   if (!returnInfo.some((r: any) => r.name === 'idempotency_key')) await db.exec("ALTER TABLE invoice_returns ADD COLUMN idempotency_key TEXT");
+  const poItemInfo = (await db.prepare("PRAGMA table_info('po_items')").all()) as any[];
+  if (!poItemInfo.some((r: any) => r.name === 'selling_price')) await db.exec("ALTER TABLE po_items ADD COLUMN selling_price REAL");
   const auditInfo = (await db.prepare("PRAGMA table_info('audit_log')").all()) as any[];
   const auditCols = auditInfo.map((r: any) => r.name);
   if (!auditCols.includes('old_values')) await db.exec("ALTER TABLE audit_log ADD COLUMN old_values TEXT");
