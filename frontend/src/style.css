@@ -116,7 +116,7 @@ header {
 .icon-only-nav { width:40px; justify-content:center; padding-inline:6px; }
 .icon-only-nav .nav-label { display:none; }
 .header-brand { display: flex; align-items: center; gap: var(--space-3); flex-shrink: 0; }
-.header-logo { width: 36px; height: 36px; flex-shrink: 0; }
+.header-logo { width: 36px; height: 36px; flex-shrink: 0; object-fit: cover; border-radius: 6px; background:#fff; }
 .header-title { display: flex; flex-direction: column; line-height: 1.2; }
 .ht-main { font-size: var(--fs-lg); font-weight: 800; letter-spacing: -0.03em; background: linear-gradient(135deg, var(--c-primary), var(--c-primary-light)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
 .ht-sub { font-size: calc(0.6rem * var(--ui-text-scale)); font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: #a9c2d8; }
