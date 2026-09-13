@@ -57,6 +57,8 @@ Object.assign(window, {
   clearPOSCart: invoices.clearPOSCart,
   togglePOSCart: invoices.togglePOSCart,
   updatePOSPayment: invoices.updatePOSPayment,
+  togglePOSDiscount: invoices.togglePOSDiscount,
+  setPOSDiscount: invoices.setPOSDiscount,
   completePOSSale: invoices.completePOSSale,
   exportSalesHistory: invoices.exportSalesHistory,
   enhancePOS: invoices.enhancePOS,

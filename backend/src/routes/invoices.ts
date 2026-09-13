@@ -189,6 +189,8 @@ router.post('/', async (req: Request, res: Response) => {
     if (!openShift) { res.status(403).json({ error: 'Open staff shift required before making a sale' }); return; }
   }
   const { customer_id, items, due_date, tax_rate, issued_date, delivery_person, credit_account_name, buyer_address, notes, payment } = req.body;
+  const requestedDiscount = Number(req.body.discount_amount || 0);
+  if (!Number.isFinite(requestedDiscount) || requestedDiscount < 0) { res.status(400).json({ error: 'Discount must be zero or greater' }); return; }
   const creditName = typeof credit_account_name === 'string' ? credit_account_name.trim() : '';
   const buyerAddress = typeof buyer_address === 'string' ? buyer_address.trim() : '';
   const invoiceNotes = typeof notes === 'string' ? notes.trim() : '';
@@ -303,8 +305,8 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     await db.prepare(
-      "INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, amount_received, change_amount, due_date, delivery_person, credit_account_name, buyer_address, notes, idempotency_key, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)"
-    ).run(invoiceId, customer_id || null, invoice_number, 0, normalizedTaxRate ?? 0, 0, checkoutPayment?.received_amount ?? checkoutPayment?.amount ?? null, 0, due_date || null, delivery_person?.trim() || null, creditName || null, buyerAddress || null, invoiceNotes || null, idempotencyKey || null, issued_date || null, (req as any).user?.id || null);
+      "INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, discount_amount, amount_received, change_amount, due_date, delivery_person, credit_account_name, buyer_address, notes, idempotency_key, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)"
+    ).run(invoiceId, customer_id || null, invoice_number, 0, normalizedTaxRate ?? 0, 0, 0, checkoutPayment?.received_amount ?? checkoutPayment?.amount ?? null, 0, due_date || null, delivery_person?.trim() || null, creditName || null, buyerAddress || null, invoiceNotes || null, idempotencyKey || null, issued_date || null, (req as any).user?.id || null);
 
     let subtotal = 0;
     for (const item of items) {
@@ -319,10 +321,12 @@ router.post('/', async (req: Request, res: Response) => {
     const appliedTaxRate = normalizedTaxRate ?? configuredTaxRate;
     const roundedSubtotal = Math.round(subtotal * 100) / 100;
     const taxAmount = Math.round(roundedSubtotal * Number(appliedTaxRate) * 100) / 100;
-    const total = Math.round((roundedSubtotal + taxAmount) * 100) / 100;
+    if (requestedDiscount > roundedSubtotal + taxAmount + 0.005) throw new Error('Discount cannot exceed the sale total');
+    const total = Math.round((roundedSubtotal + taxAmount - requestedDiscount) * 100) / 100;
 
     await db.prepare('UPDATE invoices SET subtotal = ?, tax_rate = ?, tax_amount = ?, total = ? WHERE id = ?')
       .run(roundedSubtotal, appliedTaxRate, taxAmount, total, invoiceId);
+    await db.prepare('UPDATE invoices SET discount_amount=? WHERE id=?').run(requestedDiscount, invoiceId);
 
     if (checkoutPayment) {
       const paymentMethod = checkoutPayment.method.trim().toLowerCase();

@@ -15,6 +15,7 @@ function validateItems(items: any[]): string | null {
     if (typeof item.quantity !== 'number' || !Number.isFinite(item.quantity) || item.quantity <= 0) return `Item ${i + 1}: quantity must be greater than 0`;
     if (typeof item.unit_cost !== 'number' || !Number.isFinite(item.unit_cost) || item.unit_cost < 0) return `Item ${i + 1}: unit cost must be >= 0`;
     if (item.selling_price !== undefined && (typeof item.selling_price !== 'number' || !Number.isFinite(item.selling_price) || item.selling_price < 0)) return `Item ${i + 1}: selling price must be >= 0`;
+    if (item.average_price !== undefined && (typeof item.average_price !== 'number' || !Number.isFinite(item.average_price) || item.average_price < 0)) return `Item ${i + 1}: average price must be >= 0`;
   }
   return null;
 }
@@ -40,10 +41,7 @@ router.get('/:id', async (req: Request, res: Response) => {
   `).get(req.params.id);
   if (!po) { res.status(404).json({ error: 'Purchase order not found' }); return; }
   const items = await db.prepare(`
-    SELECT pi.*, COALESCE(m.name, pi.description) AS material_name, m.unit, m.price_per_unit,
-      (SELECT COALESCE(SUM(received_pi.quantity * received_pi.unit_cost),0) / NULLIF(SUM(received_pi.quantity),0)
-       FROM po_items received_pi JOIN purchase_orders received_po ON received_po.id=received_pi.po_id
-       WHERE received_po.status='received' AND received_pi.material_id=pi.material_id) AS average_cost
+    SELECT pi.*, COALESCE(m.name, pi.description) AS material_name, m.unit, m.price_per_unit
     FROM po_items pi
     LEFT JOIN materials m ON m.id = pi.material_id
     WHERE pi.po_id = ?
@@ -73,7 +71,7 @@ router.post('/', async (req: Request, res: Response) => {
 
   const poId = uuidv4();
   const insertItem = db.prepare(
-    'INSERT INTO po_items (id, po_id, material_id, description, quantity, unit_cost, selling_price, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO po_items (id, po_id, material_id, description, quantity, unit_cost, selling_price, average_price, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   const getSeq = db.prepare('SELECT next_number FROM po_sequence WHERE id = 1');
   const updateSeq = db.prepare('UPDATE po_sequence SET next_number = next_number + 1 WHERE id = 1');
@@ -98,7 +96,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     for (const item of items) {
       const lineTotal = Math.round((item.quantity * item.unit_cost) * 100) / 100;
-      await insertItem.run(uuidv4(), poId, item.material_id || null, item.description.trim(), item.quantity, item.unit_cost, item.selling_price ?? null, lineTotal);
+      await insertItem.run(uuidv4(), poId, item.material_id || null, item.description.trim(), item.quantity, item.unit_cost, item.selling_price ?? null, item.average_price ?? null, lineTotal);
     }
   });
 
@@ -159,8 +157,8 @@ router.put('/:id', async (req: Request, res: Response) => {
         const lineTotal = Math.round((item.quantity * item.unit_cost) * 100) / 100;
         total += lineTotal;
         await db.prepare(
-          'INSERT INTO po_items (id, po_id, material_id, description, quantity, unit_cost, selling_price, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-        ).run(uuidv4(), req.params.id, item.material_id || null, item.description.trim(), item.quantity, item.unit_cost, item.selling_price ?? null, lineTotal);
+          'INSERT INTO po_items (id, po_id, material_id, description, quantity, unit_cost, selling_price, average_price, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(uuidv4(), req.params.id, item.material_id || null, item.description.trim(), item.quantity, item.unit_cost, item.selling_price ?? null, item.average_price ?? null, lineTotal);
       }
       total = Math.round(total * 100) / 100;
       await db.prepare('UPDATE purchase_orders SET total = ? WHERE id = ?').run(total, req.params.id);

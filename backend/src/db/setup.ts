@@ -412,9 +412,11 @@ async function migrateSchema() {
   if (!returnInfo.some((r: any) => r.name === 'idempotency_key')) await db.exec("ALTER TABLE invoice_returns ADD COLUMN idempotency_key TEXT");
   const poItemInfo = (await db.prepare("PRAGMA table_info('po_items')").all()) as any[];
   if (!poItemInfo.some((r: any) => r.name === 'selling_price')) await db.exec("ALTER TABLE po_items ADD COLUMN selling_price REAL");
+  if (!poItemInfo.some((r: any) => r.name === 'average_price')) await db.exec("ALTER TABLE po_items ADD COLUMN average_price REAL");
   const invoiceColumns = (await db.prepare("PRAGMA table_info('invoices')").all()) as any[];
   if (!invoiceColumns.some((r: any) => r.name === 'amount_received')) await db.exec("ALTER TABLE invoices ADD COLUMN amount_received REAL");
   if (!invoiceColumns.some((r: any) => r.name === 'change_amount')) await db.exec("ALTER TABLE invoices ADD COLUMN change_amount REAL NOT NULL DEFAULT 0");
+  if (!invoiceColumns.some((r: any) => r.name === 'discount_amount')) await db.exec("ALTER TABLE invoices ADD COLUMN discount_amount REAL NOT NULL DEFAULT 0");
   const auditInfo = (await db.prepare("PRAGMA table_info('audit_log')").all()) as any[];
   const auditCols = auditInfo.map((r: any) => r.name);
   if (!auditCols.includes('old_values')) await db.exec("ALTER TABLE audit_log ADD COLUMN old_values TEXT");

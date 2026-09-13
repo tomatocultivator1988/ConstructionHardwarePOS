@@ -107,6 +107,7 @@ function renderLineItem(n: number, matOpts: string, data?: any) {
       <div style="flex:1">
         <label class="po-line-label">Selling Price</label><input id="po-selling-${n}" type="number" step="0.01" min="0" placeholder="Selling" value="${data?.selling_price ?? ''}" oninput="updatePOMargin(${n})" style="width:100%;min-height:36px;font-size:var(--fs-sm)" />
       </div>
+      <div style="flex:1"><label class="po-line-label">Average Price</label><input id="po-average-${n}" type="number" step="0.01" min="0" placeholder="Average" value="${data?.average_price ?? ''}" style="width:100%;min-height:36px;font-size:var(--fs-sm)" /></div>
       <div class="po-reference-field">
         <label class="po-line-label">Margin</label><strong id="po-margin-${n}">—</strong>
       </div>
@@ -177,11 +178,13 @@ export async function createPO() {
     const qty = parseFloat((document.getElementById(`po-qty-${i}`) as HTMLInputElement)?.value);
     const cost = parseFloat((document.getElementById(`po-cost-${i}`) as HTMLInputElement)?.value);
     const selling = parseFloat((document.getElementById(`po-selling-${i}`) as HTMLInputElement)?.value);
+    const average = parseFloat((document.getElementById(`po-average-${i}`) as HTMLInputElement)?.value);
     if (!desc) continue;
     if (isNaN(qty) || qty <= 0) { showToast(`Line ${i}: quantity must be > 0`); return; }
     if (isNaN(cost) || cost < 0) { showToast(`Line ${i}: cost must be >= 0`); return; }
     if (isNaN(selling) || selling < 0) { showToast(`Line ${i}: selling price must be >= 0`); return; }
-    items.push({ material_id: matId || null, description: desc, quantity: qty, unit_cost: cost, selling_price: selling });
+    if (isNaN(average) || average < 0) { showToast(`Line ${i}: average price must be >= 0`); return; }
+    items.push({ material_id: matId || null, description: desc, quantity: qty, unit_cost: cost, selling_price: selling, average_price: average });
   }
   if (!items.length) { showToast('Add at least one line item'); return; }
 
@@ -213,7 +216,7 @@ export async function showPODetail(id: string) {
             <td data-label="Qty">${item.quantity}</td>
             <td data-label="Unit Cost" style="font-family:var(--ff-mono)">${fmtPeso(item.unit_cost)}</td>
             <td data-label="Selling Price" style="font-family:var(--ff-mono)">${item.selling_price == null ? '—' : fmtPeso(item.selling_price)}</td>
-            <td data-label="Average Price" style="font-family:var(--ff-mono)">${item.average_cost == null ? '—' : fmtPeso(item.average_cost)}</td>
+            <td data-label="Average Price" style="font-family:var(--ff-mono)">${item.average_price == null ? '—' : fmtPeso(item.average_price)}</td>
             <td data-label="Margin" style="font-family:var(--ff-mono)">${item.selling_price > 0 ? `${Math.max(0, ((Number(item.selling_price) - Number(item.unit_cost)) / Number(item.selling_price)) * 100).toFixed(1)}%` : '—'}</td>
             <td data-label="Total" style="font-family:var(--ff-mono);font-weight:700">${fmtPeso(item.total)}</td>
           </tr>

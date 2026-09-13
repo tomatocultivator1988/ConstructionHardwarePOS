@@ -192,6 +192,7 @@ function buildThermalReceipt({ inv, settings, dateStr, timeStr, totalPaid, amoun
     'ITEM'.padEnd(22) + 'RATE'.padStart(9) + 'AMOUNT'.padStart(11), ...itemLines, line,
     isVat ? row('VATable Sales', fmtPeso(Math.max(0, adjustedTotal - vatAmount))) : '',
     isVat ? row(`VAT (${(vatRate * 100).toFixed(0)}%)`, fmtPeso(vatAmount)) : '',
+    Number((inv as any).discount_amount || 0) > 0 ? row('Discount', `-${fmtPeso((inv as any).discount_amount)}`) : '',
     returnedTotal > 0 ? row('Returns', `-${fmtPeso(returnedTotal)}`) : '',
     refundedTotal > 0 ? row('Refunded', `-${fmtPeso(refundedTotal)}`) : '',
     row('TOTAL AMOUNT DUE', fmtPeso(adjustedTotal)), line,
@@ -218,7 +219,7 @@ function receiptPreviewHtml({ inv, settings, dateStr, timeStr, totalPaid, amount
     <h4>RECEIPT</h4>
     <dl class="receipt-paper-info"><dt>Document No.</dt><dd>${safe(inv.invoice_number)}</dd><dt>Date &amp; Time</dt><dd>${safe(`${dateStr} ${timeStr}`)}</dd><dt>Buyer</dt><dd>${buyerName}</dd>${buyerAddress ? `<dt>Address</dt><dd>${buyerAddress}</dd>` : ''}</dl>
     <table><thead><tr><th>ITEM</th><th>RATE</th><th>AMOUNT</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="receipt-paper-total">${isVat ? `<div><span>VATable Sales</span><span>${fmtPeso(Math.max(0, adjustedTotal - vatAmount))}</span></div><div><span>VAT (${(vatRate * 100).toFixed(0)}%)</span><span>${fmtPeso(vatAmount)}</span></div>` : ''}${returnedTotal > 0 ? `<div><span>Returns</span><span>-${fmtPeso(returnedTotal)}</span></div>` : ''}${refundedTotal > 0 ? `<div><span>Refunded</span><span>-${fmtPeso(refundedTotal)}</span></div>` : ''}<div class="grand"><span>TOTAL AMOUNT DUE</span><span>${fmtPeso(adjustedTotal)}</span></div></div>
+    <div class="receipt-paper-total">${isVat ? `<div><span>VATable Sales</span><span>${fmtPeso(Math.max(0, adjustedTotal - vatAmount))}</span></div><div><span>VAT (${(vatRate * 100).toFixed(0)}%)</span><span>${fmtPeso(vatAmount)}</span></div>` : ''}${Number((inv as any).discount_amount || 0) > 0 ? `<div><span>Discount</span><span>-${fmtPeso((inv as any).discount_amount)}</span></div>` : ''}${returnedTotal > 0 ? `<div><span>Returns</span><span>-${fmtPeso(returnedTotal)}</span></div>` : ''}${refundedTotal > 0 ? `<div><span>Refunded</span><span>-${fmtPeso(refundedTotal)}</span></div>` : ''}<div class="grand"><span>TOTAL AMOUNT DUE</span><span>${fmtPeso(adjustedTotal)}</span></div></div>
     <p class="receipt-paper-words">Amount in Words: <strong>${safe(numberToWords(adjustedTotal))}</strong></p>
     <div class="receipt-paper-payments"><div><span>Payment Received</span><span>${fmtPeso(amountReceived)}</span></div><div><span>Change</span><span>${fmtPeso(change)}</span></div><div><span>Outstanding Balance</span><span>${fmtPeso(balance)}</span></div><div><span>Mode of Payment</span><span>${methods}</span></div></div>
     ${(inv as any).notes ? `<p class="receipt-paper-words"><strong>Notes:</strong> ${safe((inv as any).notes)}</p>` : ''}

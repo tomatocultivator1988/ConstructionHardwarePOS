@@ -137,6 +137,7 @@ export interface PoItem {
   unit_cost: number;
   selling_price?: number | null;
   average_cost?: number | null;
+  average_price?: number | null;
   total: number;
 }
 
