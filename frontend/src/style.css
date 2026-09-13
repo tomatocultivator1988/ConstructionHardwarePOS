@@ -858,7 +858,8 @@ body:has(.login-page) #install-prompt { display: none !important; }
 .login-brand {
   text-align: center; margin-bottom: var(--space-6);
 }
-.login-brand svg { margin-bottom: var(--space-2); }
+.login-brand svg, .login-logo { margin-bottom: var(--space-2); }
+.login-logo { width: 96px; height: 96px; object-fit: cover; border-radius: 12px; background:#fff; }
 .login-title {
   font-size: var(--fs-xl); font-weight: 800; letter-spacing: -0.03em;
   background: linear-gradient(135deg, var(--c-primary), var(--c-primary-light));
