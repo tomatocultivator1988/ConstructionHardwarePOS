@@ -1101,7 +1101,7 @@ body.show-install #install-prompt { display: flex; }
   box-sizing: border-box;
   cursor: pointer;
 }
-.help-fab span { display:grid; place-items:center; width:1.25rem; height:1.25rem; border:2px solid currentColor; border-radius:50%; font-size:calc(.82rem * var(--ui-text-scale)); }
+.help-fab span { display:grid; place-items:center; width:1.25rem; height:1.25rem; border:2px solid currentColor; border-radius:50%; font-family:Arial, sans-serif; font-size:calc(.82rem * var(--ui-text-scale)); font-weight:800; line-height:1; text-align:center; }
 .help-fab:hover { filter: brightness(1.08); transform: translateY(-1px); }
 .help-overlay { position:fixed; inset:0; z-index:90; display:flex; justify-content:flex-end; background:rgba(0,0,0,.48); }
 .help-drawer { width:min(470px, 100vw); height:100%; overflow:auto; padding:1.25rem; color:var(--c-text); background:var(--c-surface, #ffffff); box-shadow:-12px 0 34px rgba(20,55,86,.18); }
