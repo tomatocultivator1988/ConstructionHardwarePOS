@@ -1,7 +1,8 @@
 import { showModal, closeModal, showToast } from './helpers';
 
 export type ExportPeriod = { from: string; to: string; label: string };
-type ExportHandler = (period: ExportPeriod, format: 'pdf' | 'csv') => void | Promise<void>;
+export type ExportFormat = 'pdf' | 'csv' | 'xlsx';
+type ExportHandler = (period: ExportPeriod, format: ExportFormat) => void | Promise<void>;
 
 let pendingHandler: ExportHandler | null = null;
 
@@ -33,7 +34,7 @@ function periodFromForm(): ExportPeriod {
 export function showExportPeriodModal(title: string, handler: ExportHandler) {
   pendingHandler = handler;
   const today = dateValue(new Date());
-  showModal(`<h3>Export ${title}</h3><p class="modal-help">Choose the period and file type. PDF opens a print-ready document; CSV opens cleanly in Excel.</p><div class="form-group"><label for="export-period-kind">Period</label><select id="export-period-kind" onchange="toggleExportCustomRange()"><option value="day">Day</option><option value="month" selected>Month</option><option value="quarter">Quarter</option><option value="year">Year</option><option value="custom">Custom range</option></select></div><div class="form-group"><label for="export-period-anchor">Reference date</label><input id="export-period-anchor" type="date" value="${today}" /></div><div id="export-custom-range" class="form-row" style="display:none"><div class="form-group"><label for="export-from">From</label><input id="export-from" type="date" value="${today}" /></div><div class="form-group"><label for="export-to">To</label><input id="export-to" type="date" value="${today}" /></div></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn" onclick="submitExportPeriod('csv')">Excel / CSV</button><button class="btn btn-primary" onclick="submitExportPeriod('pdf')">PDF / Print</button></div>`, 'export-period-modal');
+  showModal(`<h3>Export ${title}</h3><p class="modal-help">Choose the period and file type. Excel Workbook includes separate sheets for sales, P&amp;L, payments, expenses, receivables, and cash flow.</p><div class="form-group"><label for="export-period-kind">Period</label><select id="export-period-kind" onchange="toggleExportCustomRange()"><option value="day">Day</option><option value="month" selected>Month</option><option value="quarter">Quarter</option><option value="year">Year</option><option value="custom">Custom range</option></select></div><div class="form-group"><label for="export-period-anchor">Reference date</label><input id="export-period-anchor" type="date" value="${today}" /></div><div id="export-custom-range" class="form-row" style="display:none"><div class="form-group"><label for="export-from">From</label><input id="export-from" type="date" value="${today}" /></div><div class="form-group"><label for="export-to">To</label><input id="export-to" type="date" value="${today}" /></div></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn" onclick="submitExportPeriod('csv')">CSV</button><button class="btn" onclick="submitExportPeriod('xlsx')">Excel Workbook</button><button class="btn btn-primary" onclick="submitExportPeriod('pdf')">PDF / Print</button></div>`, 'export-period-modal');
 }
 
 export function toggleExportCustomRange() {
@@ -41,7 +42,7 @@ export function toggleExportCustomRange() {
   if (custom) custom.style.display = kind === 'custom' ? 'flex' : 'none';
 }
 
-export async function submitExportPeriod(format: 'pdf' | 'csv') {
+export async function submitExportPeriod(format: ExportFormat) {
   if (!pendingHandler) return;
   const period = periodFromForm();
   if (!period.from || !period.to || period.from > period.to) { showToast('Choose a valid date range'); return; }

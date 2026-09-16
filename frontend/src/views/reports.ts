@@ -2,6 +2,7 @@ import { apiGet } from '../lib/api';
 import { esc, fmtDate, fmtPeso, businessDate, businessMonth } from '../lib/helpers';
 import { showToast } from '../lib/helpers';
 import { showExportPeriodModal, exportTable, type ExportPeriod } from '../lib/export';
+import * as XLSX from 'xlsx';
 
 let currentSubTab = 'daily';
 let currentReportPeriod = 'month';
@@ -82,6 +83,10 @@ export function applyReportPeriod(period: string) {
 
 export function exportReports() {
   showExportPeriodModal('Reports', async (period: ExportPeriod, format) => {
+    if (format === 'xlsx') {
+      await exportDetailedWorkbook(period);
+      return;
+    }
     if (currentSubTab === 'monthly') {
       const data = await apiGet<any>(`/reports/range?type=profit&from=${period.from}&to=${period.to}`);
       exportTable('Profit and Loss Report', period, ['Metric', 'Amount'], [['Revenue', fmtPeso(data.revenue)], ['COGS', fmtPeso(data.cogs)], ['Gross Profit', fmtPeso(data.gross_profit)], ['Expenses', fmtPeso(data.expenses)], ['Net Profit', fmtPeso(data.net_profit)]], format, `Period: ${period.label}`);
@@ -91,6 +96,47 @@ export function exportReports() {
     const rows = (data.invoices || []).map((row: any) => [row.invoice_number, row.customer_name, fmtDate(row.issued_date), row.status, fmtPeso(row.total), fmtPeso(row.paid)]);
     exportTable('Sales Report', period, ['Invoice', 'Buyer', 'Issued', 'Status', 'Total', 'Paid'], rows, format, `Gross sales: ${fmtPeso(data.totals?.gross_sales || 0)} · Profit: ${fmtPeso(data.totals?.profit || 0)} · ${rows.length} invoice${rows.length === 1 ? '' : 's'}`);
   });
+}
+
+function money(value: unknown) { return Number(value || 0); }
+
+async function exportDetailedWorkbook(period: ExportPeriod) {
+  const query = `from=${encodeURIComponent(period.from)}&to=${encodeURIComponent(period.to)}`;
+  const [sales, profit, books, cash] = await Promise.all([
+    apiGet<any>(`/reports/range?type=sales&${query}`),
+    apiGet<any>(`/reports/range?type=profit&${query}`),
+    apiGet<any>(`/reports/books?${query}`),
+    apiGet<any>(`/reports/cash-flow?${query}`),
+  ]);
+
+  const wb = XLSX.utils.book_new();
+  const addSheet = (name: string, title: string, headers: string[], rows: unknown[][], summary: unknown[][] = []) => {
+    const aoa = [[title], [`Period: ${period.from} to ${period.to}`], [], ...summary, headers, ...rows];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!freeze'] = { xSplit: 0, ySplit: summary.length + 4 };
+    ws['!cols'] = headers.map((header, index) => ({ wch: Math.min(34, Math.max(header.length + 2, ...rows.map(row => String(row[index] ?? '').length + 2), 12)) }));
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+  };
+
+  const salesRows = (sales.invoices || []).map((r: any) => [r.invoice_number, r.customer_name, r.issued_date, r.status, money(r.total), money(r.paid), Math.max(0, money(r.total) - money(r.paid))]);
+  addSheet('Daily Sales', 'Daily Sales Transactions', ['Invoice', 'Buyer', 'Issued', 'Status', 'Total', 'Paid', 'Balance'], salesRows, [['Gross Sales', money(sales.totals?.gross_sales)], ['Profit', money(sales.totals?.profit)], ['Invoice Count', money(sales.totals?.invoice_count)]]);
+
+  addSheet('P&L', 'Profit and Loss', ['Metric', 'Amount'], [['Revenue', money(profit.revenue)], ['COGS', money(profit.cogs)], ['Gross Profit', money(profit.revenue) - money(profit.cogs)], ['Expenses', money(profit.expenses)], ['Net Profit', money(profit.revenue) - money(profit.cogs) - money(profit.expenses)]], [['Report', 'Profit and Loss']]);
+
+  const paymentRows = (books.receipts || []).map((r: any) => [r.payment_date, r.invoice_number, r.method, money(r.amount)]);
+  addSheet('Payments', 'Payment Transactions', ['Date', 'Invoice', 'Method', 'Amount'], paymentRows, [['Total Payments', paymentRows.reduce((sum, row) => sum + money(row[3]), 0)]]);
+
+  const expenseRows = (books.expenses || []).map((r: any) => [r.expense_date, r.category, r.vendor, r.payment_method, r.description, money(r.amount)]);
+  addSheet('Expenses', 'Expenses and Purchases', ['Date', 'Category', 'Vendor', 'Payment Method', 'Description', 'Amount'], expenseRows, [['Total Expenses', expenseRows.reduce((sum, row) => sum + money(row[5]), 0)]]);
+
+  const receivableRows = (books.receivables || []).map((r: any) => [r.invoice_number, r.buyer, money(r.adjusted_total ?? r.total), money(r.paid), money(r.balance)]);
+  addSheet('Receivables', 'Open Receivables', ['Invoice', 'Buyer', 'Total', 'Paid', 'Balance'], receivableRows, [['Open Invoice Count', receivableRows.length], ['Open Balance', receivableRows.reduce((sum, row) => sum + money(row[4]), 0)]]);
+
+  addSheet('Cash Flow', 'Cash Flow Summary', ['Metric', 'Amount'], [['Cash Receipts', money(cash.cash_receipts)], ['Cash Refunds', money(cash.cash_refunds)], ['Cash Expenses', money(cash.cash_expenses)], ['Net Cash Change', money(cash.net_cash_change)]], [['Period', period.label]]);
+
+  const filename = `jeg-enterprises-reports-${period.from}-to-${period.to}.xlsx`;
+  XLSX.writeFile(wb, filename);
+  showToast(`Excel workbook exported: ${filename}`);
 }
 
 async function loadFinancialSummary(from?: string, to?: string) {
