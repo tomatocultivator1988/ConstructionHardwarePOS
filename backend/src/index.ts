@@ -24,6 +24,7 @@ import shiftRoutes from './routes/shifts';
 import catalogRoutes from './routes/catalog';
 import attendanceRoutes from './routes/attendance';
 import deliveryPersonnelRoutes from './routes/delivery-personnel';
+import integrationRoutes from './routes/integrations';
 import { authMiddleware } from './lib/auth';
 
 const app = express();
@@ -58,7 +59,7 @@ app.use(helmet({
 app.use(cors({
   origin: CORS_ORIGIN,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'X-API-Token', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'X-API-Token', 'X-API-Key', 'Authorization'],
 }));
 
 // Body parsing with size limit
@@ -101,6 +102,7 @@ app.use('/api/shifts', shiftRoutes);
 app.use('/api/catalog', catalogRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/delivery-personnel', deliveryPersonnelRoutes);
+app.use('/api/integrations', integrationRoutes);
 
 app.get('/api/health', async (_req, res) => {
   try {

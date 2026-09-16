@@ -18,7 +18,7 @@ declare global {
 }
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction) {
-  const skipAuth = req.path === '/health' || req.path === '/auth/login';
+  const skipAuth = req.path === '/health' || req.path === '/auth/login' || req.path.startsWith('/integrations');
   if (skipAuth) return next();
 
   // If no users exist yet (first run), skip auth
