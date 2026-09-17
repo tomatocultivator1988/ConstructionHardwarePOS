@@ -4,6 +4,7 @@ import { getDb } from '../db/setup';
 const router = Router();
 
 function requireIntegrationKey(req: Request, res: Response, next: NextFunction) {
+  if (req.path === '/public-reports') return next();
   const configuredKey = process.env.REPORTS_API_KEY;
   const suppliedKey = req.header('x-api-key') || (req.header('authorization') || '').replace(/^Bearer\s+/i, '');
   if (!configuredKey) return res.status(503).json({ error: 'Reports integration is not configured' });
@@ -16,7 +17,7 @@ const businessDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Si
 
 router.use(requireIntegrationKey);
 
-router.get('/reports', async (req: Request, res: Response) => {
+router.get(['/reports', '/public-reports'], async (req: Request, res: Response) => {
   const db = getDb();
   const today = businessDate();
   const from = dateParam(req.query.from, today);
