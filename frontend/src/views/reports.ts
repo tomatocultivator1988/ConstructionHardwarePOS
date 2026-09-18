@@ -2,7 +2,6 @@ import { apiGet } from '../lib/api';
 import { esc, fmtDate, fmtPeso, businessDate, businessMonth } from '../lib/helpers';
 import { showToast } from '../lib/helpers';
 import { showExportPeriodModal, exportTable, type ExportPeriod } from '../lib/export';
-import * as XLSX from 'xlsx';
 
 let currentSubTab = 'daily';
 let currentReportPeriod = 'month';
@@ -101,6 +100,7 @@ export function exportReports() {
 function money(value: unknown) { return Number(value || 0); }
 
 async function exportDetailedWorkbook(period: ExportPeriod) {
+  const XLSX = await import('xlsx-js-style');
   const query = `from=${encodeURIComponent(period.from)}&to=${encodeURIComponent(period.to)}`;
   const [sales, profit, books, cash] = await Promise.all([
     apiGet<any>(`/reports/range?type=sales&${query}`),
@@ -113,7 +113,38 @@ async function exportDetailedWorkbook(period: ExportPeriod) {
   const addSheet = (name: string, title: string, headers: string[], rows: unknown[][], summary: unknown[][] = []) => {
     const aoa = [[title], [`Period: ${period.from} to ${period.to}`], [], ...summary, headers, ...rows];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws['!freeze'] = { xSplit: 0, ySplit: summary.length + 4 };
+    const headerRow = summary.length + 4;
+    const lastRow = headerRow + rows.length;
+    const lastColumn = XLSX.utils.encode_col(Math.max(headers.length - 1, 0));
+    const navy = '0B2945';
+    const orange = 'F7931E';
+    const paleBlue = 'EAF2F8';
+    const lightOrange = 'FFF1DF';
+    const white = 'FFFFFF';
+    const border = { style: 'thin', color: 'D8E1EA' };
+    const titleStyle = { font: { name: 'Aptos', sz: 16, bold: true, color: white }, fill: { fgColor: { rgb: navy } }, alignment: { vertical: 'center' } };
+    const subtitleStyle = { font: { name: 'Aptos', sz: 10, italic: true, color: '5B6B7A' }, fill: { fgColor: { rgb: 'F5F8FA' } } };
+    const headerStyle = { font: { name: 'Aptos', sz: 10, bold: true, color: white }, fill: { fgColor: { rgb: navy } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { top: border, bottom: border } };
+    const summaryLabelStyle = { font: { name: 'Aptos', sz: 10, bold: true, color: navy }, fill: { fgColor: { rgb: lightOrange } } };
+    const summaryValueStyle = { font: { name: 'Aptos', sz: 10, bold: true, color: navy }, fill: { fgColor: { rgb: lightOrange } }, alignment: { horizontal: 'right' } };
+    const applyRowStyle = (row: number, style: any) => { for (let col = 0; col < headers.length; col++) { const ref = XLSX.utils.encode_cell({ r: row - 1, c: col }); if (ws[ref]) ws[ref].s = style; } };
+    if (ws.A1) ws.A1.s = titleStyle;
+    if (ws.A2) ws.A2.s = subtitleStyle;
+    if (headers.length > 1) { ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } }]; }
+    for (let row = 4; row < headerRow; row++) { const label = ws[`A${row}`]; const value = ws[`B${row}`]; if (label) label.s = summaryLabelStyle; if (value) { value.s = summaryValueStyle; value.z = headers.length > 1 ? '₱#,##0.00' : '0'; } }
+    applyRowStyle(headerRow, headerStyle);
+    for (let row = headerRow + 1; row <= lastRow; row++) {
+      for (let col = 0; col < headers.length; col++) {
+        const ref = XLSX.utils.encode_cell({ r: row - 1, c: col });
+        const cell = ws[ref]; if (!cell) continue;
+        cell.s = { font: { name: 'Aptos', sz: 10, color: '243447' }, border: { bottom: border }, alignment: { vertical: 'center', horizontal: typeof cell.v === 'number' ? 'right' : 'left' } };
+        if (/amount|total|paid|balance|tax|profit|sales|cost|price|cash/i.test(headers[col])) cell.z = '₱#,##0.00;[Red]-₱#,##0.00';
+        if (/count|quantity|stock/i.test(headers[col])) cell.z = '#,##0.##';
+      }
+    }
+    ws['!freeze'] = { xSplit: 0, ySplit: headerRow };
+    ws['!autofilter'] = { ref: `A${headerRow}:${lastColumn}${lastRow}` };
+    ws['!rows'] = [{ hpt: 26 }, { hpt: 18 }, { hpt: 8 }];
     ws['!cols'] = headers.map((header, index) => ({ wch: Math.min(34, Math.max(header.length + 2, ...rows.map(row => String(row[index] ?? '').length + 2), 12)) }));
     XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
   };
