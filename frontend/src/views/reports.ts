@@ -199,12 +199,13 @@ function money(value: unknown) { return Number(value || 0); }
 async function exportDetailedWorkbook(period: ExportPeriod) {
   const XLSX = await import('xlsx-js-style');
   const query = `from=${encodeURIComponent(period.from)}&to=${encodeURIComponent(period.to)}`;
-  const [sales, profit, books, cash, comprehensive] = await Promise.all([
+  const [sales, profit, books, cash, comprehensive, balanceSheet] = await Promise.all([
     apiGet<any>(`/reports/range?type=sales&${query}`),
     apiGet<any>(`/reports/range?type=profit&${query}`),
     apiGet<any>(`/reports/books?${query}`),
     apiGet<any>(`/reports/cash-flow?${query}`),
     apiGet<any>(`/reports/comprehensive?${query}`),
+    apiGet<any>(`/reports/balance-sheet?asOf=${encodeURIComponent(period.to)}`),
   ]);
 
   const wb = XLSX.utils.book_new();
@@ -295,6 +296,104 @@ async function exportDetailedWorkbook(period: ExportPeriod) {
 
   const staffRows = (comprehensive.staff || []).map((r: any) => [r.username, money(r.invoices), money(r.net_sales), money(r.collections), money(r.refunds), money(r.days_present)]);
   addSheet('Staff', 'Staff and Cashier Performance', ['Staff', 'Invoices', 'Net Sales', 'Collections', 'Refunds', 'Days Present'], staffRows);
+
+  const addBalanceSheet = (data: any) => {
+    const navy = '0B2945';
+    const orange = 'F7931E';
+    const paleBlue = 'EAF2F8';
+    const lightOrange = 'FFF1DF';
+    const white = 'FFFFFF';
+    const muted = '5B6B7A';
+    const border = { style: 'thin', color: 'D8E1EA' };
+    const solid = (rgb: string) => ({ patternType: 'solid', fgColor: { rgb } });
+    const moneyValue = (value: unknown) => value === null || value === undefined ? null : Number(value || 0);
+    const rows: Array<{ section?: string; account: string; amount: number | null; notes: string; total?: boolean; check?: boolean }> = [];
+    const section = (label: string) => rows.push({ section: label, account: '', amount: null, notes: '' });
+    const line = (account: string, amount: number | null, notes: string) => rows.push({ account, amount, notes });
+    const total = (account: string, amount: number, notes: string, check = false) => rows.push({ account, amount, notes, total: true, check });
+    const assets = data.assets || {};
+    const equity = data.equity || {};
+    const knownAssets = Number(assets.known_total || 0);
+    const knownEquity = Number(equity.retained_earnings || 0);
+    const difference = knownAssets - knownEquity;
+
+    section('ASSETS');
+    section('CURRENT ASSETS');
+    line('Cash / recorded drawer cash', moneyValue(assets.recorded_cash), 'Latest closed cashier count');
+    line('Accounts receivable', moneyValue(assets.receivables), 'Unpaid credit balances as of date');
+    line('Inventory at cost', moneyValue(assets.inventory_cost), 'Current stock × recorded cost');
+    line('Prepaid expenses', null, 'No prepaid-expense account exists in the POS');
+    line('Short-term investments', null, 'No investment account exists in the POS');
+    total('TOTAL KNOWN POS ASSETS', knownAssets, 'Cash, receivables, and inventory only');
+    section('FIXED / LONG-TERM ASSETS');
+    line('Land', null, 'No fixed-asset register exists in the POS');
+    line('Equipment', null, 'No fixed-asset register exists in the POS');
+    line('Building', null, 'No fixed-asset register exists in the POS');
+    line('Other fixed assets', null, 'No fixed-asset register exists in the POS');
+    section('OTHER ASSETS');
+    line('Trademark / intellectual property', null, 'Not recorded in the POS');
+    line('Other assets', null, 'Not recorded in the POS');
+    section('LIABILITIES');
+    section('CURRENT LIABILITIES');
+    line('Accounts payable / supplier payables', null, 'Purchase orders are tracked, but payable balances are not');
+    line('Accrued liabilities', null, 'Not recorded in the POS');
+    line('Deferred income', null, 'Not recorded in the POS');
+    line('Accrued salaries and wages', null, 'Attendance exists, but payroll liabilities do not');
+    line('Mortgage payable', null, 'Not recorded in the POS');
+    line('Other current liabilities', null, 'Not recorded in the POS');
+    section('LONG-TERM LIABILITIES');
+    line('Long-term debt', null, 'Not recorded in the POS');
+    line('Notes payable', null, 'Not recorded in the POS');
+    line('Other long-term liabilities', null, 'Not recorded in the POS');
+    section("OWNER'S EQUITY");
+    line("Owner's capital", null, 'Inventory is an asset; it is not automatically owner capital');
+    line('Retained earnings', moneyValue(equity.retained_earnings), 'Cumulative recorded sales less COGS and expenses');
+    line("Owner withdrawals", null, 'Not recorded in the POS');
+    total("TOTAL OWNER'S EQUITY (KNOWN)", knownEquity, 'Retained earnings only');
+    total("TOTAL LIABILITIES + OWNER'S EQUITY (KNOWN)", knownEquity, 'Missing external accounts excluded');
+    total('CHECK / UNRECONCILED DIFFERENCE', difference, difference === 0 ? 'Balanced' : 'Missing capital, liabilities, cash accounts, or other assets', true);
+
+    const headers = ['Section', 'Account / Line Item', `As of ${data.as_of || period.to}`, 'Notes'];
+    const aoa: unknown[][] = [['BALANCE SHEET'], [`POS-based financial position as of ${data.as_of || period.to}`], [], headers];
+    rows.forEach(row => {
+      if (row.section) aoa.push([row.section, '', '', '']);
+      else aoa.push(['', row.account, row.amount, row.notes]);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } }];
+    const headerRow = 3;
+    const lastRow = aoa.length - 1;
+    for (let col = 0; col < 4; col++) {
+      const title = ws[XLSX.utils.encode_cell({ r: 0, c: col })] || (ws[XLSX.utils.encode_cell({ r: 0, c: col })] = { v: '', t: 's' });
+      const subtitle = ws[XLSX.utils.encode_cell({ r: 1, c: col })] || (ws[XLSX.utils.encode_cell({ r: 1, c: col })] = { v: '', t: 's' });
+      title.s = { font: { name: 'Aptos Display', sz: 18, bold: true, color: white }, fill: solid(navy), alignment: { vertical: 'center' } };
+      subtitle.s = { font: { name: 'Aptos', sz: 10, italic: true, color: muted }, fill: solid('F5F8FA') };
+    }
+    for (let col = 0; col < 4; col++) {
+      ws[XLSX.utils.encode_cell({ r: headerRow, c: col })].s = { font: { name: 'Aptos', sz: 10, bold: true, color: white }, fill: solid(navy), alignment: { horizontal: col === 2 ? 'right' : 'left', vertical: 'center', wrapText: true }, border: { top: border, bottom: border } };
+    }
+    rows.forEach((row, index) => {
+      const excelRow = headerRow + 1 + index;
+      const isSection = Boolean(row.section);
+      const style = isSection
+        ? { font: { name: 'Aptos', sz: 10, bold: true, color: white }, fill: solid(navy) }
+        : row.total
+          ? { font: { name: 'Aptos', sz: 10, bold: true, color: row.check && row.amount !== 0 ? 'C62828' : navy }, fill: solid(row.check ? 'FDE8E7' : lightOrange), border: { top: { style: 'medium', color: navy } } }
+          : { font: { name: 'Aptos', sz: 10, color: '243447' }, fill: solid(index % 2 ? 'FFFFFF' : 'F7FAFC'), border: { bottom: border } };
+      for (let col = 0; col < 4; col++) {
+        const cell = ws[XLSX.utils.encode_cell({ r: excelRow, c: col })];
+        if (cell) cell.s = { ...style, alignment: { vertical: 'center', horizontal: col === 2 ? 'right' : 'left', wrapText: col === 1 || col === 3 } };
+      }
+      const amountCell = ws[XLSX.utils.encode_cell({ r: excelRow, c: 2 })];
+      if (amountCell && !isSection && row.amount !== null) amountCell.z = '₱#,##0.00;[Red]-₱#,##0.00';
+    });
+    ws['!cols'] = [{ wch: 24 }, { wch: 34 }, { wch: 18 }, { wch: 58 }];
+    ws['!rows'] = [{ hpt: 32 }, { hpt: 20 }, { hpt: 10 }, { hpt: 28 }];
+    ws['!freeze'] = { xSplit: 0, ySplit: headerRow + 1 };
+    ws['!autofilter'] = { ref: `A${headerRow + 1}:D${lastRow + 1}` };
+    XLSX.utils.book_append_sheet(wb, ws, 'Balance Sheet');
+  };
+  addBalanceSheet(balanceSheet);
 
   const filename = `jeg-enterprises-reports-${period.from}-to-${period.to}.xlsx`;
   XLSX.writeFile(wb, filename);
