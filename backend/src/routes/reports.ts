@@ -9,6 +9,55 @@ const businessMonth = () => businessDate().slice(0, 7);
 
 router.use(requireAdmin);
 
+// Comprehensive operational reports. This keeps the report tabs on one consistent date basis.
+router.get('/comprehensive', async (req: Request, res: Response) => {
+  const db = getDb();
+  const from = (req.query.from as string) || businessDate();
+  const to = (req.query.to as string) || from;
+  if (from > to) return res.status(400).json({ error: 'from must be before or equal to to' });
+  const dateFilter = (column: string) => `date(${column}, '+8 hours') BETWEEN ? AND ?`;
+  const [inventory, productSales, payments, zReading, returns, aging, expenses, purchases, deliveries, staff] = await Promise.all([
+    db.prepare(`SELECT m.id, m.name, m.unit, m.stock, m.cost_price, m.price_per_unit, m.category, m.reorder_point,
+      ROUND(m.stock * m.cost_price, 2) stock_value,
+      COALESCE((SELECT SUM(ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0))
+        FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id WHERE ii.material_id=m.id AND i.status <> 'voided' AND ${dateFilter('i.issued_date')}),0) quantity_sold
+      FROM materials m ORDER BY m.name`).all(from, to),
+    db.prepare(`SELECT ii.material_id, ii.description product, COALESCE(m.category,'') category,
+      SUM(ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) quantity_sold,
+      SUM(ii.total - COALESCE((SELECT SUM(ir.total_credit) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) net_sales,
+      SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price,m.cost_price,0)) cogs
+      FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id LEFT JOIN materials m ON m.id=ii.material_id
+      WHERE i.status <> 'voided' AND ${dateFilter('i.issued_date')} GROUP BY ii.material_id, ii.description, m.category ORDER BY net_sales DESC`).all(from, to),
+    db.prepare(`SELECT p.payment_date, p.method, COUNT(*) transaction_count, SUM(p.amount) amount
+      FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE i.status <> 'voided' AND p.method <> 'credit' AND ${dateFilter('p.payment_date')}
+      GROUP BY p.method ORDER BY amount DESC`).all(from, to),
+    db.prepare(`SELECT cs.id, u.username cashier, cs.opened_at, cs.closed_at, cs.opening_cash, cs.expected_cash, cs.closing_cash, cs.variance, cs.status,
+      COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.shift_id=cs.id AND p.method='cash'),0) cash_sales,
+      COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.shift_id=cs.id AND r.method='cash'),0) cash_refunds,
+      COALESCE((SELECT SUM(e.amount) FROM cash_drawer_events e WHERE e.shift_id=cs.id AND e.type='cash_in'),0) cash_in,
+      COALESCE((SELECT SUM(e.amount) FROM cash_drawer_events e WHERE e.shift_id=cs.id AND e.type='cash_out'),0) cash_out
+      FROM cashier_shifts cs JOIN users u ON u.id=cs.user_id WHERE ${dateFilter('cs.opened_at')} ORDER BY cs.opened_at DESC`).all(from, to),
+    db.prepare(`SELECT 'return' event_type, ir.created_at event_date, i.invoice_number, ii.description product, ir.quantity, ir.total_credit amount, NULL method
+      FROM invoice_returns ir JOIN invoices i ON i.id=ir.invoice_id JOIN invoice_items ii ON ii.id=ir.invoice_item_id WHERE ${dateFilter('ir.created_at')}
+      UNION ALL SELECT 'refund', r.created_at, i.invoice_number, NULL, NULL, r.amount, r.method FROM refunds r JOIN invoices i ON i.id=r.invoice_id WHERE ${dateFilter('r.created_at')}
+      UNION ALL SELECT 'credit memo', cm.created_at, i.invoice_number, NULL, NULL, cm.amount, NULL FROM credit_memos cm JOIN invoices i ON i.id=cm.invoice_id WHERE cm.status='issued' AND ${dateFilter('cm.created_at')}
+      UNION ALL SELECT 'void', i.issued_date, i.invoice_number, NULL, NULL, i.total, NULL FROM invoices i WHERE i.status='voided' AND ${dateFilter('i.issued_date')}
+      ORDER BY event_date DESC`).all(from,to,from,to,from,to,from,to),
+    db.prepare(`SELECT f.invoice_number, f.issued_date, COALESCE(c.name,'Walk-in') buyer, f.adjusted_total total, f.net_collections paid,
+      f.adjusted_total-f.net_collections balance, CAST(julianday('now') - julianday(f.issued_date) AS INTEGER) days_outstanding,
+      CASE WHEN julianday('now') - julianday(f.issued_date) <= 30 THEN 'Current / 1-30 days' WHEN julianday('now') - julianday(f.issued_date) <= 60 THEN '31-60 days' WHEN julianday('now') - julianday(f.issued_date) <= 90 THEN '61-90 days' ELSE 'Over 90 days' END aging_bucket
+      FROM v_invoice_financials f LEFT JOIN customers c ON c.id=f.customer_id WHERE f.status <> 'voided' AND f.adjusted_total > f.net_collections ORDER BY days_outstanding DESC`).all(),
+    db.prepare(`SELECT expense_date, category, vendor, payment_method, description, amount FROM expenses WHERE ${dateFilter('expense_date')} ORDER BY expense_date DESC`).all(from, to),
+    db.prepare(`SELECT po.po_number, po.order_date, po.received_date, s.name supplier, po.status, po.total FROM purchase_orders po JOIN suppliers s ON s.id=po.supplier_id WHERE date(po.order_date,'+8 hours') BETWEEN ? AND ? ORDER BY po.order_date DESC`).all(from, to),
+    db.prepare(`SELECT i.invoice_number, i.issued_date, COALESCE(c.name,'Walk-in') buyer, i.delivery_status, COALESCE(dp.name,i.delivery_person,'Not assigned') delivery_person, i.buyer_address FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN delivery_personnel dp ON dp.id=i.delivery_person_id WHERE i.status <> 'voided' AND i.delivery_status <> 'unassigned' AND ${dateFilter('i.issued_date')} ORDER BY i.issued_date DESC`).all(from, to),
+    db.prepare(`SELECT u.username, COUNT(DISTINCT i.id) invoices, COALESCE(SUM(f.net_sales),0) net_sales, COALESCE(SUM(f.net_collections),0) collections,
+      COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.created_by=u.id AND ${dateFilter('r.created_at')}),0) refunds,
+      COALESCE((SELECT COUNT(*) FROM attendance a WHERE a.user_id=u.id AND a.status='present' AND a.attendance_date BETWEEN ? AND ?),0) days_present
+      FROM users u LEFT JOIN invoices i ON i.user_id=u.id AND i.status <> 'voided' AND ${dateFilter('i.issued_date')} LEFT JOIN v_invoice_financials f ON f.invoice_id=i.id GROUP BY u.id,u.username ORDER BY net_sales DESC`).all(from,to,from,to,from,to),
+  ]);
+  res.json({ from, to, inventory, product_sales: productSales, payments, z_reading: zReading, returns, receivables_aging: aging, expenses, purchases, deliveries, staff });
+});
+
 router.get('/export', async (req: Request, res: Response) => {
   const db = getDb();
   const from = (req.query.from as string) || businessDate();

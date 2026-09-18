@@ -49,6 +49,16 @@ export async function renderReports(): Promise<string> {
       <button class="nav-btn ${currentSubTab === 'daily' ? 'active' : ''}" onclick="switchReportTab('daily')" style="font-size:var(--fs-sm)">Daily Sales</button>
       <button class="nav-btn ${currentSubTab === 'monthly' ? 'active' : ''}" onclick="switchReportTab('monthly')" style="font-size:var(--fs-sm)">P&L</button>
       <button class="nav-btn ${currentSubTab === 'books' ? 'active' : ''}" onclick="switchReportTab('books')" style="font-size:var(--fs-sm)">Books</button>
+      <button class="nav-btn ${currentSubTab === 'inventory' ? 'active' : ''}" onclick="switchReportTab('inventory')" style="font-size:var(--fs-sm)">Inventory</button>
+      <button class="nav-btn ${currentSubTab === 'product-sales' ? 'active' : ''}" onclick="switchReportTab('product-sales')" style="font-size:var(--fs-sm)">Products</button>
+      <button class="nav-btn ${currentSubTab === 'payments' ? 'active' : ''}" onclick="switchReportTab('payments')" style="font-size:var(--fs-sm)">Payments</button>
+      <button class="nav-btn ${currentSubTab === 'z-reading' ? 'active' : ''}" onclick="switchReportTab('z-reading')" style="font-size:var(--fs-sm)">Z-Reading</button>
+      <button class="nav-btn ${currentSubTab === 'returns' ? 'active' : ''}" onclick="switchReportTab('returns')" style="font-size:var(--fs-sm)">Returns</button>
+      <button class="nav-btn ${currentSubTab === 'aging' ? 'active' : ''}" onclick="switchReportTab('aging')" style="font-size:var(--fs-sm)">A/R Aging</button>
+      <button class="nav-btn ${currentSubTab === 'expenses' ? 'active' : ''}" onclick="switchReportTab('expenses')" style="font-size:var(--fs-sm)">Expenses</button>
+      <button class="nav-btn ${currentSubTab === 'purchases' ? 'active' : ''}" onclick="switchReportTab('purchases')" style="font-size:var(--fs-sm)">Purchases</button>
+      <button class="nav-btn ${currentSubTab === 'deliveries' ? 'active' : ''}" onclick="switchReportTab('deliveries')" style="font-size:var(--fs-sm)">Deliveries</button>
+      <button class="nav-btn ${currentSubTab === 'staff' ? 'active' : ''}" onclick="switchReportTab('staff')" style="font-size:var(--fs-sm)">Staff</button>
     </div>
     <div id="report-content">
       ${await loadDailyReport()}
@@ -69,9 +79,36 @@ export async function switchReportTab(tab: string) {
     else if (tab === 'tax') el.innerHTML = await loadTaxReport();
     else if (tab === 'range') el.innerHTML = await loadRangeForm();
     else if (tab === 'books') el.innerHTML = await loadBooksReport();
+    else if (['inventory','product-sales','payments','z-reading','returns','aging','expenses','purchases','deliveries','staff'].includes(tab)) el.innerHTML = await loadComprehensiveReport(tab);
     else if (tab === 'summary') el.innerHTML = await loadFinancialSummary();
     document.querySelectorAll('.report-tabs .nav-btn').forEach(b => b.classList.remove('active'));
   } catch (e: any) { showToast(e.message); }
+}
+
+const comprehensiveLabels: Record<string, { title: string; key: string; headers: string[]; fields: string[] }> = {
+  inventory: { title: 'Inventory Status', key: 'inventory', headers: ['Product','Category','Stock','Reorder Point','Cost','Selling Price','Stock Value','Qty Sold'], fields: ['name','category','stock','reorder_point','cost_price','price_per_unit','stock_value','quantity_sold'] },
+  'product-sales': { title: 'Product Sales and Profit', key: 'product_sales', headers: ['Product','Category','Qty Sold','Net Sales','COGS','Gross Profit','Margin %'], fields: ['product','category','quantity_sold','net_sales','cogs','gross_profit','margin'] },
+  payments: { title: 'Payments by Method', key: 'payments', headers: ['Method','Transactions','Amount'], fields: ['method','transaction_count','amount'] },
+  'z-reading': { title: 'Z-Reading / Shift Summary', key: 'z_reading', headers: ['Cashier','Opened','Closed','Opening Cash','Cash Sales','Refunds','Cash In','Cash Out','Expected','Counted','Variance','Status'], fields: ['cashier','opened_at','closed_at','opening_cash','cash_sales','cash_refunds','cash_in','cash_out','expected_cash','closing_cash','variance','status'] },
+  returns: { title: 'Returns, Refunds, Credit Memos and Voids', key: 'returns', headers: ['Type','Date','Invoice','Product','Qty','Amount','Method'], fields: ['event_type','event_date','invoice_number','product','quantity','amount','method'] },
+  aging: { title: 'Receivables Aging', key: 'receivables_aging', headers: ['Invoice','Buyer','Issued','Total','Paid','Balance','Days Outstanding','Aging Bucket'], fields: ['invoice_number','buyer','issued_date','total','paid','balance','days_outstanding','aging_bucket'] },
+  expenses: { title: 'Expenses by Category', key: 'expenses', headers: ['Date','Category','Vendor','Payment Method','Description','Amount'], fields: ['expense_date','category','vendor','payment_method','description','amount'] },
+  purchases: { title: 'Purchases and Suppliers', key: 'purchases', headers: ['PO','Order Date','Received Date','Supplier','Status','Total'], fields: ['po_number','order_date','received_date','supplier','status','total'] },
+  deliveries: { title: 'Delivery Operations', key: 'deliveries', headers: ['Invoice','Date','Buyer','Status','Delivery Person','Address'], fields: ['invoice_number','issued_date','buyer','delivery_status','delivery_person','buyer_address'] },
+  staff: { title: 'Staff and Cashier Performance', key: 'staff', headers: ['Staff','Invoices','Net Sales','Collections','Refunds','Days Present'], fields: ['username','invoices','net_sales','collections','refunds','days_present'] },
+};
+
+async function loadComprehensiveReport(section: string) {
+  const range = reportPeriodRange();
+  const data = await apiGet<any>(`/reports/comprehensive?from=${range.from}&to=${range.to}`);
+  const config = comprehensiveLabels[section];
+  const items = (data[config.key] || []).map((item: any) => {
+    if (section === 'product-sales') { item.gross_profit = Number(item.net_sales || 0) - Number(item.cogs || 0); item.margin = Number(item.net_sales || 0) ? (item.gross_profit / Number(item.net_sales)) * 100 : 0; }
+    return item;
+  });
+  const moneyFields = new Set(['cost_price','price_per_unit','stock_value','net_sales','cogs','gross_profit','amount','opening_cash','cash_sales','cash_refunds','cash_in','cash_out','expected_cash','closing_cash','variance','total','paid','balance','collections','refunds']);
+  const rows = items.length ? items.map((item: any) => `<tr>${config.fields.map(field => { const value = item[field]; const display = value === null || value === undefined || value === '' ? '—' : moneyFields.has(field) ? fmtPeso(Number(value)) : field === 'margin' ? `${Number(value).toFixed(1)}%` : String(value); return `<td data-label="${esc(field)}">${esc(display)}</td>`; }).join('')}</tr>`).join('') : `<tr><td colspan="${config.headers.length}" style="text-align:center;padding:2rem;color:var(--c-text-muted)">No data for this period</td></tr>`;
+  return `<div class="report-section-heading"><h3>${config.title}</h3><span>${fmtDate(range.from)} – ${fmtDate(range.to)}</span></div><div class="table-wrap"><table><thead><tr>${config.headers.map(header => `<th>${header}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 export function applyReportPeriod(period: string) {
