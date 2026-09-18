@@ -101,15 +101,34 @@ async function loadBalanceSheetReport() {
     </div>
     <div class="table-wrap"><table><thead><tr><th>Section</th><th>Account</th><th>Amount</th><th>Meaning</th></tr></thead><tbody>
       <tr><th colspan="4">ASSETS</th></tr>
-      <tr><td>Current Assets</td><td>Inventory at cost</td><td>${fmtPeso(data.assets.inventory_cost)}</td><td>Current stock × recorded cost</td></tr>
+      <tr><td>Current Assets</td><td>Cash / recorded drawer cash</td><td>${fmtPeso(data.assets.recorded_cash)}</td><td>Latest closed cashier count</td></tr>
       <tr><td>Current Assets</td><td>Accounts receivable</td><td>${fmtPeso(data.assets.receivables)}</td><td>Unpaid credit balances as of date</td></tr>
-      <tr><td>Current Assets</td><td>Recorded drawer cash</td><td>${fmtPeso(data.assets.recorded_cash)}</td><td>Latest closed cashier count</td></tr>
+      <tr><td>Current Assets</td><td>Inventory at cost</td><td>${fmtPeso(data.assets.inventory_cost)}</td><td>Current stock × recorded cost</td></tr>
+      <tr><td>Current Assets</td><td>Prepaid expenses</td><td>Not tracked</td><td>No prepaid-expense account exists in the POS</td></tr>
+      <tr><td>Current Assets</td><td>Short-term investments</td><td>Not tracked</td><td>No investment account exists in the POS</td></tr>
+      <tr><th colspan="4">FIXED / LONG-TERM ASSETS</th></tr>
+      <tr><td>Fixed Assets</td><td>Land</td><td>Not tracked</td><td>No fixed-asset register exists in the POS</td></tr>
+      <tr><td>Fixed Assets</td><td>Equipment</td><td>Not tracked</td><td>No fixed-asset register exists in the POS</td></tr>
+      <tr><td>Fixed Assets</td><td>Building</td><td>Not tracked</td><td>No fixed-asset register exists in the POS</td></tr>
+      <tr><td>Fixed Assets</td><td>Other fixed assets</td><td>Not tracked</td><td>No fixed-asset register exists in the POS</td></tr>
+      <tr><th colspan="4">OTHER ASSETS</th></tr>
+      <tr><td>Other Assets</td><td>Trademark / intellectual property</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      <tr><td>Other Assets</td><td>Other assets</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
       <tr><th colspan="4">LIABILITIES</th></tr>
-      <tr><td>Liabilities</td><td>Supplier payables</td><td>Not tracked</td><td>Not recorded as an accounting balance</td></tr>
-      <tr><td>Liabilities</td><td>Loans and other liabilities</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      <tr><td>Current Liabilities</td><td>Accounts payable / supplier payables</td><td>Not tracked</td><td>Purchase orders are tracked, but payable balances are not</td></tr>
+      <tr><td>Current Liabilities</td><td>Accrued liabilities</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      <tr><td>Current Liabilities</td><td>Deferred income</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      <tr><td>Current Liabilities</td><td>Accrued salaries and wages</td><td>Not tracked</td><td>Attendance exists, but payroll liabilities do not</td></tr>
+      <tr><td>Current Liabilities</td><td>Mortgage payable</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      <tr><td>Current Liabilities</td><td>Other current liabilities</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      <tr><th colspan="4">LONG-TERM LIABILITIES</th></tr>
+      <tr><td>Long-Term Liabilities</td><td>Long-term debt</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      <tr><td>Long-Term Liabilities</td><td>Notes payable</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      <tr><td>Long-Term Liabilities</td><td>Other long-term liabilities</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
       <tr><th colspan="4">OWNER'S EQUITY</th></tr>
+      <tr><td>Equity</td><td>Owner's capital</td><td>Not tracked</td><td>Inventory is an asset; it is not automatically owner capital</td></tr>
       <tr><td>Equity</td><td>Retained earnings</td><td>${fmtPeso(data.equity.retained_earnings)}</td><td>Cumulative recorded sales less COGS and expenses</td></tr>
-      <tr><td>Equity</td><td>Owner capital</td><td>Not tracked</td><td>Requires an opening capital record</td></tr>
+      <tr><td>Equity</td><td>Owner withdrawals</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
     </tbody></table></div>`;
 }
 
