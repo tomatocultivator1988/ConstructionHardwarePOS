@@ -60,6 +60,7 @@ export async function renderReports(): Promise<string> {
       <button class="nav-btn ${currentSubTab === 'purchases' ? 'active' : ''}" onclick="switchReportTab('purchases')" style="font-size:var(--fs-sm)">Purchases</button>
       <button class="nav-btn ${currentSubTab === 'deliveries' ? 'active' : ''}" onclick="switchReportTab('deliveries')" style="font-size:var(--fs-sm)">Deliveries</button>
       <button class="nav-btn ${currentSubTab === 'staff' ? 'active' : ''}" onclick="switchReportTab('staff')" style="font-size:var(--fs-sm)">Staff</button>
+      <button class="nav-btn ${currentSubTab === 'balance-sheet' ? 'active' : ''}" onclick="switchReportTab('balance-sheet')" style="font-size:var(--fs-sm)">Balance Sheet</button>
     </div>
     <div id="report-content">
       ${await loadDailyReport()}
@@ -81,9 +82,35 @@ export async function switchReportTab(tab: string) {
     else if (tab === 'range') el.innerHTML = await loadRangeForm();
     else if (tab === 'books') el.innerHTML = await loadBooksReport();
     else if (['inventory','product-sales','payments','z-reading','returns','aging','expenses','purchases','deliveries','staff'].includes(tab)) el.innerHTML = await loadComprehensiveReport(tab);
+    else if (tab === 'balance-sheet') el.innerHTML = await loadBalanceSheetReport();
     else if (tab === 'summary') el.innerHTML = await loadFinancialSummary();
     document.querySelectorAll('.report-tabs .nav-btn').forEach(b => b.classList.remove('active'));
   } catch (e: any) { showToast(e.message); }
+}
+
+async function loadBalanceSheetReport() {
+  const asOf = businessDate();
+  const data = await apiGet<any>(`/reports/balance-sheet?asOf=${asOf}`);
+  const money = (value: any) => value === null || value === undefined ? 'Not tracked' : fmtPeso(Number(value));
+  return `<div class="report-section-heading"><div><h3>Balance Sheet</h3><span>POS-based financial position as of ${fmtDate(data.as_of)}</span></div></div>
+    <div class="notice-card" style="margin:var(--space-4) 0;padding:var(--space-4);border:1px solid var(--c-warning);border-radius:var(--radius-md);background:var(--c-warning-soft,#fff7e6)"><strong>Important:</strong> This report uses only recorded POS data. Bank, GCash, owner capital, supplier payables, loans, fixed assets, and withdrawals are not tracked here.</div>
+    <div class="dashboard-grid report-metrics report-metrics-3">
+      <div class="dashboard-card card-info"><div class="card-label">Inventory at Cost</div><div class="card-value">${fmtPeso(data.assets.inventory_cost)}</div></div>
+      <div class="dashboard-card card-warning"><div class="card-label">Accounts Receivable</div><div class="card-value">${fmtPeso(data.assets.receivables)}</div></div>
+      <div class="dashboard-card card-success"><div class="card-label">Recorded Drawer Cash</div><div class="card-value">${fmtPeso(data.assets.recorded_cash)}</div></div>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Section</th><th>Account</th><th>Amount</th><th>Meaning</th></tr></thead><tbody>
+      <tr><th colspan="4">ASSETS</th></tr>
+      <tr><td>Current Assets</td><td>Inventory at cost</td><td>${fmtPeso(data.assets.inventory_cost)}</td><td>Current stock × recorded cost</td></tr>
+      <tr><td>Current Assets</td><td>Accounts receivable</td><td>${fmtPeso(data.assets.receivables)}</td><td>Unpaid credit balances as of date</td></tr>
+      <tr><td>Current Assets</td><td>Recorded drawer cash</td><td>${fmtPeso(data.assets.recorded_cash)}</td><td>Latest closed cashier count</td></tr>
+      <tr><th colspan="4">LIABILITIES</th></tr>
+      <tr><td>Liabilities</td><td>Supplier payables</td><td>Not tracked</td><td>Not recorded as an accounting balance</td></tr>
+      <tr><td>Liabilities</td><td>Loans and other liabilities</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      <tr><th colspan="4">OWNER'S EQUITY</th></tr>
+      <tr><td>Equity</td><td>Retained earnings</td><td>${fmtPeso(data.equity.retained_earnings)}</td><td>Cumulative recorded sales less COGS and expenses</td></tr>
+      <tr><td>Equity</td><td>Owner capital</td><td>Not tracked</td><td>Requires an opening capital record</td></tr>
+    </tbody></table></div>`;
 }
 
 const comprehensiveLabels: Record<string, { title: string; key: string; headers: string[]; fields: string[] }> = {

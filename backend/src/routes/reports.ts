@@ -76,6 +76,37 @@ router.get('/comprehensive', async (req: Request, res: Response) => {
   res.json({ from, to, inventory, product_sales: productSales, payments, z_reading: zReading, z_daily: zDaily, returns, receivables_aging: aging, expenses, purchases, deliveries, staff });
 });
 
+// POS-based financial position. This intentionally does not invent external balances.
+router.get('/balance-sheet', async (req: Request, res: Response) => {
+  const db = getDb();
+  const asOf = (req.query.asOf as string) || businessDate();
+  const [inventory, receivables, cash, profit] = await Promise.all([
+    db.prepare(`SELECT COALESCE(SUM(stock * cost_price),0) total, COALESCE(SUM(stock * price_per_unit),0) retail_total FROM materials`).get() as Promise<any>,
+    db.prepare(`SELECT COALESCE(SUM(balance),0) total FROM (
+      SELECT i.total - COALESCE((SELECT SUM(cm.amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued' AND date(cm.created_at,'+8 hours') <= ?),0)
+        - COALESCE((SELECT SUM(ir.total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id AND date(ir.created_at,'+8 hours') <= ?),0)
+        - COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id AND date(p.payment_date,'+8 hours') <= ?),0)
+        + COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id=i.id AND date(r.created_at,'+8 hours') <= ?),0) balance
+      FROM invoices i WHERE i.status <> 'voided' AND date(i.issued_date,'+8 hours') <= ?
+    ) open_balances WHERE balance > 0`).get(asOf,asOf,asOf,asOf,asOf) as Promise<any>,
+    db.prepare(`SELECT closing_cash, closed_at, opened_at FROM cashier_shifts WHERE status='closed' AND date(closed_at,'+8 hours') <= ? ORDER BY closed_at DESC LIMIT 1`).get(asOf) as Promise<any>,
+    db.prepare(`SELECT COALESCE(SUM(net_sales),0) net_sales, COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price,m.cost_price,0)) FROM invoice_items ii JOIN invoices i2 ON i2.id=ii.invoice_id LEFT JOIN materials m ON m.id=ii.material_id WHERE i2.status <> 'voided' AND date(i2.issued_date,'+8 hours') <= ?),0) cogs, COALESCE((SELECT SUM(amount) FROM expenses WHERE date(expense_date,'+8 hours') <= ?),0) expenses FROM v_invoice_financials WHERE status <> 'voided' AND date(issued_date,'+8 hours') <= ?`).get(asOf,asOf,asOf) as Promise<any>,
+  ]);
+  const inventoryCost = Number(inventory.total || 0);
+  const receivableTotal = Number(receivables.total || 0);
+  const recordedCash = Number(cash?.closing_cash || 0);
+  const retainedEarnings = Number(profit.net_sales || 0) - Number(profit.cogs || 0) - Number(profit.expenses || 0);
+  res.json({
+    as_of: asOf,
+    assets: { inventory_cost: inventoryCost, inventory_retail: Number(inventory.retail_total || 0), receivables: receivableTotal, recorded_cash: recordedCash, known_total: inventoryCost + receivableTotal + recordedCash },
+    equity: { retained_earnings: retainedEarnings },
+    liabilities: { recorded_supplier_payables: null, loans: null, other: null },
+    untracked: ['Owner capital', 'Bank balance', 'GCash balance', 'Supplier payables', 'Loans', 'Fixed assets', 'Owner withdrawals'],
+    cash_source: cash ? { closed_at: cash.closed_at, opened_at: cash.opened_at } : null,
+    note: 'POS-based financial position. External bank, GCash, capital, liabilities, and fixed assets are not recorded in this system.'
+  });
+});
+
 router.get('/export', async (req: Request, res: Response) => {
   const db = getDb();
   const from = (req.query.from as string) || businessDate();
