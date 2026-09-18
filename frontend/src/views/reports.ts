@@ -143,11 +143,12 @@ function money(value: unknown) { return Number(value || 0); }
 async function exportDetailedWorkbook(period: ExportPeriod) {
   const XLSX = await import('xlsx-js-style');
   const query = `from=${encodeURIComponent(period.from)}&to=${encodeURIComponent(period.to)}`;
-  const [sales, profit, books, cash] = await Promise.all([
+  const [sales, profit, books, cash, comprehensive] = await Promise.all([
     apiGet<any>(`/reports/range?type=sales&${query}`),
     apiGet<any>(`/reports/range?type=profit&${query}`),
     apiGet<any>(`/reports/books?${query}`),
     apiGet<any>(`/reports/cash-flow?${query}`),
+    apiGet<any>(`/reports/comprehensive?${query}`),
   ]);
 
   const wb = XLSX.utils.book_new();
@@ -181,6 +182,7 @@ async function exportDetailedWorkbook(period: ExportPeriod) {
         cell.s = { font: { name: 'Aptos', sz: 10, color: '243447' }, border: { bottom: border }, alignment: { vertical: 'center', horizontal: typeof cell.v === 'number' ? 'right' : 'left' } };
         if (/amount|total|paid|balance|tax|profit|sales|cost|price|cash/i.test(headers[col])) cell.z = '₱#,##0.00;[Red]-₱#,##0.00';
         if (/count|quantity|stock/i.test(headers[col])) cell.z = '#,##0.##';
+        if (/margin|percentage|%/i.test(headers[col])) cell.z = '0.0%';
       }
     }
     ws['!freeze'] = { xSplit: 0, ySplit: headerRow };
@@ -195,16 +197,37 @@ async function exportDetailedWorkbook(period: ExportPeriod) {
 
   addSheet('P&L', 'Profit and Loss', ['Metric', 'Amount'], [['Revenue', money(profit.revenue)], ['COGS', money(profit.cogs)], ['Gross Profit', money(profit.revenue) - money(profit.cogs)], ['Expenses', money(profit.expenses)], ['Net Profit', money(profit.revenue) - money(profit.cogs) - money(profit.expenses)]], [['Report', 'Profit and Loss']]);
 
-  const paymentRows = (books.receipts || []).map((r: any) => [r.payment_date, r.invoice_number, r.method, money(r.amount)]);
-  addSheet('Payments', 'Payment Transactions', ['Date', 'Invoice', 'Method', 'Amount'], paymentRows, [['Total Payments', paymentRows.reduce((sum, row) => sum + money(row[3]), 0)]]);
+  const paymentRows = (comprehensive.payments || []).map((r: any) => [r.method, r.transaction_count, money(r.gross_payments), money(r.refunds), money(r.net_collections)]);
+  addSheet('Payments', 'Payment Methods Summary', ['Method', 'Transactions', 'Gross Payments', 'Refunds', 'Net Collections'], paymentRows, [['Net Collections', paymentRows.reduce((sum, row) => sum + money(row[4]), 0)]]);
 
-  const expenseRows = (books.expenses || []).map((r: any) => [r.expense_date, r.category, r.vendor, r.payment_method, r.description, money(r.amount)]);
+  const expenseRows = (comprehensive.expenses || []).map((r: any) => [r.expense_date, r.category, r.vendor, r.payment_method, r.description, money(r.amount)]);
   addSheet('Expenses', 'Expenses and Purchases', ['Date', 'Category', 'Vendor', 'Payment Method', 'Description', 'Amount'], expenseRows, [['Total Expenses', expenseRows.reduce((sum, row) => sum + money(row[5]), 0)]]);
 
-  const receivableRows = (books.receivables || []).map((r: any) => [r.invoice_number, r.buyer, money(r.adjusted_total ?? r.total), money(r.paid), money(r.balance)]);
-  addSheet('Receivables', 'Open Receivables', ['Invoice', 'Buyer', 'Total', 'Paid', 'Balance'], receivableRows, [['Open Invoice Count', receivableRows.length], ['Open Balance', receivableRows.reduce((sum, row) => sum + money(row[4]), 0)]]);
+  const receivableRows = (comprehensive.receivables_aging || []).map((r: any) => [r.invoice_number, r.buyer, r.issued_date, money(r.total), money(r.paid), money(r.balance), r.days_outstanding, r.aging_bucket]);
+  addSheet('Receivables', 'Receivables Aging', ['Invoice', 'Buyer', 'Issued', 'Total', 'Paid', 'Balance', 'Days Outstanding', 'Aging Bucket'], receivableRows, [['Open Invoice Count', receivableRows.length], ['Open Balance', receivableRows.reduce((sum, row) => sum + money(row[5]), 0)]]);
 
   addSheet('Cash Flow', 'Cash Flow Summary', ['Metric', 'Amount'], [['Cash Receipts', money(cash.cash_receipts)], ['Cash Refunds', money(cash.cash_refunds)], ['Cash Expenses', money(cash.cash_expenses)], ['Net Cash Change', money(cash.net_cash_change)]], [['Period', period.label]]);
+
+  const inventoryRows = (comprehensive.inventory || []).map((r: any) => [r.name, r.category, r.unit, money(r.stock), money(r.reorder_point), money(r.cost_price), money(r.price_per_unit), money(r.stock_value), money(r.quantity_sold)]);
+  addSheet('Inventory', 'Inventory Status', ['Product', 'Category', 'Unit', 'Stock', 'Reorder Point', 'Cost', 'Selling Price', 'Stock Value', 'Qty Sold'], inventoryRows, [['Current Stock Value', inventoryRows.reduce((sum, row) => sum + money(row[7]), 0)]]);
+
+  const productRows = (comprehensive.product_sales || []).map((r: any) => { const salesValue = money(r.net_sales); const cogsValue = money(r.cogs); const profitValue = salesValue - cogsValue; return [r.product, r.category, money(r.quantity_sold), salesValue, cogsValue, profitValue, salesValue ? profitValue / salesValue : 0]; });
+  addSheet('Product Sales', 'Product Sales and Profit', ['Product', 'Category', 'Qty Sold', 'Net Sales', 'COGS', 'Gross Profit', 'Margin'], productRows, [['Net Sales', productRows.reduce((sum, row) => sum + money(row[3]), 0)], ['Gross Profit', productRows.reduce((sum, row) => sum + money(row[5]), 0)]]);
+
+  const zRows = (comprehensive.z_daily || []).map((r: any) => [r.report_date, money(r.shift_count), money(r.opening_cash), money(r.cash_sales), money(r.cash_refunds), money(r.cash_in), money(r.cash_out), money(r.expected_cash), money(r.counted_cash), money(r.variance)]);
+  addSheet('Z-Reading', 'Daily Z-Reading', ['Business Date', 'Shifts', 'Opening Cash', 'Cash Sales', 'Refunds', 'Cash In', 'Cash Out', 'Expected Cash', 'Counted Cash', 'Variance'], zRows);
+
+  const returnRows = (comprehensive.returns || []).map((r: any) => [r.event_type, r.event_date, r.invoice_number, r.product, r.quantity, money(r.amount), r.method]);
+  addSheet('Returns', 'Returns, Refunds, Credit Memos and Voids', ['Type', 'Date', 'Invoice', 'Product', 'Qty', 'Amount', 'Method'], returnRows);
+
+  const purchaseRows = (comprehensive.purchases || []).map((r: any) => [r.po_number, r.order_date, r.received_date, r.supplier, r.status, money(r.total)]);
+  addSheet('Purchases', 'Purchases and Suppliers', ['PO', 'Order Date', 'Received Date', 'Supplier', 'Status', 'Total'], purchaseRows);
+
+  const deliveryRows = (comprehensive.deliveries || []).map((r: any) => [r.invoice_number, r.issued_date, r.buyer, r.delivery_status, r.delivery_person, r.buyer_address]);
+  addSheet('Deliveries', 'Delivery Operations', ['Invoice', 'Date', 'Buyer', 'Status', 'Delivery Person', 'Address'], deliveryRows);
+
+  const staffRows = (comprehensive.staff || []).map((r: any) => [r.username, money(r.invoices), money(r.net_sales), money(r.collections), money(r.refunds), money(r.days_present)]);
+  addSheet('Staff', 'Staff and Cashier Performance', ['Staff', 'Invoices', 'Net Sales', 'Collections', 'Refunds', 'Days Present'], staffRows);
 
   const filename = `jeg-enterprises-reports-${period.from}-to-${period.to}.xlsx`;
   XLSX.writeFile(wb, filename);
