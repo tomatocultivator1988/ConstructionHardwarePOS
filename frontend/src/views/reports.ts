@@ -7,6 +7,7 @@ let currentSubTab = 'daily';
 let currentReportPeriod = 'month';
 let monthlyReportData: any = null;
 let pnlChart: any = null;
+let comprehensiveCache: { key: string; data: any } | null = null;
 
 function reportPeriodRange(period = currentReportPeriod): { from: string; to: string } {
   const today = businessDate();
@@ -88,8 +89,8 @@ export async function switchReportTab(tab: string) {
 const comprehensiveLabels: Record<string, { title: string; key: string; headers: string[]; fields: string[] }> = {
   inventory: { title: 'Inventory Status', key: 'inventory', headers: ['Product','Category','Stock','Reorder Point','Cost','Selling Price','Stock Value','Qty Sold'], fields: ['name','category','stock','reorder_point','cost_price','price_per_unit','stock_value','quantity_sold'] },
   'product-sales': { title: 'Product Sales and Profit', key: 'product_sales', headers: ['Product','Category','Qty Sold','Net Sales','COGS','Gross Profit','Margin %'], fields: ['product','category','quantity_sold','net_sales','cogs','gross_profit','margin'] },
-  payments: { title: 'Payments by Method', key: 'payments', headers: ['Method','Transactions','Amount'], fields: ['method','transaction_count','amount'] },
-  'z-reading': { title: 'Z-Reading / Shift Summary', key: 'z_reading', headers: ['Cashier','Opened','Closed','Opening Cash','Cash Sales','Refunds','Cash In','Cash Out','Expected','Counted','Variance','Status'], fields: ['cashier','opened_at','closed_at','opening_cash','cash_sales','cash_refunds','cash_in','cash_out','expected_cash','closing_cash','variance','status'] },
+  payments: { title: 'Payments by Method', key: 'payments', headers: ['Method','Transactions','Gross Payments','Refunds','Net Collections'], fields: ['method','transaction_count','gross_payments','refunds','net_collections'] },
+  'z-reading': { title: 'Z-Reading / Daily Close', key: 'z_daily', headers: ['Business Date','Shifts','Opening Cash','Cash Sales','Refunds','Cash In','Cash Out','Expected','Counted','Variance'], fields: ['report_date','shift_count','opening_cash','cash_sales','cash_refunds','cash_in','cash_out','expected_cash','counted_cash','variance'] },
   returns: { title: 'Returns, Refunds, Credit Memos and Voids', key: 'returns', headers: ['Type','Date','Invoice','Product','Qty','Amount','Method'], fields: ['event_type','event_date','invoice_number','product','quantity','amount','method'] },
   aging: { title: 'Receivables Aging', key: 'receivables_aging', headers: ['Invoice','Buyer','Issued','Total','Paid','Balance','Days Outstanding','Aging Bucket'], fields: ['invoice_number','buyer','issued_date','total','paid','balance','days_outstanding','aging_bucket'] },
   expenses: { title: 'Expenses by Category', key: 'expenses', headers: ['Date','Category','Vendor','Payment Method','Description','Amount'], fields: ['expense_date','category','vendor','payment_method','description','amount'] },
@@ -100,7 +101,10 @@ const comprehensiveLabels: Record<string, { title: string; key: string; headers:
 
 async function loadComprehensiveReport(section: string) {
   const range = reportPeriodRange();
-  const data = await apiGet<any>(`/reports/comprehensive?from=${range.from}&to=${range.to}`);
+  const cacheKey = `${range.from}:${range.to}`;
+  const data = comprehensiveCache?.key === cacheKey
+    ? comprehensiveCache.data
+    : await apiGet<any>(`/reports/comprehensive?from=${range.from}&to=${range.to}`).then((result: any) => { comprehensiveCache = { key: cacheKey, data: result }; return result; });
   const config = comprehensiveLabels[section];
   const items = (data[config.key] || []).map((item: any) => {
     if (section === 'product-sales') { item.gross_profit = Number(item.net_sales || 0) - Number(item.cogs || 0); item.margin = Number(item.net_sales || 0) ? (item.gross_profit / Number(item.net_sales)) * 100 : 0; }
