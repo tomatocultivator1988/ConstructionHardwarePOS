@@ -92,6 +92,12 @@ async function loadBalanceSheetReport() {
   const asOf = businessDate();
   const data = await apiGet<any>(`/reports/balance-sheet?asOf=${asOf}`);
   const money = (value: any) => value === null || value === undefined ? 'Not tracked' : fmtPeso(Number(value));
+  const knownAssets = Number(data.assets.known_total || 0);
+  const knownEquity = Number(data.equity.retained_earnings || 0);
+  const knownLiabilitiesAndEquity = knownEquity;
+  const unreconciled = knownAssets - knownLiabilitiesAndEquity;
+  const sectionRow = (label: string) => `<tr style="background:var(--c-primary);color:#fff"><th colspan="4" style="color:#fff;letter-spacing:.08em">${label}</th></tr>`;
+  const totalRow = (label: string, amount: string, note: string) => `<tr style="font-weight:800;border-top:2px solid var(--c-primary)"><td colspan="2">${label}</td><td>${amount}</td><td>${note}</td></tr>`;
   return `<div class="report-section-heading"><div><h3>Balance Sheet</h3><span>POS-based financial position as of ${fmtDate(data.as_of)}</span></div></div>
     <div class="notice-card" style="margin:var(--space-4) 0;padding:var(--space-4);border:1px solid var(--c-warning);border-radius:var(--radius-md);background:var(--c-warning-soft,#fff7e6)"><strong>Important:</strong> This report uses only recorded POS data. Bank, GCash, owner capital, supplier payables, loans, fixed assets, and withdrawals are not tracked here.</div>
     <div class="dashboard-grid report-metrics report-metrics-3">
@@ -99,36 +105,40 @@ async function loadBalanceSheetReport() {
       <div class="dashboard-card card-warning"><div class="card-label">Accounts Receivable</div><div class="card-value">${fmtPeso(data.assets.receivables)}</div></div>
       <div class="dashboard-card card-success"><div class="card-label">Recorded Drawer Cash</div><div class="card-value">${fmtPeso(data.assets.recorded_cash)}</div></div>
     </div>
-    <div class="table-wrap"><table><thead><tr><th>Section</th><th>Account</th><th>Amount</th><th>Meaning</th></tr></thead><tbody>
-      <tr><th colspan="4">ASSETS</th></tr>
+    <div class="table-wrap"><table><thead><tr><th>Section</th><th>Account / Line Item</th><th>${fmtDate(data.as_of)}</th><th>Notes</th></tr></thead><tbody>
+      ${sectionRow('ASSETS')}
       <tr><td>Current Assets</td><td>Cash / recorded drawer cash</td><td>${fmtPeso(data.assets.recorded_cash)}</td><td>Latest closed cashier count</td></tr>
       <tr><td>Current Assets</td><td>Accounts receivable</td><td>${fmtPeso(data.assets.receivables)}</td><td>Unpaid credit balances as of date</td></tr>
       <tr><td>Current Assets</td><td>Inventory at cost</td><td>${fmtPeso(data.assets.inventory_cost)}</td><td>Current stock × recorded cost</td></tr>
       <tr><td>Current Assets</td><td>Prepaid expenses</td><td>Not tracked</td><td>No prepaid-expense account exists in the POS</td></tr>
       <tr><td>Current Assets</td><td>Short-term investments</td><td>Not tracked</td><td>No investment account exists in the POS</td></tr>
-      <tr><th colspan="4">FIXED / LONG-TERM ASSETS</th></tr>
+      ${totalRow('TOTAL KNOWN POS ASSETS', fmtPeso(knownAssets), 'Cash, receivables, and inventory only')}
+      ${sectionRow('FIXED / LONG-TERM ASSETS')}
       <tr><td>Fixed Assets</td><td>Land</td><td>Not tracked</td><td>No fixed-asset register exists in the POS</td></tr>
       <tr><td>Fixed Assets</td><td>Equipment</td><td>Not tracked</td><td>No fixed-asset register exists in the POS</td></tr>
       <tr><td>Fixed Assets</td><td>Building</td><td>Not tracked</td><td>No fixed-asset register exists in the POS</td></tr>
       <tr><td>Fixed Assets</td><td>Other fixed assets</td><td>Not tracked</td><td>No fixed-asset register exists in the POS</td></tr>
-      <tr><th colspan="4">OTHER ASSETS</th></tr>
+      ${sectionRow('OTHER ASSETS')}
       <tr><td>Other Assets</td><td>Trademark / intellectual property</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
       <tr><td>Other Assets</td><td>Other assets</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
-      <tr><th colspan="4">LIABILITIES</th></tr>
+      ${sectionRow('CURRENT LIABILITIES')}
       <tr><td>Current Liabilities</td><td>Accounts payable / supplier payables</td><td>Not tracked</td><td>Purchase orders are tracked, but payable balances are not</td></tr>
       <tr><td>Current Liabilities</td><td>Accrued liabilities</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
       <tr><td>Current Liabilities</td><td>Deferred income</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
       <tr><td>Current Liabilities</td><td>Accrued salaries and wages</td><td>Not tracked</td><td>Attendance exists, but payroll liabilities do not</td></tr>
       <tr><td>Current Liabilities</td><td>Mortgage payable</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
       <tr><td>Current Liabilities</td><td>Other current liabilities</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
-      <tr><th colspan="4">LONG-TERM LIABILITIES</th></tr>
+      ${sectionRow('LONG-TERM LIABILITIES')}
       <tr><td>Long-Term Liabilities</td><td>Long-term debt</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
       <tr><td>Long-Term Liabilities</td><td>Notes payable</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
       <tr><td>Long-Term Liabilities</td><td>Other long-term liabilities</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
-      <tr><th colspan="4">OWNER'S EQUITY</th></tr>
+      ${sectionRow("OWNER'S EQUITY")}
       <tr><td>Equity</td><td>Owner's capital</td><td>Not tracked</td><td>Inventory is an asset; it is not automatically owner capital</td></tr>
       <tr><td>Equity</td><td>Retained earnings</td><td>${fmtPeso(data.equity.retained_earnings)}</td><td>Cumulative recorded sales less COGS and expenses</td></tr>
       <tr><td>Equity</td><td>Owner withdrawals</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      ${totalRow("TOTAL OWNER'S EQUITY (KNOWN)", fmtPeso(knownEquity), 'Retained earnings only')}
+      ${totalRow("TOTAL LIABILITIES + OWNER'S EQUITY (KNOWN)", fmtPeso(knownLiabilitiesAndEquity), 'Missing external accounts excluded')}
+      <tr style="font-weight:800;color:${unreconciled === 0 ? 'var(--c-success)' : 'var(--c-danger)'}"><td colspan="2">CHECK / UNRECONCILED DIFFERENCE</td><td>${fmtPeso(unreconciled)}</td><td>${unreconciled === 0 ? 'Balanced' : 'Missing capital, liabilities, cash accounts, or other assets'}</td></tr>
     </tbody></table></div>`;
 }
 
