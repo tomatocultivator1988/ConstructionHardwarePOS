@@ -121,6 +121,8 @@ Object.assign(window, {
   applyReportPeriod: reports.applyReportPeriod,
   exportReports: reports.exportReports,
   exportBalanceSheet: reports.exportBalanceSheet,
+  editBalanceSheetAccounts: reports.editBalanceSheetAccounts,
+  saveBalanceSheetAccounts: reports.saveBalanceSheetAccounts,
   reloadBooks: reports.reloadBooks,
   reloadFinancialSummary: reports.reloadFinancialSummary,
   switchSettingsTab: settings.switchSettingsTab,

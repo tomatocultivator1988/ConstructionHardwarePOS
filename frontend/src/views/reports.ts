@@ -1,6 +1,6 @@
-import { apiGet } from '../lib/api';
+import { apiGet, apiPut } from '../lib/api';
 import { esc, fmtDate, fmtPeso, businessDate, businessMonth } from '../lib/helpers';
-import { showToast } from '../lib/helpers';
+import { showToast, showModal, closeModal } from '../lib/helpers';
 import { showExportPeriodModal, exportTable, type ExportPeriod } from '../lib/export';
 
 let currentSubTab = 'daily';
@@ -92,13 +92,15 @@ async function loadBalanceSheetReport() {
   const asOf = businessDate();
   const data = await apiGet<any>(`/reports/balance-sheet?asOf=${asOf}`);
   const money = (value: any) => value === null || value === undefined ? 'Not tracked' : fmtPeso(Number(value));
+  const manual = data.manual_accounts || {};
+  const manualMoney = (key: string) => manual[key] === undefined || manual[key] === null ? 'Not tracked' : fmtPeso(Number(manual[key]));
   const knownAssets = Number(data.assets.known_total || 0);
-  const knownEquity = Number(data.equity.retained_earnings || 0);
-  const knownLiabilitiesAndEquity = knownEquity;
+  const knownEquity = Number(data.equity.known_total ?? data.equity.retained_earnings ?? 0);
+  const knownLiabilitiesAndEquity = Number(data.liabilities.known_total || 0) + knownEquity;
   const unreconciled = knownAssets - knownLiabilitiesAndEquity;
   const sectionRow = (label: string) => `<tr style="background:var(--c-primary);color:#fff"><th colspan="4" style="color:#fff;letter-spacing:.08em">${label}</th></tr>`;
   const totalRow = (label: string, amount: string, note: string) => `<tr style="font-weight:800;border-top:2px solid var(--c-primary)"><td colspan="2">${label}</td><td>${amount}</td><td>${note}</td></tr>`;
-  return `<div class="report-section-heading"><div><h3>Balance Sheet</h3><span>POS-based financial position as of ${fmtDate(data.as_of)}</span></div><button class="btn btn-primary btn-sm" onclick="exportBalanceSheet()">Export Balance Sheet</button></div>
+  return `<div class="report-section-heading"><div><h3>Balance Sheet</h3><span>POS-based financial position as of ${fmtDate(data.as_of)}</span></div><div style="display:flex;gap:var(--space-2);flex-wrap:wrap"><button class="btn btn-sm" onclick="editBalanceSheetAccounts()">Manage Accounts</button><button class="btn btn-primary btn-sm" onclick="exportBalanceSheet()">Export Balance Sheet</button></div></div>
     <div class="notice-card" style="margin:var(--space-4) 0;padding:var(--space-4);border:1px solid var(--c-warning);border-radius:var(--radius-md);background:var(--c-warning-soft,#fff7e6)"><strong>Important:</strong> This report uses only recorded POS data. Bank, GCash, owner capital, supplier payables, loans, fixed assets, and withdrawals are not tracked here.</div>
     <div class="dashboard-grid report-metrics report-metrics-3">
       <div class="dashboard-card card-info"><div class="card-label">Inventory at Cost</div><div class="card-value">${fmtPeso(data.assets.inventory_cost)}</div></div>
@@ -108,22 +110,24 @@ async function loadBalanceSheetReport() {
     <div class="table-wrap"><table><thead><tr><th>Section</th><th>Account / Line Item</th><th>${fmtDate(data.as_of)}</th><th>Notes</th></tr></thead><tbody>
       ${sectionRow('ASSETS')}
       <tr><td>Current Assets</td><td>Cash / recorded drawer cash</td><td>${fmtPeso(data.assets.recorded_cash)}</td><td>Latest closed cashier count</td></tr>
+      <tr><td>Current Assets</td><td>Bank balance</td><td>${manualMoney('bank')}</td><td>Manual admin account</td></tr>
+      <tr><td>Current Assets</td><td>GCash balance</td><td>${manualMoney('gcash')}</td><td>Manual admin account</td></tr>
       <tr><td>Current Assets</td><td>Accounts receivable</td><td>${fmtPeso(data.assets.receivables)}</td><td>Unpaid credit balances as of date</td></tr>
       <tr><td>Current Assets</td><td>Inventory at cost</td><td>${fmtPeso(data.assets.inventory_cost)}</td><td>Current stock × recorded cost</td></tr>
       <tr><td>Current Assets</td><td>Prepaid expenses</td><td>Not tracked</td><td>No prepaid-expense account exists in the POS</td></tr>
       <tr><td>Current Assets</td><td>Short-term investments</td><td>Not tracked</td><td>No investment account exists in the POS</td></tr>
       ${totalRow('TOTAL KNOWN POS ASSETS', fmtPeso(knownAssets), 'Cash, receivables, and inventory only')}
       ${sectionRow('FIXED / LONG-TERM ASSETS')}
-      <tr><td>Fixed Assets</td><td>Land</td><td>Not tracked</td><td>No fixed-asset register exists in the POS</td></tr>
-      <tr><td>Fixed Assets</td><td>Equipment</td><td>Not tracked</td><td>No fixed-asset register exists in the POS</td></tr>
-      <tr><td>Fixed Assets</td><td>Building</td><td>Not tracked</td><td>No fixed-asset register exists in the POS</td></tr>
-      <tr><td>Fixed Assets</td><td>Other fixed assets</td><td>Not tracked</td><td>No fixed-asset register exists in the POS</td></tr>
+      <tr><td>Fixed Assets</td><td>Land</td><td>${manualMoney('land')}</td><td>Manual admin account</td></tr>
+      <tr><td>Fixed Assets</td><td>Equipment</td><td>${manualMoney('equipment')}</td><td>Manual admin account</td></tr>
+      <tr><td>Fixed Assets</td><td>Building</td><td>${manualMoney('building')}</td><td>Manual admin account</td></tr>
+      <tr><td>Fixed Assets</td><td>Other fixed assets</td><td>${manualMoney('other_fixed_assets')}</td><td>Manual admin account</td></tr>
       ${sectionRow('OTHER ASSETS')}
-      <tr><td>Other Assets</td><td>Trademark / intellectual property</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
-      <tr><td>Other Assets</td><td>Other assets</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      <tr><td>Other Assets</td><td>Trademark / intellectual property</td><td>${manualMoney('trademark')}</td><td>Manual admin account</td></tr>
+      <tr><td>Other Assets</td><td>Other assets</td><td>${manualMoney('other_assets')}</td><td>Manual admin account</td></tr>
       ${sectionRow('CURRENT LIABILITIES')}
-      <tr><td>Current Liabilities</td><td>Accounts payable / supplier payables</td><td>Not tracked</td><td>Purchase orders are tracked, but payable balances are not</td></tr>
-      <tr><td>Current Liabilities</td><td>Accrued liabilities</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      <tr><td>Current Liabilities</td><td>Accounts payable / supplier payables</td><td>${manualMoney('supplier_payables')}</td><td>Manual admin account</td></tr>
+      <tr><td>Current Liabilities</td><td>Accrued liabilities</td><td>${manualMoney('accrued_liabilities')}</td><td>Manual admin account</td></tr>
       <tr><td>Current Liabilities</td><td>Deferred income</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
       <tr><td>Current Liabilities</td><td>Accrued salaries and wages</td><td>Not tracked</td><td>Attendance exists, but payroll liabilities do not</td></tr>
       <tr><td>Current Liabilities</td><td>Mortgage payable</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
@@ -133,9 +137,9 @@ async function loadBalanceSheetReport() {
       <tr><td>Long-Term Liabilities</td><td>Notes payable</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
       <tr><td>Long-Term Liabilities</td><td>Other long-term liabilities</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
       ${sectionRow("OWNER'S EQUITY")}
-      <tr><td>Equity</td><td>Owner's capital</td><td>Not tracked</td><td>Inventory is an asset; it is not automatically owner capital</td></tr>
+      <tr><td>Equity</td><td>Owner's capital</td><td>${manualMoney('owner_capital')}</td><td>Manual admin account</td></tr>
       <tr><td>Equity</td><td>Retained earnings</td><td>${fmtPeso(data.equity.retained_earnings)}</td><td>Cumulative recorded sales less COGS and expenses</td></tr>
-      <tr><td>Equity</td><td>Owner withdrawals</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      <tr><td>Equity</td><td>Owner withdrawals</td><td>${manualMoney('owner_withdrawals')}</td><td>Manual admin account</td></tr>
       ${totalRow("TOTAL OWNER'S EQUITY (KNOWN)", fmtPeso(knownEquity), 'Retained earnings only')}
       ${totalRow("TOTAL LIABILITIES + OWNER'S EQUITY (KNOWN)", fmtPeso(knownLiabilitiesAndEquity), 'Missing external accounts excluded')}
       <tr style="font-weight:800;color:${unreconciled === 0 ? 'var(--c-success)' : 'var(--c-danger)'}"><td colspan="2">CHECK / UNRECONCILED DIFFERENCE</td><td>${fmtPeso(unreconciled)}</td><td>${unreconciled === 0 ? 'Balanced' : 'Missing capital, liabilities, cash accounts, or other assets'}</td></tr>
@@ -175,6 +179,29 @@ export async function exportBalanceSheet() {
     rows.forEach((row,i)=>{ const r=i+4, isSection=!row[1]&&!!row[0], isTotal=String(row[1]||'').startsWith('TOTAL')||String(row[1]||'').startsWith('CHECK'); for(let c=0;c<4;c++){const cell=ws[XLSX.utils.encode_cell({r,c})]; if(cell) cell.s={font:{name:'Aptos',sz:10,bold:isSection||isTotal,color:isSection?white:'243447'},fill:solid(isSection?navy:isTotal?orange:(i%2?'FFFFFF':'F7FAFC')),alignment:{vertical:'center',wrapText:c===1||c===3}};} const amount=ws[XLSX.utils.encode_cell({r,c:2})]; if(amount&&typeof row[2]==='number') amount.z='₱#,##0.00;[Red]-₱#,##0.00'; });
     ws['!cols']=[{wch:24},{wch:38},{wch:18},{wch:58}]; ws['!freeze']={xSplit:0,ySplit:4}; XLSX.utils.book_append_sheet(wb,ws,'Balance Sheet'); XLSX.writeFile(wb,`jeg-enterprises-balance-sheet-${period.to}.xlsx`); showToast('Balance Sheet workbook exported');
   });
+}
+
+export async function editBalanceSheetAccounts() {
+  const data = await apiGet<any>(`/reports/balance-sheet?asOf=${businessDate()}`);
+  const values = data.manual_accounts || {};
+  const fields: Array<[string, string]> = [
+    ['bank', 'Bank balance'], ['gcash', 'GCash balance'], ['owner_capital', "Owner's capital"],
+    ['supplier_payables', 'Supplier payables'], ['accrued_liabilities', 'Accrued liabilities'], ['deferred_income', 'Deferred income'],
+    ['accrued_salaries', 'Accrued salaries and wages'], ['mortgage_payable', 'Mortgage payable'], ['other_current_liabilities', 'Other current liabilities'],
+    ['long_term_debt', 'Long-term debt'], ['notes_payable', 'Notes payable'], ['other_long_term_liabilities', 'Other long-term liabilities'],
+    ['land', 'Land'], ['equipment', 'Equipment'], ['building', 'Building'], ['other_fixed_assets', 'Other fixed assets'],
+    ['trademark', 'Trademark / intellectual property'], ['other_assets', 'Other assets'], ['owner_withdrawals', 'Owner withdrawals'],
+  ];
+  showModal(`<h3>Manage Balance Sheet Accounts</h3><p class="modal-help">Only external accounts are editable here. Cash drawer, inventory, and receivables come automatically from POS records.</p><div class="form-grid">${fields.map(([key,label]) => `<div class="form-group"><label for="bs-${key}">${label}</label><input id="bs-${key}" type="number" min="0" step="0.01" value="${values[key] ?? ''}" placeholder="0.00" /></div>`).join('')}</div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveBalanceSheetAccounts()">Save Accounts</button></div>`, 'balance-sheet-accounts-modal');
+}
+
+export async function saveBalanceSheetAccounts() {
+  const keys = ['bank','gcash','owner_capital','supplier_payables','accrued_liabilities','deferred_income','accrued_salaries','mortgage_payable','other_current_liabilities','long_term_debt','notes_payable','other_long_term_liabilities','land','equipment','building','other_fixed_assets','trademark','other_assets','owner_withdrawals'];
+  const values: Record<string, number> = {};
+  keys.forEach(key => { const value = (document.getElementById(`bs-${key}`) as HTMLInputElement)?.value; if (value !== '') values[key] = Number(value); });
+  await apiPut('/settings/balance_sheet_manual_accounts', { value: JSON.stringify(values) });
+  closeModal(); showToast('Balance Sheet accounts saved');
+  const content = document.getElementById('report-content'); if (content) content.innerHTML = await loadBalanceSheetReport();
 }
 
 const comprehensiveLabels: Record<string, { title: string; key: string; headers: string[]; fields: string[] }> = {

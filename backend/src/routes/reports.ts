@@ -80,7 +80,7 @@ router.get('/comprehensive', async (req: Request, res: Response) => {
 router.get('/balance-sheet', async (req: Request, res: Response) => {
   const db = getDb();
   const asOf = (req.query.asOf as string) || businessDate();
-  const [inventory, receivables, cash, profit] = await Promise.all([
+  const [inventory, receivables, cash, profit, manualRow] = await Promise.all([
     db.prepare(`SELECT COALESCE(SUM(stock * cost_price),0) total, COALESCE(SUM(stock * price_per_unit),0) retail_total FROM materials`).get() as Promise<any>,
     db.prepare(`SELECT COALESCE(SUM(balance),0) total FROM (
       SELECT i.total - COALESCE((SELECT SUM(cm.amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued' AND date(cm.created_at,'+8 hours') <= ?),0)
@@ -91,19 +91,28 @@ router.get('/balance-sheet', async (req: Request, res: Response) => {
     ) open_balances WHERE balance > 0`).get(asOf,asOf,asOf,asOf,asOf) as Promise<any>,
     db.prepare(`SELECT closing_cash, closed_at, opened_at FROM cashier_shifts WHERE status='closed' AND date(closed_at,'+8 hours') <= ? ORDER BY closed_at DESC LIMIT 1`).get(asOf) as Promise<any>,
     db.prepare(`SELECT COALESCE(SUM(net_sales),0) net_sales, COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price,m.cost_price,0)) FROM invoice_items ii JOIN invoices i2 ON i2.id=ii.invoice_id LEFT JOIN materials m ON m.id=ii.material_id WHERE i2.status <> 'voided' AND date(i2.issued_date,'+8 hours') <= ?),0) cogs, COALESCE((SELECT SUM(amount) FROM expenses WHERE date(expense_date,'+8 hours') <= ?),0) expenses FROM v_invoice_financials WHERE status <> 'voided' AND date(issued_date,'+8 hours') <= ?`).get(asOf,asOf,asOf) as Promise<any>,
+    db.prepare(`SELECT value FROM settings WHERE key='balance_sheet_manual_accounts'`).get() as Promise<any>,
   ]);
+  let manual: Record<string, number> = {};
+  try { manual = JSON.parse((manualRow as any)?.value || '{}'); } catch { manual = {}; }
   const inventoryCost = Number(inventory.total || 0);
   const receivableTotal = Number(receivables.total || 0);
   const recordedCash = Number(cash?.closing_cash || 0);
   const retainedEarnings = Number(profit.net_sales || 0) - Number(profit.cogs || 0) - Number(profit.expenses || 0);
+  const manualAssets = Number(manual.bank || 0) + Number(manual.gcash || 0) + Number(manual.land || 0) + Number(manual.equipment || 0) + Number(manual.building || 0) + Number(manual.other_fixed_assets || 0) + Number(manual.trademark || 0) + Number(manual.other_assets || 0);
+  const manualLiabilities = Number(manual.supplier_payables || 0) + Number(manual.accrued_liabilities || 0) + Number(manual.deferred_income || 0) + Number(manual.accrued_salaries || 0) + Number(manual.mortgage_payable || 0) + Number(manual.other_current_liabilities || 0) + Number(manual.long_term_debt || 0) + Number(manual.notes_payable || 0) + Number(manual.other_long_term_liabilities || 0);
+  const ownerCapital = Number(manual.owner_capital || 0), withdrawals = Number(manual.owner_withdrawals || 0);
+  const totalAssets = inventoryCost + receivableTotal + recordedCash + manualAssets;
+  const totalEquity = ownerCapital + retainedEarnings - withdrawals;
   res.json({
     as_of: asOf,
-    assets: { inventory_cost: inventoryCost, inventory_retail: Number(inventory.retail_total || 0), receivables: receivableTotal, recorded_cash: recordedCash, known_total: inventoryCost + receivableTotal + recordedCash },
-    equity: { retained_earnings: retainedEarnings },
-    liabilities: { recorded_supplier_payables: null, loans: null, other: null },
-    untracked: ['Owner capital', 'Bank balance', 'GCash balance', 'Supplier payables', 'Loans', 'Fixed assets', 'Owner withdrawals'],
+    assets: { inventory_cost: inventoryCost, inventory_retail: Number(inventory.retail_total || 0), receivables: receivableTotal, recorded_cash: recordedCash, bank: manual.bank ?? null, gcash: manual.gcash ?? null, land: manual.land ?? null, equipment: manual.equipment ?? null, building: manual.building ?? null, other_fixed_assets: manual.other_fixed_assets ?? null, trademark: manual.trademark ?? null, other_assets: manual.other_assets ?? null, known_total: totalAssets },
+    equity: { owner_capital: manual.owner_capital ?? null, retained_earnings: retainedEarnings, owner_withdrawals: manual.owner_withdrawals ?? null, known_total: totalEquity },
+    liabilities: { supplier_payables: manual.supplier_payables ?? null, accrued_liabilities: manual.accrued_liabilities ?? null, deferred_income: manual.deferred_income ?? null, accrued_salaries: manual.accrued_salaries ?? null, mortgage_payable: manual.mortgage_payable ?? null, other_current_liabilities: manual.other_current_liabilities ?? null, long_term_debt: manual.long_term_debt ?? null, notes_payable: manual.notes_payable ?? null, other_long_term_liabilities: manual.other_long_term_liabilities ?? null, known_total: manualLiabilities },
+    manual_accounts: manual,
+    untracked: [],
     cash_source: cash ? { closed_at: cash.closed_at, opened_at: cash.opened_at } : null,
-    note: 'POS-based financial position. External bank, GCash, capital, liabilities, and fixed assets are not recorded in this system.'
+    note: 'POS values are calculated automatically. Manual accounts are entered by an admin and are kept separate from POS transactions.'
   });
 });
 
