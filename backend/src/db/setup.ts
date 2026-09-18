@@ -33,7 +33,6 @@ export async function initDb(): Promise<void> {
 // touching sales, stock, cash, or any other POS transaction records.
 async function seedBalanceSheetAccountsIfMissing() {
   const existing = await db.prepare("SELECT value FROM settings WHERE key='balance_sheet_manual_accounts'").get() as any;
-  if (existing?.value) return;
   const assets = await db.prepare('SELECT COALESCE(SUM(stock * cost_price),0) total FROM materials').get() as any;
   const profit = await db.prepare(`SELECT COALESCE(SUM(net_sales),0) net_sales,
     COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price,m.cost_price,0))
@@ -46,8 +45,24 @@ async function seedBalanceSheetAccountsIfMissing() {
   const latestCash = await db.prepare("SELECT COALESCE(closing_cash,0) cash FROM cashier_shifts WHERE status='closed' ORDER BY closed_at DESC LIMIT 1").get() as any;
   const retained = Number(profit?.net_sales || 0) - Number(profit?.cogs || 0) - Number(profit?.expenses || 0);
   const knownAssets = Number(assets?.total || 0) + Number(receivables?.total || 0) + Number(latestCash?.cash || 0);
-  const ownerCapital = Math.max(0, Math.round((knownAssets - retained) * 100) / 100);
-  await db.prepare("INSERT INTO settings (key,value) VALUES ('balance_sheet_manual_accounts',?) ON CONFLICT(key) DO NOTHING").run(JSON.stringify({ owner_capital: ownerCapital }));
+  let current: Record<string, number> = {};
+  try { current = JSON.parse(existing?.value || '{}'); } catch { current = {}; }
+  // Seed a complete, clearly editable demo set once. These are account
+  // balances only; no fake sales, purchases, inventory, or payments are added.
+  const demo = {
+    bank: 150000, gcash: 50000, supplier_payables: 300000,
+    accrued_liabilities: 20000, deferred_income: 0, accrued_salaries: 30000,
+    mortgage_payable: 0, other_current_liabilities: 10000,
+    long_term_debt: 0, notes_payable: 0, other_long_term_liabilities: 0,
+    land: 500000, equipment: 300000, building: 0, other_fixed_assets: 50000,
+    trademark: 0, other_assets: 25000, owner_withdrawals: 100000,
+  };
+  const hasCompleteSeed = ['bank','gcash','supplier_payables','land','equipment','owner_withdrawals'].every(key => Object.prototype.hasOwnProperty.call(current, key));
+  if (existing?.value && hasCompleteSeed) return;
+  const manualAssets = Number(demo.bank) + Number(demo.gcash) + Number(demo.land) + Number(demo.equipment) + Number(demo.building) + Number(demo.other_fixed_assets) + Number(demo.trademark) + Number(demo.other_assets);
+  const manualLiabilities = Number(demo.supplier_payables) + Number(demo.accrued_liabilities) + Number(demo.deferred_income) + Number(demo.accrued_salaries) + Number(demo.mortgage_payable) + Number(demo.other_current_liabilities) + Number(demo.long_term_debt) + Number(demo.notes_payable) + Number(demo.other_long_term_liabilities);
+  const ownerCapital = Math.round((knownAssets + manualAssets - manualLiabilities - retained + Number(demo.owner_withdrawals)) * 100) / 100;
+  await db.prepare("INSERT INTO settings (key,value) VALUES ('balance_sheet_manual_accounts',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify({ ...demo, owner_capital: ownerCapital }));
 }
 
 export function getDb(): Database {

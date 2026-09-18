@@ -128,14 +128,14 @@ async function loadBalanceSheetReport() {
       ${sectionRow('CURRENT LIABILITIES')}
       <tr><td>Current Liabilities</td><td>Accounts payable / supplier payables</td><td>${manualMoney('supplier_payables')}</td><td>Manual admin account</td></tr>
       <tr><td>Current Liabilities</td><td>Accrued liabilities</td><td>${manualMoney('accrued_liabilities')}</td><td>Manual admin account</td></tr>
-      <tr><td>Current Liabilities</td><td>Deferred income</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
-      <tr><td>Current Liabilities</td><td>Accrued salaries and wages</td><td>Not tracked</td><td>Attendance exists, but payroll liabilities do not</td></tr>
-      <tr><td>Current Liabilities</td><td>Mortgage payable</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
-      <tr><td>Current Liabilities</td><td>Other current liabilities</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      <tr><td>Current Liabilities</td><td>Deferred income</td><td>${manualMoney('deferred_income')}</td><td>Manual admin account</td></tr>
+      <tr><td>Current Liabilities</td><td>Accrued salaries and wages</td><td>${manualMoney('accrued_salaries')}</td><td>Manual admin account</td></tr>
+      <tr><td>Current Liabilities</td><td>Mortgage payable</td><td>${manualMoney('mortgage_payable')}</td><td>Manual admin account</td></tr>
+      <tr><td>Current Liabilities</td><td>Other current liabilities</td><td>${manualMoney('other_current_liabilities')}</td><td>Manual admin account</td></tr>
       ${sectionRow('LONG-TERM LIABILITIES')}
-      <tr><td>Long-Term Liabilities</td><td>Long-term debt</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
-      <tr><td>Long-Term Liabilities</td><td>Notes payable</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
-      <tr><td>Long-Term Liabilities</td><td>Other long-term liabilities</td><td>Not tracked</td><td>Not recorded in the POS</td></tr>
+      <tr><td>Long-Term Liabilities</td><td>Long-term debt</td><td>${manualMoney('long_term_debt')}</td><td>Manual admin account</td></tr>
+      <tr><td>Long-Term Liabilities</td><td>Notes payable</td><td>${manualMoney('notes_payable')}</td><td>Manual admin account</td></tr>
+      <tr><td>Long-Term Liabilities</td><td>Other long-term liabilities</td><td>${manualMoney('other_long_term_liabilities')}</td><td>Manual admin account</td></tr>
       ${sectionRow("OWNER'S EQUITY")}
       <tr><td>Equity</td><td>Owner's capital</td><td>${manualMoney('owner_capital')}</td><td>Manual admin account</td></tr>
       <tr><td>Equity</td><td>Retained earnings</td><td>${fmtPeso(data.equity.retained_earnings)}</td><td>Cumulative recorded sales less COGS and expenses</td></tr>
