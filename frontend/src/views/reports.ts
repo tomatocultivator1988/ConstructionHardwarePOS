@@ -164,14 +164,21 @@ async function exportDetailedWorkbook(period: ExportPeriod) {
     const lightOrange = 'FFF1DF';
     const white = 'FFFFFF';
     const border = { style: 'thin', color: 'D8E1EA' };
-    const titleStyle = { font: { name: 'Aptos', sz: 16, bold: true, color: white }, fill: { fgColor: { rgb: navy } }, alignment: { vertical: 'center' } };
-    const subtitleStyle = { font: { name: 'Aptos', sz: 10, italic: true, color: '5B6B7A' }, fill: { fgColor: { rgb: 'F5F8FA' } } };
-    const headerStyle = { font: { name: 'Aptos', sz: 10, bold: true, color: white }, fill: { fgColor: { rgb: navy } }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { top: border, bottom: border } };
-    const summaryLabelStyle = { font: { name: 'Aptos', sz: 10, bold: true, color: navy }, fill: { fgColor: { rgb: lightOrange } } };
-    const summaryValueStyle = { font: { name: 'Aptos', sz: 10, bold: true, color: navy }, fill: { fgColor: { rgb: lightOrange } }, alignment: { horizontal: 'right' } };
+    const solid = (rgb: string) => ({ patternType: 'solid', fgColor: { rgb } });
+    const titleStyle = { font: { name: 'Aptos', sz: 16, bold: true, color: white }, fill: solid(navy), alignment: { vertical: 'center' } };
+    const subtitleStyle = { font: { name: 'Aptos', sz: 10, italic: true, color: '3F5366' }, fill: solid('F5F8FA') };
+    const headerStyle = { font: { name: 'Aptos', sz: 10, bold: true, color: white }, fill: solid(navy), alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { top: border, bottom: border } };
+    const summaryLabelStyle = { font: { name: 'Aptos', sz: 10, bold: true, color: navy }, fill: solid(lightOrange) };
+    const summaryValueStyle = { font: { name: 'Aptos', sz: 10, bold: true, color: navy }, fill: solid(lightOrange), alignment: { horizontal: 'right' } };
     const applyRowStyle = (row: number, style: any) => { for (let col = 0; col < headers.length; col++) { const ref = XLSX.utils.encode_cell({ r: row - 1, c: col }); if (ws[ref]) ws[ref].s = style; } };
-    if (ws.A1) ws.A1.s = titleStyle;
-    if (ws.A2) ws.A2.s = subtitleStyle;
+    for (let col = 0; col < headers.length; col++) {
+      const titleRef = XLSX.utils.encode_cell({ r: 0, c: col });
+      const subtitleRef = XLSX.utils.encode_cell({ r: 1, c: col });
+      if (!ws[titleRef]) ws[titleRef] = { v: '', t: 's' };
+      if (!ws[subtitleRef]) ws[subtitleRef] = { v: '', t: 's' };
+      ws[titleRef].s = titleStyle;
+      ws[subtitleRef].s = subtitleStyle;
+    }
     if (headers.length > 1) { ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }, { s: { r: 1, c: 0 }, e: { r: 1, c: headers.length - 1 } }]; }
     for (let row = 4; row < headerRow; row++) { const label = ws[`A${row}`]; const value = ws[`B${row}`]; if (label) label.s = summaryLabelStyle; if (value) { value.s = summaryValueStyle; value.z = headers.length > 1 ? '₱#,##0.00' : '0'; } }
     applyRowStyle(headerRow, headerStyle);
@@ -179,7 +186,7 @@ async function exportDetailedWorkbook(period: ExportPeriod) {
       for (let col = 0; col < headers.length; col++) {
         const ref = XLSX.utils.encode_cell({ r: row - 1, c: col });
         const cell = ws[ref]; if (!cell) continue;
-        cell.s = { font: { name: 'Aptos', sz: 10, color: '243447' }, border: { bottom: border }, alignment: { vertical: 'center', horizontal: typeof cell.v === 'number' ? 'right' : 'left' } };
+        cell.s = { font: { name: 'Aptos', sz: 10, color: '243447' }, fill: solid(row % 2 === 0 ? 'FFFFFF' : 'F7FAFC'), border: { bottom: border }, alignment: { vertical: 'center', horizontal: typeof cell.v === 'number' ? 'right' : 'left' } };
         if (/amount|total|paid|balance|tax|profit|sales|cost|price|cash/i.test(headers[col])) cell.z = '₱#,##0.00;[Red]-₱#,##0.00';
         if (/count|quantity|stock/i.test(headers[col])) cell.z = '#,##0.##';
         if (/margin|percentage|%/i.test(headers[col])) cell.z = '0.0%';
@@ -187,8 +194,12 @@ async function exportDetailedWorkbook(period: ExportPeriod) {
     }
     ws['!freeze'] = { xSplit: 0, ySplit: headerRow };
     ws['!autofilter'] = { ref: `A${headerRow}:${lastColumn}${lastRow}` };
-    ws['!rows'] = [{ hpt: 26 }, { hpt: 18 }, { hpt: 8 }];
-    ws['!cols'] = headers.map((header, index) => ({ wch: Math.min(34, Math.max(header.length + 2, ...rows.map(row => String(row[index] ?? '').length + 2), 12)) }));
+    ws['!rows'] = [{ hpt: 30 }, { hpt: 20 }, { hpt: 10 }, ...summary.map(() => ({ hpt: 20 })), { hpt: 28 }];
+    ws['!cols'] = headers.map((header, index) => {
+      const contentWidth = Math.max(header.length + 4, ...rows.map(row => String(row[index] ?? '').length + 3), 14);
+      const descriptionColumn = /description|address|buyer|product|supplier|vendor|bucket/i.test(header);
+      return { wch: Math.min(descriptionColumn ? 42 : 24, descriptionColumn ? Math.max(contentWidth, 22) : contentWidth) };
+    });
     XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
   };
 
