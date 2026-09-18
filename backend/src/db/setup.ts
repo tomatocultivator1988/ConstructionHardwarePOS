@@ -14,6 +14,7 @@ export async function initDb(): Promise<void> {
       db = new Database();
       await initTables();
       await migrateSchema();
+      await seedBalanceSheetAccountsIfMissing();
     } catch (err) {
       db = undefined as any;
       console.error('Failed to open database:', err);
@@ -26,6 +27,27 @@ export async function initDb(): Promise<void> {
     dbInitPromise = null;
     throw err;
   }
+}
+
+// Creates a coherent starting balance for a fresh/demo database without
+// touching sales, stock, cash, or any other POS transaction records.
+async function seedBalanceSheetAccountsIfMissing() {
+  const existing = await db.prepare("SELECT value FROM settings WHERE key='balance_sheet_manual_accounts'").get() as any;
+  if (existing?.value) return;
+  const assets = await db.prepare('SELECT COALESCE(SUM(stock * cost_price),0) total FROM materials').get() as any;
+  const profit = await db.prepare(`SELECT COALESCE(SUM(net_sales),0) net_sales,
+    COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price,m.cost_price,0))
+      FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id LEFT JOIN materials m ON m.id=ii.material_id WHERE i.status <> 'voided'),0) cogs,
+    COALESCE((SELECT SUM(amount) FROM expenses),0) expenses FROM v_invoice_financials WHERE status <> 'voided'`).get() as any;
+  const receivables = await db.prepare(`SELECT COALESCE(SUM(balance),0) total FROM (
+    SELECT i.total - COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id),0) + COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id=i.id),0) balance
+    FROM invoices i WHERE i.status <> 'voided'
+  ) open_balances WHERE balance > 0`).get() as any;
+  const latestCash = await db.prepare("SELECT COALESCE(closing_cash,0) cash FROM cashier_shifts WHERE status='closed' ORDER BY closed_at DESC LIMIT 1").get() as any;
+  const retained = Number(profit?.net_sales || 0) - Number(profit?.cogs || 0) - Number(profit?.expenses || 0);
+  const knownAssets = Number(assets?.total || 0) + Number(receivables?.total || 0) + Number(latestCash?.cash || 0);
+  const ownerCapital = Math.max(0, Math.round((knownAssets - retained) * 100) / 100);
+  await db.prepare("INSERT INTO settings (key,value) VALUES ('balance_sheet_manual_accounts',?) ON CONFLICT(key) DO NOTHING").run(JSON.stringify({ owner_capital: ownerCapital }));
 }
 
 export function getDb(): Database {
