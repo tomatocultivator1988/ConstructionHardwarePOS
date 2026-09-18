@@ -98,7 +98,7 @@ async function loadBalanceSheetReport() {
   const unreconciled = knownAssets - knownLiabilitiesAndEquity;
   const sectionRow = (label: string) => `<tr style="background:var(--c-primary);color:#fff"><th colspan="4" style="color:#fff;letter-spacing:.08em">${label}</th></tr>`;
   const totalRow = (label: string, amount: string, note: string) => `<tr style="font-weight:800;border-top:2px solid var(--c-primary)"><td colspan="2">${label}</td><td>${amount}</td><td>${note}</td></tr>`;
-  return `<div class="report-section-heading"><div><h3>Balance Sheet</h3><span>POS-based financial position as of ${fmtDate(data.as_of)}</span></div></div>
+  return `<div class="report-section-heading"><div><h3>Balance Sheet</h3><span>POS-based financial position as of ${fmtDate(data.as_of)}</span></div><button class="btn btn-primary btn-sm" onclick="exportBalanceSheet()">Export Balance Sheet</button></div>
     <div class="notice-card" style="margin:var(--space-4) 0;padding:var(--space-4);border:1px solid var(--c-warning);border-radius:var(--radius-md);background:var(--c-warning-soft,#fff7e6)"><strong>Important:</strong> This report uses only recorded POS data. Bank, GCash, owner capital, supplier payables, loans, fixed assets, and withdrawals are not tracked here.</div>
     <div class="dashboard-grid report-metrics report-metrics-3">
       <div class="dashboard-card card-info"><div class="card-label">Inventory at Cost</div><div class="card-value">${fmtPeso(data.assets.inventory_cost)}</div></div>
@@ -140,6 +140,41 @@ async function loadBalanceSheetReport() {
       ${totalRow("TOTAL LIABILITIES + OWNER'S EQUITY (KNOWN)", fmtPeso(knownLiabilitiesAndEquity), 'Missing external accounts excluded')}
       <tr style="font-weight:800;color:${unreconciled === 0 ? 'var(--c-success)' : 'var(--c-danger)'}"><td colspan="2">CHECK / UNRECONCILED DIFFERENCE</td><td>${fmtPeso(unreconciled)}</td><td>${unreconciled === 0 ? 'Balanced' : 'Missing capital, liabilities, cash accounts, or other assets'}</td></tr>
     </tbody></table></div>`;
+}
+
+export async function exportBalanceSheet() {
+  showExportPeriodModal('Balance Sheet', async (period, format) => {
+    const data = await apiGet<any>(`/reports/balance-sheet?asOf=${encodeURIComponent(period.to)}`);
+    const assets = data.assets || {}, equity = data.equity || {};
+    const knownAssets = Number(assets.known_total || 0), knownEquity = Number(equity.retained_earnings || 0);
+    const rows: unknown[][] = [];
+    const section = (label: string) => rows.push([label, '', '', '']);
+    const line = (account: string, amount: unknown, notes: string) => rows.push(['', account, amount ?? 'Not tracked', notes]);
+    const total = (label: string, amount: number, notes: string) => rows.push(['', label, amount, notes]);
+    section('ASSETS'); section('CURRENT ASSETS');
+    line('Cash / recorded drawer cash', assets.recorded_cash, 'Latest closed cashier count');
+    line('Accounts receivable', assets.receivables, 'Unpaid credit balances as of date');
+    line('Inventory at cost', assets.inventory_cost, 'Current stock × recorded cost');
+    line('Prepaid expenses', null, 'No prepaid-expense account exists in the POS');
+    line('Short-term investments', null, 'No investment account exists in the POS');
+    total('TOTAL KNOWN POS ASSETS', knownAssets, 'Cash, receivables, and inventory only');
+    section('FIXED / LONG-TERM ASSETS'); ['Land','Equipment','Building','Other fixed assets'].forEach(v => line(v, null, 'No fixed-asset register exists in the POS'));
+    section('OTHER ASSETS'); line('Trademark / intellectual property', null, 'Not recorded in the POS'); line('Other assets', null, 'Not recorded in the POS');
+    section('LIABILITIES'); section('CURRENT LIABILITIES');
+    ['Accounts payable / supplier payables','Accrued liabilities','Deferred income','Accrued salaries and wages','Mortgage payable','Other current liabilities'].forEach(v => line(v, null, 'Not recorded in the POS'));
+    section('LONG-TERM LIABILITIES'); ['Long-term debt','Notes payable','Other long-term liabilities'].forEach(v => line(v, null, 'Not recorded in the POS'));
+    section("OWNER'S EQUITY"); line("Owner's capital", null, 'Inventory is not automatically owner capital'); line('Retained earnings', equity.retained_earnings, 'Cumulative recorded sales less COGS and expenses'); line("Owner withdrawals", null, 'Not recorded in the POS');
+    total("TOTAL OWNER'S EQUITY (KNOWN)", knownEquity, 'Retained earnings only'); total("TOTAL LIABILITIES + OWNER'S EQUITY (KNOWN)", knownEquity, 'Missing external accounts excluded');
+    total('CHECK / UNRECONCILED DIFFERENCE', knownAssets - knownEquity, knownAssets === knownEquity ? 'Balanced' : 'Missing external accounts');
+    if (format !== 'xlsx') { exportTable('Balance Sheet', period, ['Section','Account / Line Item','Amount','Notes'], rows, format, `POS-based financial position as of ${period.to}`); return; }
+    const XLSX = await import('xlsx-js-style'); const wb = XLSX.utils.book_new();
+    const aoa = [['BALANCE SHEET'], [`POS-based financial position as of ${period.to}`], [], ['Section','Account / Line Item',`As of ${period.to}`,'Notes'], ...rows];
+    const ws = XLSX.utils.aoa_to_sheet(aoa); ws['!merges'] = [{ s:{r:0,c:0},e:{r:0,c:3} },{ s:{r:1,c:0},e:{r:1,c:3} }];
+    const solid = (rgb: string) => ({ patternType:'solid', fgColor:{rgb} }); const navy='0B2945', orange='FFF1DF', white='FFFFFF';
+    for (let c=0;c<4;c++) { const a=XLSX.utils.encode_cell({r:0,c}), b=XLSX.utils.encode_cell({r:1,c}); if(!ws[a]) ws[a]={v:'',t:'s'}; if(!ws[b]) ws[b]={v:'',t:'s'}; ws[a].s={font:{name:'Aptos Display',sz:18,bold:true,color:white},fill:solid(navy)}; ws[b].s={font:{name:'Aptos',sz:10,italic:true,color:'5B6B7A'},fill:solid('F5F8FA')}; ws[XLSX.utils.encode_cell({r:3,c})].s={font:{name:'Aptos',sz:10,bold:true,color:white},fill:solid(navy)}; }
+    rows.forEach((row,i)=>{ const r=i+4, isSection=!row[1]&&!!row[0], isTotal=String(row[1]||'').startsWith('TOTAL')||String(row[1]||'').startsWith('CHECK'); for(let c=0;c<4;c++){const cell=ws[XLSX.utils.encode_cell({r,c})]; if(cell) cell.s={font:{name:'Aptos',sz:10,bold:isSection||isTotal,color:isSection?white:'243447'},fill:solid(isSection?navy:isTotal?orange:(i%2?'FFFFFF':'F7FAFC')),alignment:{vertical:'center',wrapText:c===1||c===3}};} const amount=ws[XLSX.utils.encode_cell({r,c:2})]; if(amount&&typeof row[2]==='number') amount.z='₱#,##0.00;[Red]-₱#,##0.00'; });
+    ws['!cols']=[{wch:24},{wch:38},{wch:18},{wch:58}]; ws['!freeze']={xSplit:0,ySplit:4}; XLSX.utils.book_append_sheet(wb,ws,'Balance Sheet'); XLSX.writeFile(wb,`jeg-enterprises-balance-sheet-${period.to}.xlsx`); showToast('Balance Sheet workbook exported');
+  });
 }
 
 const comprehensiveLabels: Record<string, { title: string; key: string; headers: string[]; fields: string[] }> = {

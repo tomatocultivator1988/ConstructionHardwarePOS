@@ -120,6 +120,7 @@ Object.assign(window, {
   printReport: reports.printReport,
   applyReportPeriod: reports.applyReportPeriod,
   exportReports: reports.exportReports,
+  exportBalanceSheet: reports.exportBalanceSheet,
   reloadBooks: reports.reloadBooks,
   reloadFinancialSummary: reports.reloadFinancialSummary,
   switchSettingsTab: settings.switchSettingsTab,
