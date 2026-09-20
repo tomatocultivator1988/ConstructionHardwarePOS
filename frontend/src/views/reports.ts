@@ -101,6 +101,8 @@ async function loadBalanceSheetReport() {
   const knownEquity = Number(data.equity.known_total ?? data.equity.retained_earnings ?? 0);
   const knownLiabilitiesAndEquity = Number(data.liabilities.known_total || 0) + knownEquity;
   const unreconciled = knownAssets - knownLiabilitiesAndEquity;
+  const customAccounts = (data.chart_accounts || []).filter((account: any) => account.balance_source === 'manual' && !['1010','1020','2000','3000'].includes(String(account.code)));
+  const customRows = (type: string) => customAccounts.filter((account: any) => account.type === type).map((account: any) => `<tr><td>${esc(account.category || (type === 'asset' ? 'Assets' : type === 'liability' ? 'Liabilities' : 'Equity'))}</td><td>${esc(account.name)}</td><td>${fmtPeso(Number(account.opening_balance || 0))}</td><td>Manual opening balance${account.opening_balance_date ? ` as of ${fmtDate(account.opening_balance_date)}` : ''}</td></tr>`).join('');
   const sectionRow = (label: string) => `<tr style="background:var(--c-primary);color:#fff"><th colspan="4" style="color:#fff;letter-spacing:.08em">${label}</th></tr>`;
   const totalRow = (label: string, amount: string, note: string) => `<tr style="font-weight:800;border-top:2px solid var(--c-primary)"><td colspan="2">${label}</td><td>${amount}</td><td>${note}</td></tr>`;
   return `<div class="report-section-heading"><div><h3>Balance Sheet</h3><span>POS-based financial position as of ${fmtDate(data.as_of)}</span></div><button class="btn btn-primary btn-sm" onclick="exportBalanceSheet()">Export Balance Sheet</button></div>
@@ -119,6 +121,7 @@ async function loadBalanceSheetReport() {
       <tr><td>Current Assets</td><td>Inventory at cost</td><td>${fmtPeso(data.assets.inventory_cost)}</td><td>Current stock × recorded cost</td></tr>
       <tr><td>Current Assets</td><td>Prepaid expenses</td><td>Not tracked</td><td>No prepaid-expense account exists in the POS</td></tr>
       <tr><td>Current Assets</td><td>Short-term investments</td><td>Not tracked</td><td>No investment account exists in the POS</td></tr>
+      ${customRows('asset')}
       ${totalRow('TOTAL KNOWN POS ASSETS', fmtPeso(knownAssets), 'Cash, receivables, and inventory only')}
       ${sectionRow('FIXED / LONG-TERM ASSETS')}
       <tr><td>Fixed Assets</td><td>Land</td><td>${manualMoney('land')}</td><td>Manual admin account</td></tr>
@@ -135,6 +138,7 @@ async function loadBalanceSheetReport() {
       <tr><td>Current Liabilities</td><td>Accrued salaries and wages</td><td>${manualMoney('accrued_salaries')}</td><td>Manual admin account</td></tr>
       <tr><td>Current Liabilities</td><td>Mortgage payable</td><td>${manualMoney('mortgage_payable')}</td><td>Manual admin account</td></tr>
       <tr><td>Current Liabilities</td><td>Other current liabilities</td><td>${manualMoney('other_current_liabilities')}</td><td>Manual admin account</td></tr>
+      ${customRows('liability')}
       ${sectionRow('LONG-TERM LIABILITIES')}
       <tr><td>Long-Term Liabilities</td><td>Long-term debt</td><td>${manualMoney('long_term_debt')}</td><td>Manual admin account</td></tr>
       <tr><td>Long-Term Liabilities</td><td>Notes payable</td><td>${manualMoney('notes_payable')}</td><td>Manual admin account</td></tr>
@@ -143,6 +147,7 @@ async function loadBalanceSheetReport() {
       <tr><td>Equity</td><td>Owner's capital</td><td>${manualMoney('owner_capital')}</td><td>Manual admin account</td></tr>
       <tr><td>Equity</td><td>Retained earnings</td><td>${fmtPeso(data.equity.retained_earnings)}</td><td>Cumulative recorded sales less COGS and expenses</td></tr>
       <tr><td>Equity</td><td>Owner withdrawals</td><td>${manualMoney('owner_withdrawals')}</td><td>Manual admin account</td></tr>
+      ${customRows('equity')}
       ${totalRow("TOTAL OWNER'S EQUITY (KNOWN)", fmtPeso(knownEquity), 'Retained earnings only')}
       ${totalRow("TOTAL LIABILITIES + OWNER'S EQUITY (KNOWN)", fmtPeso(knownLiabilitiesAndEquity), 'Missing external accounts excluded')}
       <tr style="font-weight:800;color:${unreconciled === 0 ? 'var(--c-success)' : 'var(--c-danger)'}"><td colspan="2">CHECK / UNRECONCILED DIFFERENCE</td><td>${fmtPeso(unreconciled)}</td><td>${unreconciled === 0 ? 'Balanced' : 'Missing capital, liabilities, cash accounts, or other assets'}</td></tr>
