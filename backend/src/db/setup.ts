@@ -15,6 +15,7 @@ export async function initDb(): Promise<void> {
       await initTables();
       await migrateSchema();
       await seedBalanceSheetAccountsIfMissing();
+      await seedChartAccountsIfMissing();
     } catch (err) {
       db = undefined as any;
       console.error('Failed to open database:', err);
@@ -63,6 +64,19 @@ async function seedBalanceSheetAccountsIfMissing() {
   const manualLiabilities = Number(demo.supplier_payables) + Number(demo.accrued_liabilities) + Number(demo.deferred_income) + Number(demo.accrued_salaries) + Number(demo.mortgage_payable) + Number(demo.other_current_liabilities) + Number(demo.long_term_debt) + Number(demo.notes_payable) + Number(demo.other_long_term_liabilities);
   const ownerCapital = Math.round((knownAssets + manualAssets - manualLiabilities - retained + Number(demo.owner_withdrawals)) * 100) / 100;
   await db.prepare("INSERT INTO settings (key,value) VALUES ('balance_sheet_manual_accounts',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify({ ...demo, owner_capital: ownerCapital }));
+}
+
+async function seedChartAccountsIfMissing() {
+  const count = await db.prepare('SELECT COUNT(*) count FROM chart_accounts').get() as any;
+  if (Number(count?.count || 0) > 0) return;
+  const accounts = [
+    ['1000','Cash on Hand','asset','POS drawer cash'], ['1010','Bank','asset','Manual bank balance'], ['1020','GCash','asset','Manual GCash balance'],
+    ['1100','Accounts Receivable','asset','Unpaid credit balances'], ['1200','Inventory','asset','Inventory at recorded cost'],
+    ['2000','Supplier Payables','liability','Manual supplier balances'], ['3000',"Owner's Capital",'equity','Opening owner capital'], ['3100','Retained Earnings','equity','Cumulative POS profit'],
+    ['4000','Sales','revenue','POS sales'], ['4100','Sales Returns','revenue','Returned sales'], ['5000','Cost of Goods Sold','expense','Cost of inventory sold'], ['6000','Operating Expenses','expense','Recorded business expenses'],
+  ];
+  const stmt = db.prepare('INSERT INTO chart_accounts (id,code,name,type,description) VALUES (?,?,?,?,?)');
+  for (const account of accounts) await stmt.run(uuidv4(), ...account);
 }
 
 export function getDb(): Database {
@@ -170,6 +184,17 @@ async function initTables() {
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS chart_accounts (
+      id TEXT PRIMARY KEY,
+      code TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('asset','liability','equity','revenue','expense')),
+      description TEXT,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS catalog_options (

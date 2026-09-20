@@ -25,6 +25,7 @@ import catalogRoutes from './routes/catalog';
 import attendanceRoutes from './routes/attendance';
 import deliveryPersonnelRoutes from './routes/delivery-personnel';
 import integrationRoutes from './routes/integrations';
+import accountRoutes from './routes/accounts';
 import { authMiddleware } from './lib/auth';
 
 const app = express();
@@ -103,6 +104,7 @@ app.use('/api/catalog', catalogRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/delivery-personnel', deliveryPersonnelRoutes);
 app.use('/api/integrations', integrationRoutes);
+app.use('/api/accounts', accountRoutes);
 
 app.get('/api/health', async (_req, res) => {
   try {

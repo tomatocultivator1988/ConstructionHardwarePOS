@@ -1,4 +1,4 @@
-import { apiGet, apiPut } from '../lib/api';
+import { apiGet, apiPost, apiPut } from '../lib/api';
 import { esc, fmtDate, fmtPeso, businessDate, businessMonth } from '../lib/helpers';
 import { showToast, showModal, closeModal } from '../lib/helpers';
 import { showExportPeriodModal, exportTable, type ExportPeriod } from '../lib/export';
@@ -61,6 +61,7 @@ export async function renderReports(): Promise<string> {
       <button class="nav-btn ${currentSubTab === 'deliveries' ? 'active' : ''}" onclick="switchReportTab('deliveries')" style="font-size:var(--fs-sm)">Deliveries</button>
       <button class="nav-btn ${currentSubTab === 'staff' ? 'active' : ''}" onclick="switchReportTab('staff')" style="font-size:var(--fs-sm)">Staff</button>
       <button class="nav-btn ${currentSubTab === 'balance-sheet' ? 'active' : ''}" onclick="switchReportTab('balance-sheet')" style="font-size:var(--fs-sm)">Balance Sheet</button>
+      <button class="nav-btn ${currentSubTab === 'chart-accounts' ? 'active' : ''}" onclick="switchReportTab('chart-accounts')" style="font-size:var(--fs-sm)">Chart of Accounts</button>
     </div>
     <div id="report-content">
       ${await loadDailyReport()}
@@ -83,6 +84,7 @@ export async function switchReportTab(tab: string) {
     else if (tab === 'books') el.innerHTML = await loadBooksReport();
     else if (['inventory','product-sales','payments','z-reading','returns','aging','expenses','purchases','deliveries','staff'].includes(tab)) el.innerHTML = await loadComprehensiveReport(tab);
     else if (tab === 'balance-sheet') el.innerHTML = await loadBalanceSheetReport();
+    else if (tab === 'chart-accounts') el.innerHTML = await loadChartAccounts();
     else if (tab === 'summary') el.innerHTML = await loadFinancialSummary();
     document.querySelectorAll('.report-tabs .nav-btn').forEach(b => b.classList.remove('active'));
   } catch (e: any) { showToast(e.message); }
@@ -194,6 +196,26 @@ export async function editBalanceSheetAccounts() {
   ];
   showModal(`<h3>Manage Balance Sheet Accounts</h3><p class="modal-help">Only external accounts are editable here. Cash drawer, inventory, and receivables come automatically from POS records.</p><div class="form-grid">${fields.map(([key,label]) => `<div class="form-group"><label for="bs-${key}">${label}</label><input id="bs-${key}" type="number" min="0" step="0.01" value="${values[key] ?? ''}" placeholder="0.00" /></div>`).join('')}</div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveBalanceSheetAccounts()">Save Accounts</button></div>`, 'balance-sheet-accounts-modal');
 }
+
+async function loadChartAccounts() {
+  const accounts = await apiGet<any[]>('/accounts');
+  return `<div class="report-section-heading"><div><h3>Chart of Accounts</h3><span>Basic account list for POS-connected reporting</span></div><button class="btn btn-primary btn-sm" onclick="showChartAccountModal()">+ New Account</button></div><div class="report-filters"><label>Filter type</label><select id="coa-type-filter" onchange="reloadChartAccounts()"><option value="">All accounts</option>${['asset','liability','equity','revenue','expense'].map(type => `<option value="${type}">${type[0].toUpperCase()+type.slice(1)}</option>`).join('')}</select></div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Account</th><th>Type</th><th>Description</th><th>Status</th><th>Actions</th></tr></thead><tbody>${accounts.length ? accounts.map(account => `<tr><td>${esc(account.code)}</td><td><strong>${esc(account.name)}</strong></td><td>${esc(account.type)}</td><td>${esc(account.description || '—')}</td><td><span class="status-badge ${account.is_active ? 'status-paid' : 'status-pending'}">${account.is_active ? 'Active' : 'Inactive'}</span></td><td><button class="btn btn-sm" onclick='showChartAccountModal(${JSON.stringify(account)})'>Edit</button> <button class="btn btn-sm" onclick="toggleChartAccount('${account.id}',${account.is_active ? 0 : 1})">${account.is_active ? 'Deactivate' : 'Activate'}</button></td></tr>`).join('') : `<tr><td colspan="6">No accounts found</td></tr>`}</tbody></table></div>`;
+}
+
+export async function reloadChartAccounts() { const el = document.getElementById('report-content'); if (el) el.innerHTML = await loadChartAccounts(); }
+
+export function showChartAccountModal(account: any = null) {
+  const types = ['asset','liability','equity','revenue','expense'];
+  showModal(`<h3>${account ? 'Edit Account' : 'New Account'}</h3><div class="form-group"><label>Account code</label><input id="coa-code" inputmode="numeric" value="${account?.code || ''}" placeholder="e.g. 1300" /></div><div class="form-group"><label>Account name</label><input id="coa-name" value="${account?.name || ''}" placeholder="Account name" /></div><div class="form-group"><label>Account type</label><select id="coa-type">${types.map(type => `<option value="${type}" ${account?.type === type ? 'selected' : ''}>${type[0].toUpperCase()+type.slice(1)}</option>`).join('')}</select></div><div class="form-group"><label>Description</label><textarea id="coa-description" rows="2">${account?.description || ''}</textarea></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveChartAccount('${account?.id || ''}')">Save Account</button></div>`, 'chart-account-modal');
+}
+
+export async function saveChartAccount(id = '') {
+  const payload = { code: (document.getElementById('coa-code') as HTMLInputElement).value, name: (document.getElementById('coa-name') as HTMLInputElement).value, type: (document.getElementById('coa-type') as HTMLSelectElement).value, description: (document.getElementById('coa-description') as HTMLTextAreaElement).value };
+  if (id) await apiPut(`/accounts/${id}`, payload); else await apiPost('/accounts', payload);
+  closeModal(); showToast('Account saved'); await reloadChartAccounts();
+}
+
+export async function toggleChartAccount(id: string, active: number) { await apiPut(`/accounts/${id}/status`, { is_active: active }); showToast(active ? 'Account activated' : 'Account deactivated'); await reloadChartAccounts(); }
 
 export async function saveBalanceSheetAccounts() {
   const keys = ['bank','gcash','owner_capital','supplier_payables','accrued_liabilities','deferred_income','accrued_salaries','mortgage_payable','other_current_liabilities','long_term_debt','notes_payable','other_long_term_liabilities','land','equipment','building','other_fixed_assets','trademark','other_assets','owner_withdrawals'];
