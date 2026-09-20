@@ -92,7 +92,7 @@ router.get('/balance-sheet', async (req: Request, res: Response) => {
     db.prepare(`SELECT closing_cash, closed_at, opened_at FROM cashier_shifts WHERE status='closed' AND date(closed_at,'+8 hours') <= ? ORDER BY closed_at DESC LIMIT 1`).get(asOf) as Promise<any>,
     db.prepare(`SELECT COALESCE(SUM(net_sales),0) net_sales, COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price,m.cost_price,0)) FROM invoice_items ii JOIN invoices i2 ON i2.id=ii.invoice_id LEFT JOIN materials m ON m.id=ii.material_id WHERE i2.status <> 'voided' AND date(i2.issued_date,'+8 hours') <= ?),0) cogs, COALESCE((SELECT SUM(amount) FROM expenses WHERE date(expense_date,'+8 hours') <= ?),0) expenses FROM v_invoice_financials WHERE status <> 'voided' AND date(issued_date,'+8 hours') <= ?`).get(asOf,asOf,asOf) as Promise<any>,
     db.prepare(`SELECT value FROM settings WHERE key='balance_sheet_manual_accounts'`).get() as Promise<any>,
-    db.prepare("SELECT code, name, type, category, opening_balance, balance_source FROM chart_accounts WHERE is_active=1 ORDER BY code").all() as Promise<any[]>,
+    db.prepare("SELECT ca.code, ca.name, ca.type, at.base_type, ca.category, ca.opening_balance, ca.balance_source FROM chart_accounts ca JOIN account_types at ON at.name=ca.type WHERE ca.is_active=1 ORDER BY ca.code").all() as Promise<any[]>,
   ]);
   let manual: Record<string, number> = {};
   try { manual = JSON.parse((manualRow as any)?.value || '{}'); } catch { manual = {}; }
@@ -101,11 +101,11 @@ router.get('/balance-sheet', async (req: Request, res: Response) => {
   const receivableTotal = Number(receivables.total || 0);
   const recordedCash = Number(cash?.closing_cash || 0);
   const retainedEarnings = Number(profit.net_sales || 0) - Number(profit.cogs || 0) - Number(profit.expenses || 0);
-  const manualAssets = (chartRows as any[]).filter(row => row.balance_source === 'manual' && row.type === 'asset').reduce((sum, row) => sum + Number(row.opening_balance || 0), 0);
-  const manualLiabilities = (chartRows as any[]).filter(row => row.balance_source === 'manual' && row.type === 'liability').reduce((sum, row) => sum + Number(row.opening_balance || 0), 0);
+  const manualAssets = (chartRows as any[]).filter(row => row.balance_source === 'manual' && row.base_type === 'asset').reduce((sum, row) => sum + Number(row.opening_balance || 0), 0);
+  const manualLiabilities = (chartRows as any[]).filter(row => row.balance_source === 'manual' && row.base_type === 'liability').reduce((sum, row) => sum + Number(row.opening_balance || 0), 0);
   const ownerCapital = Number((chartRows as any[]).find(row => row.code === '3000')?.opening_balance ?? manual.owner_capital ?? 0), withdrawals = Number(manual.owner_withdrawals || 0);
   const totalAssets = inventoryCost + receivableTotal + recordedCash + manualAssets;
-  const customEquity = (chartRows as any[]).filter(row => row.balance_source === 'manual' && row.type === 'equity' && row.code !== '3000').reduce((sum, row) => sum + Number(row.opening_balance || 0), 0);
+  const customEquity = (chartRows as any[]).filter(row => row.balance_source === 'manual' && row.base_type === 'equity' && row.code !== '3000').reduce((sum, row) => sum + Number(row.opening_balance || 0), 0);
   const totalEquity = ownerCapital + retainedEarnings + customEquity - withdrawals;
   res.json({
     as_of: asOf,

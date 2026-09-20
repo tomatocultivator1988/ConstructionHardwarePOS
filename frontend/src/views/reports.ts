@@ -9,6 +9,7 @@ let monthlyReportData: any = null;
 let pnlChart: any = null;
 let comprehensiveCache: { key: string; data: any } | null = null;
 let chartAccountFilter = '';
+let accountTypes: Array<{ id: string; name: string; base_type: string; is_active: number }> = [];
 let reportContentSequence = 0;
 
 function reportPeriodRange(period = currentReportPeriod): { from: string; to: string } {
@@ -102,7 +103,7 @@ async function loadBalanceSheetReport() {
   const knownLiabilitiesAndEquity = Number(data.liabilities.known_total || 0) + knownEquity;
   const unreconciled = knownAssets - knownLiabilitiesAndEquity;
   const customAccounts = (data.chart_accounts || []).filter((account: any) => account.balance_source === 'manual' && !['1010','1020','2000','3000'].includes(String(account.code)));
-  const customRows = (type: string) => customAccounts.filter((account: any) => account.type === type).map((account: any) => `<tr><td>${esc(account.category || (type === 'asset' ? 'Assets' : type === 'liability' ? 'Liabilities' : 'Equity'))}</td><td>${esc(account.name)}</td><td>${fmtPeso(Number(account.opening_balance || 0))}</td><td>Manual opening balance${account.opening_balance_date ? ` as of ${fmtDate(account.opening_balance_date)}` : ''}</td></tr>`).join('');
+  const customRows = (type: string) => customAccounts.filter((account: any) => (account.base_type || account.type) === type).map((account: any) => `<tr><td>${esc(account.category || (type === 'asset' ? 'Assets' : type === 'liability' ? 'Liabilities' : 'Equity'))}</td><td>${esc(account.name)}</td><td>${fmtPeso(Number(account.opening_balance || 0))}</td><td>Manual opening balance${account.opening_balance_date ? ` as of ${fmtDate(account.opening_balance_date)}` : ''}</td></tr>`).join('');
   const sectionRow = (label: string) => `<tr style="background:var(--c-primary);color:#fff"><th colspan="4" style="color:#fff;letter-spacing:.08em">${label}</th></tr>`;
   const totalRow = (label: string, amount: string, note: string) => `<tr style="font-weight:800;border-top:2px solid var(--c-primary)"><td colspan="2">${label}</td><td>${amount}</td><td>${note}</td></tr>`;
   return `<div class="report-section-heading"><div><h3>Balance Sheet</h3><span>POS-based financial position as of ${fmtDate(data.as_of)}</span></div><button class="btn btn-primary btn-sm" onclick="exportBalanceSheet()">Export Balance Sheet</button></div>
@@ -204,18 +205,39 @@ export async function editBalanceSheetAccounts() {
 }
 
 async function loadChartAccounts() {
-  const accounts = await apiGet<any[]>(chartAccountFilter ? `/accounts?type=${chartAccountFilter}` : '/accounts');
-  const types = [['','All'],['asset','Assets'],['liability','Liabilities'],['equity','Equity'],['revenue','Revenue'],['expense','Expenses']];
-  return `<div class="report-section-heading"><div><h3>Chart of Accounts</h3><span>Basic account list connected to POS balances</span></div><button class="btn btn-primary btn-sm" onclick="showChartAccountModal()">+ New Account</button></div><div class="coa-filter-tabs" role="tablist" aria-label="Account type filter">${types.map(([value,label]) => `<button class="nav-btn ${chartAccountFilter === value ? 'active' : ''}" onclick="filterChartAccounts('${value}')">${label}</button>`).join('')}</div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Account</th><th>Type</th><th>Category</th><th>Current Balance</th><th>Source</th><th>Status</th><th>Actions</th></tr></thead><tbody>${accounts.length ? accounts.map(account => `<tr><td>${esc(account.code)}</td><td><strong>${esc(account.name)}</strong></td><td>${esc(account.type)}</td><td>${esc(account.category || '—')}</td><td>${fmtPeso(Number(account.balance || 0))}</td><td>${account.balance_source === 'pos' ? 'POS-linked' : 'Manual'}</td><td><span class="status-badge ${account.is_active ? 'status-paid' : 'status-pending'}">${account.is_active ? 'Active' : 'Inactive'}</span></td><td><button class="btn btn-sm" onclick='showChartAccountModal(${JSON.stringify(account)})'>Edit</button> <button class="btn btn-sm" onclick="toggleChartAccount('${account.id}',${account.is_active ? 0 : 1})">${account.is_active ? 'Deactivate' : 'Activate'}</button></td></tr>`).join('') : `<tr><td colspan="8">No accounts found</td></tr>`}</tbody></table></div>`;
+  const [accounts, types] = await Promise.all([apiGet<any[]>(chartAccountFilter ? `/accounts?type=${encodeURIComponent(chartAccountFilter)}` : '/accounts'), apiGet<any[]>('/accounts/types')]);
+  accountTypes = types;
+  const filterTypes = [{ id: '', name: 'All' }, ...types.map(type => ({ id: type.name, name: type.name }))];
+  return `<div class="report-section-heading"><div><h3>Chart of Accounts</h3><span>Basic account list connected to POS balances</span></div><div><button class="btn btn-sm" onclick="showAccountTypesModal()">Manage Account Types</button> <button class="btn btn-primary btn-sm" onclick="showChartAccountModal()">+ New Account</button></div></div><div class="coa-filter-tabs" role="tablist" aria-label="Account type filter">${filterTypes.map(type => `<button class="nav-btn ${chartAccountFilter === type.id ? 'active' : ''}" onclick="filterChartAccounts('${esc(type.id)}')">${esc(type.name)}</button>`).join('')}</div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Account</th><th>Type</th><th>Category</th><th>Current Balance</th><th>Source</th><th>Status</th><th>Actions</th></tr></thead><tbody>${accounts.length ? accounts.map(account => `<tr><td>${esc(account.code)}</td><td><strong>${esc(account.name)}</strong></td><td>${esc(account.type)}</td><td>${esc(account.category || '—')}</td><td>${fmtPeso(Number(account.balance || 0))}</td><td>${account.balance_source === 'pos' ? 'POS-linked' : 'Manual'}</td><td><span class="status-badge ${account.is_active ? 'status-paid' : 'status-pending'}">${account.is_active ? 'Active' : 'Inactive'}</span></td><td><button class="btn btn-sm" onclick='showChartAccountModal(${JSON.stringify(account)})'>Edit</button> <button class="btn btn-sm" onclick="toggleChartAccount('${account.id}',${account.is_active ? 0 : 1})">${account.is_active ? 'Deactivate' : 'Activate'}</button></td></tr>`).join('') : `<tr><td colspan="8">No accounts found</td></tr>`}</tbody></table></div>`;
 }
 
 export async function filterChartAccounts(type: string) { chartAccountFilter = type; const el = document.getElementById('report-content'); if (el) el.innerHTML = await loadChartAccounts(); }
 export async function reloadChartAccounts() { const el = document.getElementById('report-content'); if (el) el.innerHTML = await loadChartAccounts(); }
 
+export function showAccountTypesModal() {
+  const custom = accountTypes.filter(type => !['asset','liability','equity','revenue','expense'].includes(type.id));
+  showModal(`<h3>Manage Account Types</h3><p class="modal-help">Add custom account types for the Chart of Accounts. Each type is mapped to a standard financial group so reports remain accurate.</p><div class="table-wrap"><table><thead><tr><th>Type</th><th>Report group</th><th>Status</th><th>Action</th></tr></thead><tbody>${accountTypes.map(type => `<tr><td>${esc(type.name)}</td><td>${esc(type.base_type)}</td><td>${type.is_active ? 'Active' : 'Inactive'}</td><td>${['asset','liability','equity','revenue','expense'].includes(type.id) ? 'Built-in' : `<button class="btn btn-sm" onclick="toggleAccountType('${type.id}',${type.is_active ? 0 : 1})">${type.is_active ? 'Deactivate' : 'Activate'}</button>`}</td></tr>`).join('')}</tbody></table></div><hr><div class="form-grid"><div class="form-group"><label for="new-account-type-name">New type name</label><input id="new-account-type-name" placeholder="e.g. Current Assets" maxlength="40" /></div><div class="form-group"><label for="new-account-type-base">Report group</label><select id="new-account-type-base">${['asset','liability','equity','revenue','expense'].map(type => `<option value="${type}">${type[0].toUpperCase()+type.slice(1)}</option>`).join('')}</select></div></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="saveAccountType()">Add Type</button></div>`, 'account-types-modal');
+}
+
+export async function saveAccountType() {
+  const name = (document.getElementById('new-account-type-name') as HTMLInputElement)?.value.trim();
+  const baseType = (document.getElementById('new-account-type-base') as HTMLSelectElement)?.value;
+  if (!name) { showToast('Type name is required'); return; }
+  await apiPost('/accounts/types', { name, base_type: baseType });
+  closeModal(); showToast('Account type added', 'success'); await reloadChartAccounts();
+}
+
+export async function toggleAccountType(id: string, active: number) {
+  await apiPut(`/accounts/types/${id}/status`, { is_active: active });
+  showToast(active ? 'Account type activated' : 'Account type deactivated', 'success');
+  showAccountTypesModal();
+}
+
 export function showChartAccountModal(account: any = null) {
-  const types = ['asset','liability','equity','revenue','expense'];
+  const types = accountTypes.length ? accountTypes : [{ id: 'asset', name: 'Asset' }, { id: 'liability', name: 'Liability' }, { id: 'equity', name: 'Equity' }, { id: 'revenue', name: 'Revenue' }, { id: 'expense', name: 'Expense' }];
   const isPos = account?.balance_source === 'pos';
-  showModal(`<h3>${account ? 'Edit Account' : 'New Account'}</h3><div class="form-group"><label>Account code</label><input id="coa-code" inputmode="numeric" value="${account?.code || ''}" placeholder="e.g. 1300" ${isPos ? 'disabled' : ''} /></div><div class="form-group"><label>Account name</label><input id="coa-name" value="${account?.name || ''}" placeholder="Account name" /></div><div class="form-group"><label>Account type</label><select id="coa-type" ${isPos ? 'disabled' : ''}>${types.map(type => `<option value="${type}" ${account?.type === type ? 'selected' : ''}>${type[0].toUpperCase()+type.slice(1)}</option>`).join('')}</select></div><div class="form-group"><label>Account category</label><input id="coa-category" value="${account?.category || account?.type || ''}" placeholder="e.g. Current Assets" /></div><div class="form-group"><label>Description</label><textarea id="coa-description" rows="2">${account?.description || ''}</textarea></div><div class="form-group"><label>Opening balance ${isPos ? '(POS calculated)' : ''}</label><input id="coa-opening-balance" type="number" min="0" step="0.01" value="${account?.opening_balance ?? 0}" ${isPos ? 'disabled' : ''} /></div><div class="form-group"><label>Opening balance date</label><input id="coa-opening-date" type="date" value="${account?.opening_balance_date || businessDate()}" ${isPos ? 'disabled' : ''} /></div>${isPos ? '<p class="modal-help">Source: POS-linked. Code type and balance are locked and calculated automatically.</p>' : '<p class="modal-help">Source: Manual. This opening balance is used for the account and reports.</p>'}<div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveChartAccount('${account?.id || ''}')">Save Account</button></div>`, 'chart-account-modal');
+  const typeOptions = types.map(type => `<option value="${esc(type.name)}" ${account?.type === type.name ? 'selected' : ''}>${esc(type.name)}</option>`).join('');
+  showModal(`<h3>${account ? 'Edit Account' : 'New Account'}</h3><div class="form-group"><label>Account code</label><input id="coa-code" inputmode="numeric" value="${account?.code || ''}" placeholder="e.g. 1300" ${isPos ? 'disabled' : ''} /></div><div class="form-group"><label>Account name</label><input id="coa-name" value="${account?.name || ''}" placeholder="Account name" /></div><div class="form-group"><label>Account type</label><select id="coa-type" ${isPos ? 'disabled' : ''}>${typeOptions}</select></div><div class="form-group"><label>Category / group</label><input id="coa-category" value="${account?.category || ''}" placeholder="Optional grouping" /></div><div class="form-group"><label>Description</label><textarea id="coa-description" rows="2">${account?.description || ''}</textarea></div><div class="form-group"><label>Opening balance ${isPos ? '(POS calculated)' : ''}</label><input id="coa-opening-balance" type="number" min="0" step="0.01" value="${account?.opening_balance ?? 0}" ${isPos ? 'disabled' : ''} /></div><div class="form-group"><label>Opening balance date</label><input id="coa-opening-date" type="date" value="${account?.opening_balance_date || businessDate()}" ${isPos ? 'disabled' : ''} /></div>${isPos ? '<p class="modal-help">Source: POS-linked. Code type and balance are locked and calculated automatically.</p>' : '<p class="modal-help">Source: Manual. This opening balance is used for the account and reports.</p>'}<div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveChartAccount('${account?.id || ''}')">Save Account</button></div>`, 'chart-account-modal');
 }
 
 export async function saveChartAccount(id = '') {
@@ -297,13 +319,14 @@ function money(value: unknown) { return Number(value || 0); }
 async function exportDetailedWorkbook(period: ExportPeriod) {
   const XLSX = await import('xlsx-js-style');
   const query = `from=${encodeURIComponent(period.from)}&to=${encodeURIComponent(period.to)}`;
-  const [sales, profit, books, cash, comprehensive, balanceSheet] = await Promise.all([
+  const [sales, profit, books, cash, comprehensive, balanceSheet, chartAccounts] = await Promise.all([
     apiGet<any>(`/reports/range?type=sales&${query}`),
     apiGet<any>(`/reports/range?type=profit&${query}`),
     apiGet<any>(`/reports/books?${query}`),
     apiGet<any>(`/reports/cash-flow?${query}`),
     apiGet<any>(`/reports/comprehensive?${query}`),
     apiGet<any>(`/reports/balance-sheet?asOf=${encodeURIComponent(period.to)}`),
+    apiGet<any[]>('/accounts'),
   ]);
 
   const wb = XLSX.utils.book_new();
@@ -362,6 +385,9 @@ async function exportDetailedWorkbook(period: ExportPeriod) {
   addSheet('Daily Sales', 'Daily Sales Transactions', ['Invoice', 'Buyer', 'Issued', 'Status', 'Total', 'Paid', 'Balance'], salesRows, [['Gross Sales', money(sales.totals?.gross_sales)], ['Profit', money(sales.totals?.profit)], ['Invoice Count', money(sales.totals?.invoice_count)]]);
 
   addSheet('P&L', 'Profit and Loss', ['Metric', 'Amount'], [['Revenue', money(profit.revenue)], ['COGS', money(profit.cogs)], ['Gross Profit', money(profit.revenue) - money(profit.cogs)], ['Expenses', money(profit.expenses)], ['Net Profit', money(profit.revenue) - money(profit.cogs) - money(profit.expenses)]], [['Report', 'Profit and Loss']]);
+
+  const accountRows = (chartAccounts || []).map((r: any) => [r.code, r.name, r.type, r.category || '', r.balance_source === 'pos' ? 'POS-linked' : 'Manual', money(r.balance), r.is_active ? 'Active' : 'Inactive']);
+  addSheet('Chart of Accounts', 'Chart of Accounts', ['Code', 'Account', 'Type', 'Category / Group', 'Source', 'Current Balance', 'Status'], accountRows, [['Account Count', accountRows.length], ['Period', period.label]]);
 
   const paymentRows = (comprehensive.payments || []).map((r: any) => [r.method, r.transaction_count, money(r.gross_payments), money(r.refunds), money(r.net_collections)]);
   addSheet('Payments', 'Payment Methods Summary', ['Method', 'Transactions', 'Gross Payments', 'Refunds', 'Net Collections'], paymentRows, [['Net Collections', paymentRows.reduce((sum, row) => sum + money(row[4]), 0)]]);

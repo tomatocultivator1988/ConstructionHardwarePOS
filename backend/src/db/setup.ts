@@ -15,6 +15,7 @@ export async function initDb(): Promise<void> {
       db = new Database();
       await initTables();
       await migrateSchema();
+      await seedAccountTypes();
       await seedBalanceSheetAccountsIfMissing();
       await seedChartAccountsIfMissing();
     } catch (err) {
@@ -28,6 +29,13 @@ export async function initDb(): Promise<void> {
   } catch (err) {
     dbInitPromise = null;
     throw err;
+  }
+}
+
+async function seedAccountTypes() {
+  const defaults = [['asset','Asset'],['liability','Liability'],['equity','Equity'],['revenue','Revenue'],['expense','Expense']];
+  for (const [baseType, name] of defaults) {
+    await db.prepare('INSERT INTO account_types (id,name,base_type) VALUES (?,?,?) ON CONFLICT(name) DO NOTHING').run(baseType, name, baseType);
   }
 }
 
@@ -68,6 +76,18 @@ async function seedBalanceSheetAccountsIfMissing() {
 }
 
 async function seedChartAccountsIfMissing() {
+  const schema = await db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='chart_accounts'").get() as any;
+  if (String(schema?.sql || '').includes('CHECK (type IN')) {
+    await db.exec(`CREATE TABLE chart_accounts_new (
+      id TEXT PRIMARY KEY, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL, type TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT '', description TEXT, opening_balance REAL NOT NULL DEFAULT 0,
+      opening_balance_date TEXT, balance_source TEXT NOT NULL DEFAULT 'manual', is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
+    );
+    INSERT INTO chart_accounts_new SELECT id,code,name,type,category,description,opening_balance,opening_balance_date,balance_source,is_active,created_at,updated_at FROM chart_accounts;
+    DROP TABLE chart_accounts;
+    ALTER TABLE chart_accounts_new RENAME TO chart_accounts;`);
+  }
   const accountInfo = await db.prepare("PRAGMA table_info('chart_accounts')").all() as any[];
   if (!accountInfo.some((r: any) => r.name === 'opening_balance')) await db.exec("ALTER TABLE chart_accounts ADD COLUMN opening_balance REAL NOT NULL DEFAULT 0");
   if (!accountInfo.some((r: any) => r.name === 'opening_balance_date')) await db.exec("ALTER TABLE chart_accounts ADD COLUMN opening_balance_date TEXT");
@@ -208,6 +228,15 @@ async function initTables() {
       opening_balance REAL NOT NULL DEFAULT 0,
       opening_balance_date TEXT,
       balance_source TEXT NOT NULL DEFAULT 'manual',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS account_types (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      base_type TEXT NOT NULL,
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
