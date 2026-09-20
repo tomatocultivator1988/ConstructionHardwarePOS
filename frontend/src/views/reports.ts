@@ -3,7 +3,7 @@ import { esc, fmtDate, fmtPeso, businessDate, businessMonth } from '../lib/helpe
 import { showToast, showModal, closeModal } from '../lib/helpers';
 import { showExportPeriodModal, exportTable, type ExportPeriod } from '../lib/export';
 
-let currentSubTab = 'monthly';
+let currentSubTab = 'chart-accounts';
 let currentReportPeriod = 'month';
 let monthlyReportData: any = null;
 let pnlChart: any = null;
@@ -37,7 +37,7 @@ function reportPeriodControl() {
   if (currentSubTab === 'daily') {
     return `<div class="report-period-bar daily-period-bar"><div><strong>Daily sales date</strong><span>Choose the day to review</span></div><input id="rpt-daily-date" type="date" value="${reportPeriodRange().to}" onchange="reloadDaily()" /></div>`;
   }
-  return `<div class="report-period-inline"><label for="report-period">Period</label><select id="report-period" onchange="applyReportPeriod(this.value)"><option value="week" ${currentReportPeriod === 'week' ? 'selected' : ''}>This week</option><option value="month" ${currentReportPeriod === 'month' ? 'selected' : ''}>This month</option><option value="quarter" ${currentReportPeriod === 'quarter' ? 'selected' : ''}>This quarter</option><option value="year" ${currentReportPeriod === 'year' ? 'selected' : ''}>This year</option></select></div>`;
+  return `<div class="report-period-inline"><div><label for="report-period">Period</label><select id="report-period" onchange="applyReportPeriod(this.value)"><option value="week" ${currentReportPeriod === 'week' ? 'selected' : ''}>This week</option><option value="month" ${currentReportPeriod === 'month' ? 'selected' : ''}>This month</option><option value="quarter" ${currentReportPeriod === 'quarter' ? 'selected' : ''}>This quarter</option><option value="year" ${currentReportPeriod === 'year' ? 'selected' : ''}>This year</option></select></div><span class="report-period-range">${periodText()}</span></div>`;
 }
 
 export async function renderReports(): Promise<string> {
@@ -55,7 +55,7 @@ export async function renderReports(): Promise<string> {
       <button class="nav-btn ${currentSubTab === 'inventory' ? 'active' : ''}" onclick="switchReportTab('inventory')" style="font-size:var(--fs-sm)">Inventory</button>
     </div>
     <div id="report-content">
-      ${await loadMonthlyReport()}
+      ${await loadChartAccounts()}
     </div>
   `;
 }
@@ -78,7 +78,7 @@ export async function switchReportTab(tab: string) {
     else if (tab === 'balance-sheet') el.innerHTML = await loadBalanceSheetReport();
     else if (tab === 'chart-accounts') el.innerHTML = await loadChartAccounts();
     else if (tab === 'summary') el.innerHTML = await loadFinancialSummary();
-    document.querySelectorAll('.report-tabs .nav-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.report-tabs .nav-btn').forEach(b => b.classList.toggle('active', (b as HTMLElement).getAttribute('onclick')?.includes(`'${tab}'`) || false));
   } catch (e: any) { showToast(e.message); }
 }
 
