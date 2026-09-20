@@ -54,6 +54,7 @@ export async function renderReports(): Promise<string> {
       <button class="nav-btn ${currentSubTab === 'aging' ? 'active' : ''}" onclick="switchReportTab('aging')" style="font-size:var(--fs-sm)">A/R Aging</button>
       <button class="nav-btn ${currentSubTab === 'inventory' ? 'active' : ''}" onclick="switchReportTab('inventory')" style="font-size:var(--fs-sm)">Inventory</button>
     </div>
+    <div id="report-period-control">${reportPeriodControl()}</div>
     <div id="report-content">
       ${await loadChartAccounts()}
     </div>
@@ -103,7 +104,6 @@ async function loadBalanceSheetReport() {
       <div class="dashboard-card card-warning"><div class="card-label">Accounts Receivable</div><div class="card-value">${fmtPeso(data.assets.receivables)}</div></div>
       <div class="dashboard-card card-success"><div class="card-label">Recorded Drawer Cash</div><div class="card-value">${fmtPeso(data.assets.recorded_cash)}</div></div>
     </div>
-    <div id="report-period-control">${reportPeriodControl()}</div>
     <div class="table-wrap"><table><thead><tr><th>Section</th><th>Account / Line Item</th><th>${fmtDate(data.as_of)}</th><th>Notes</th></tr></thead><tbody>
       ${sectionRow('ASSETS')}
       <tr><td>Current Assets</td><td>Cash / recorded drawer cash</td><td>${fmtPeso(data.assets.recorded_cash)}</td><td>Latest closed cashier count</td></tr>
