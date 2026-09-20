@@ -9,6 +9,7 @@ let monthlyReportData: any = null;
 let pnlChart: any = null;
 let comprehensiveCache: { key: string; data: any } | null = null;
 let chartAccountFilter = '';
+let reportContentSequence = 0;
 
 function reportPeriodRange(period = currentReportPeriod): { from: string; to: string } {
   const today = businessDate();
@@ -40,6 +41,16 @@ function reportPeriodControl() {
   return `<div class="report-period-inline"><div><label for="report-period">Period</label><select id="report-period" onchange="applyReportPeriod(this.value)"><option value="week" ${currentReportPeriod === 'week' ? 'selected' : ''}>This week</option><option value="month" ${currentReportPeriod === 'month' ? 'selected' : ''}>This month</option><option value="quarter" ${currentReportPeriod === 'quarter' ? 'selected' : ''}>This quarter</option><option value="year" ${currentReportPeriod === 'year' ? 'selected' : ''}>This year</option></select></div><span class="report-period-range">${periodText()}</span></div>`;
 }
 
+async function loadSelectedReport(tab: string): Promise<string> {
+  if (tab === 'monthly') return loadMonthlyReport();
+  if (tab === 'cash-flow') return loadCashFlowReport();
+  if (tab === 'balance-sheet') return loadBalanceSheetReport();
+  if (tab === 'chart-accounts') return loadChartAccounts();
+  if (tab === 'aging') return loadComprehensiveReport('aging');
+  if (tab === 'inventory') return loadComprehensiveReport('inventory');
+  return loadChartAccounts();
+}
+
 export async function renderReports(): Promise<string> {
   return `
     <div class="page-header">
@@ -56,29 +67,26 @@ export async function renderReports(): Promise<string> {
     </div>
     <div id="report-period-control">${reportPeriodControl()}</div>
     <div id="report-content">
-      ${await loadChartAccounts()}
+      ${await loadSelectedReport(currentSubTab)}
     </div>
   `;
 }
 
 export async function switchReportTab(tab: string) {
+  const allowedTabs = ['chart-accounts', 'monthly', 'balance-sheet', 'cash-flow', 'aging', 'inventory'];
+  if (!allowedTabs.includes(tab)) return;
   currentSubTab = tab;
+  const requestSequence = ++reportContentSequence;
   const periodControl = document.getElementById('report-period-control');
   if (periodControl) periodControl.innerHTML = reportPeriodControl();
   const el = document.getElementById('report-content');
   if (!el) return;
   el.innerHTML = `<div class="loading-skeleton">${'<div class="sk-item"></div>'.repeat(4)}</div>`;
   try {
-    if (tab === 'daily') el.innerHTML = await loadDailyReport();
-    else if (tab === 'monthly') { el.innerHTML = await loadMonthlyReport(); drawPnlChart(); }
-    else if (tab === 'tax') el.innerHTML = await loadTaxReport();
-    else if (tab === 'range') el.innerHTML = await loadRangeForm();
-    else if (tab === 'books') el.innerHTML = await loadBooksReport();
-    else if (tab === 'cash-flow') el.innerHTML = await loadCashFlowReport();
-    else if (['inventory','product-sales','payments','z-reading','returns','aging','expenses','purchases','deliveries','staff'].includes(tab)) el.innerHTML = await loadComprehensiveReport(tab);
-    else if (tab === 'balance-sheet') el.innerHTML = await loadBalanceSheetReport();
-    else if (tab === 'chart-accounts') el.innerHTML = await loadChartAccounts();
-    else if (tab === 'summary') el.innerHTML = await loadFinancialSummary();
+    const html = await loadSelectedReport(tab);
+    if (requestSequence !== reportContentSequence || currentSubTab !== tab) return;
+    el.innerHTML = html;
+    if (tab === 'monthly') drawPnlChart();
     document.querySelectorAll('.report-tabs .nav-btn').forEach(b => b.classList.toggle('active', (b as HTMLElement).getAttribute('onclick')?.includes(`'${tab}'`) || false));
   } catch (e: any) { showToast(e.message); }
 }
@@ -260,7 +268,11 @@ async function loadComprehensiveReport(section: string) {
 export function applyReportPeriod(period: string) {
   if (!['week', 'month', 'quarter', 'year'].includes(period)) return;
   currentReportPeriod = period;
-  (window as any).loadView?.('reports');
+  const periodControl = document.getElementById('report-period-control');
+  if (periodControl) periodControl.innerHTML = reportPeriodControl();
+  // Refresh only the active report. This keeps the selected tab and page
+  // position stable and prevents a full-view reload from showing another tab.
+  void switchReportTab(currentSubTab);
 }
 
 export function exportReports() {
