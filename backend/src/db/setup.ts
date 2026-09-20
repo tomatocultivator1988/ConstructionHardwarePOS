@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 
 let db: Database;
 let dbInitPromise: Promise<void> | null = null;
+const businessDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date());
 
 export async function initDb(): Promise<void> {
   if (dbInitPromise) return dbInitPromise;
@@ -67,16 +68,26 @@ async function seedBalanceSheetAccountsIfMissing() {
 }
 
 async function seedChartAccountsIfMissing() {
+  const accountInfo = await db.prepare("PRAGMA table_info('chart_accounts')").all() as any[];
+  if (!accountInfo.some((r: any) => r.name === 'opening_balance')) await db.exec("ALTER TABLE chart_accounts ADD COLUMN opening_balance REAL NOT NULL DEFAULT 0");
+  if (!accountInfo.some((r: any) => r.name === 'opening_balance_date')) await db.exec("ALTER TABLE chart_accounts ADD COLUMN opening_balance_date TEXT");
+  if (!accountInfo.some((r: any) => r.name === 'balance_source')) await db.exec("ALTER TABLE chart_accounts ADD COLUMN balance_source TEXT NOT NULL DEFAULT 'manual'");
   const count = await db.prepare('SELECT COUNT(*) count FROM chart_accounts').get() as any;
-  if (Number(count?.count || 0) > 0) return;
   const accounts = [
-    ['1000','Cash on Hand','asset','POS drawer cash'], ['1010','Bank','asset','Manual bank balance'], ['1020','GCash','asset','Manual GCash balance'],
-    ['1100','Accounts Receivable','asset','Unpaid credit balances'], ['1200','Inventory','asset','Inventory at recorded cost'],
-    ['2000','Supplier Payables','liability','Manual supplier balances'], ['3000',"Owner's Capital",'equity','Opening owner capital'], ['3100','Retained Earnings','equity','Cumulative POS profit'],
-    ['4000','Sales','revenue','POS sales'], ['4100','Sales Returns','revenue','Returned sales'], ['5000','Cost of Goods Sold','expense','Cost of inventory sold'], ['6000','Operating Expenses','expense','Recorded business expenses'],
+    ['1000','Cash on Hand','asset','POS drawer cash','pos'], ['1010','Bank','asset','Manual bank balance','manual'], ['1020','GCash','asset','Manual GCash balance','manual'],
+    ['1100','Accounts Receivable','asset','Unpaid credit balances','pos'], ['1200','Inventory','asset','Inventory at recorded cost','pos'],
+    ['2000','Supplier Payables','liability','Manual supplier balances','manual'], ['3000',"Owner's Capital",'equity','Opening owner capital','manual'], ['3100','Retained Earnings','equity','Cumulative POS profit','pos'],
+    ['4000','Sales','revenue','POS sales','pos'], ['4100','Sales Returns','revenue','Returned sales','pos'], ['5000','Cost of Goods Sold','expense','Cost of inventory sold','pos'], ['6000','Operating Expenses','expense','Recorded business expenses','pos'],
   ];
-  const stmt = db.prepare('INSERT INTO chart_accounts (id,code,name,type,description) VALUES (?,?,?,?,?)');
-  for (const account of accounts) await stmt.run(uuidv4(), ...account);
+  if (Number(count?.count || 0) === 0) {
+    const stmt = db.prepare('INSERT INTO chart_accounts (id,code,name,type,description,balance_source) VALUES (?,?,?,?,?,?)');
+    for (const account of accounts) await stmt.run(uuidv4(), ...account);
+  }
+  const manualRow = await db.prepare("SELECT value FROM settings WHERE key='balance_sheet_manual_accounts'").get() as any;
+  let manual: Record<string, number> = {}; try { manual = JSON.parse(manualRow?.value || '{}'); } catch { manual = {}; }
+  const map: Record<string, string> = { bank:'1010', gcash:'1020', owner_capital:'3000', supplier_payables:'2000' };
+  for (const [key, code] of Object.entries(map)) if (manual[key] !== undefined) await db.prepare('UPDATE chart_accounts SET opening_balance=?, opening_balance_date=?, balance_source=\'manual\' WHERE code=?').run(Number(manual[key]), businessDate(), code);
+  for (const code of ['1000','1100','1200','3100','4000','4100','5000','6000']) await db.prepare("UPDATE chart_accounts SET balance_source='pos' WHERE code=?").run(code);
 }
 
 export function getDb(): Database {
@@ -192,6 +203,9 @@ async function initTables() {
       name TEXT NOT NULL,
       type TEXT NOT NULL CHECK (type IN ('asset','liability','equity','revenue','expense')),
       description TEXT,
+      opening_balance REAL NOT NULL DEFAULT 0,
+      opening_balance_date TEXT,
+      balance_source TEXT NOT NULL DEFAULT 'manual',
       is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
