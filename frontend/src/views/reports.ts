@@ -48,8 +48,8 @@ export async function renderReports(): Promise<string> {
     </div>
     <div id="report-period-control">${reportPeriodControl()}</div>
     <div class="report-tabs" role="tablist" aria-label="Report types">
-      <button class="nav-btn ${currentSubTab === 'monthly' ? 'active' : ''}" onclick="switchReportTab('monthly')" style="font-size:var(--fs-sm)">P&L</button>
       <button class="nav-btn ${currentSubTab === 'chart-accounts' ? 'active' : ''}" onclick="switchReportTab('chart-accounts')" style="font-size:var(--fs-sm)">Chart of Accounts</button>
+      <button class="nav-btn ${currentSubTab === 'monthly' ? 'active' : ''}" onclick="switchReportTab('monthly')" style="font-size:var(--fs-sm)">P&L</button>
       <button class="nav-btn ${currentSubTab === 'balance-sheet' ? 'active' : ''}" onclick="switchReportTab('balance-sheet')" style="font-size:var(--fs-sm)">Balance Sheet</button>
       <button class="nav-btn ${currentSubTab === 'cash-flow' ? 'active' : ''}" onclick="switchReportTab('cash-flow')" style="font-size:var(--fs-sm)">Cash Flow</button>
       <button class="nav-btn ${currentSubTab === 'aging' ? 'active' : ''}" onclick="switchReportTab('aging')" style="font-size:var(--fs-sm)">A/R Aging</button>
