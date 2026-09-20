@@ -37,7 +37,7 @@ function reportPeriodControl() {
   if (currentSubTab === 'daily') {
     return `<div class="report-period-bar daily-period-bar"><div><strong>Daily sales date</strong><span>Choose the day to review</span></div><input id="rpt-daily-date" type="date" value="${reportPeriodRange().to}" onchange="reloadDaily()" /></div>`;
   }
-  return `<div class="report-period-bar"><div><strong>Report period</strong><span id="report-period-range">${periodText()}</span></div><select id="report-period" onchange="applyReportPeriod(this.value)"><option value="week" ${currentReportPeriod === 'week' ? 'selected' : ''}>This week</option><option value="month" ${currentReportPeriod === 'month' ? 'selected' : ''}>This month</option><option value="quarter" ${currentReportPeriod === 'quarter' ? 'selected' : ''}>This quarter</option><option value="year" ${currentReportPeriod === 'year' ? 'selected' : ''}>This year</option></select></div>`;
+  return `<div class="report-period-inline"><label for="report-period">Period</label><select id="report-period" onchange="applyReportPeriod(this.value)"><option value="week" ${currentReportPeriod === 'week' ? 'selected' : ''}>This week</option><option value="month" ${currentReportPeriod === 'month' ? 'selected' : ''}>This month</option><option value="quarter" ${currentReportPeriod === 'quarter' ? 'selected' : ''}>This quarter</option><option value="year" ${currentReportPeriod === 'year' ? 'selected' : ''}>This year</option></select></div>`;
 }
 
 export async function renderReports(): Promise<string> {
@@ -46,7 +46,6 @@ export async function renderReports(): Promise<string> {
       <h2>Reports</h2>
       <button class="btn" onclick="exportReports()">Export Report</button>
     </div>
-    <div id="report-period-control">${reportPeriodControl()}</div>
     <div class="report-tabs" role="tablist" aria-label="Report types">
       <button class="nav-btn ${currentSubTab === 'chart-accounts' ? 'active' : ''}" onclick="switchReportTab('chart-accounts')" style="font-size:var(--fs-sm)">Chart of Accounts</button>
       <button class="nav-btn ${currentSubTab === 'monthly' ? 'active' : ''}" onclick="switchReportTab('monthly')" style="font-size:var(--fs-sm)">P&L</button>
@@ -104,6 +103,7 @@ async function loadBalanceSheetReport() {
       <div class="dashboard-card card-warning"><div class="card-label">Accounts Receivable</div><div class="card-value">${fmtPeso(data.assets.receivables)}</div></div>
       <div class="dashboard-card card-success"><div class="card-label">Recorded Drawer Cash</div><div class="card-value">${fmtPeso(data.assets.recorded_cash)}</div></div>
     </div>
+    <div id="report-period-control">${reportPeriodControl()}</div>
     <div class="table-wrap"><table><thead><tr><th>Section</th><th>Account / Line Item</th><th>${fmtDate(data.as_of)}</th><th>Notes</th></tr></thead><tbody>
       ${sectionRow('ASSETS')}
       <tr><td>Current Assets</td><td>Cash / recorded drawer cash</td><td>${fmtPeso(data.assets.recorded_cash)}</td><td>Latest closed cashier count</td></tr>
