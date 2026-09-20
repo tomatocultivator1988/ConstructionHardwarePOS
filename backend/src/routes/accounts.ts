@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 const types = new Set(['asset','liability','equity','revenue','expense']);
+const manualSettingByCode: Record<string, string> = { '1010': 'bank', '1020': 'gcash', '2000': 'supplier_payables', '3000': 'owner_capital' };
 router.use(requireAdmin);
 
 router.get('/', async (req: Request, res: Response) => {
@@ -63,7 +64,17 @@ router.put('/:id', async (req: Request, res: Response) => {
   const current = await db.prepare('SELECT balance_source FROM chart_accounts WHERE id=?').get(req.params.id) as any;
   if (current?.balance_source === 'pos' && (req.body?.opening_balance !== undefined || req.body?.opening_balance_date !== undefined)) return res.status(400).json({ error: 'POS-connected account balances are calculated automatically' });
   if (!/^\d{3,6}$/.test(code) || !name || !types.has(type)) return res.status(400).json({ error: 'Code, name, and a valid account type are required' });
-  try { await db.prepare("UPDATE chart_accounts SET code=?, name=?, type=?, description=?, opening_balance=?, opening_balance_date=?, updated_at=datetime('now') WHERE id=?").run(code, name, type, description, openingBalance, openingDate, req.params.id); res.json({ ok: true }); }
+  try {
+    await db.prepare("UPDATE chart_accounts SET code=?, name=?, type=?, description=?, opening_balance=?, opening_balance_date=?, updated_at=datetime('now') WHERE id=?").run(code, name, type, description, openingBalance, openingDate, req.params.id);
+    const settingKey = manualSettingByCode[code];
+    if (settingKey) {
+      const existing = await db.prepare("SELECT value FROM settings WHERE key='balance_sheet_manual_accounts'").get() as any;
+      let settings: Record<string, number> = {}; try { settings = JSON.parse(existing?.value || '{}'); } catch { settings = {}; }
+      settings[settingKey] = openingBalance;
+      await db.prepare("INSERT INTO settings (key,value) VALUES ('balance_sheet_manual_accounts',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(settings));
+    }
+    res.json({ ok: true });
+  }
   catch (e: any) { res.status(400).json({ error: e.message?.includes('UNIQUE') ? 'Account code already exists' : 'Unable to update account' }); }
 });
 
