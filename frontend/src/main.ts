@@ -124,6 +124,7 @@ Object.assign(window, {
   editBalanceSheetAccounts: reports.editBalanceSheetAccounts,
   saveBalanceSheetAccounts: reports.saveBalanceSheetAccounts,
   reloadChartAccounts: reports.reloadChartAccounts,
+  filterChartAccounts: reports.filterChartAccounts,
   showChartAccountModal: reports.showChartAccountModal,
   saveChartAccount: reports.saveChartAccount,
   toggleChartAccount: reports.toggleChartAccount,

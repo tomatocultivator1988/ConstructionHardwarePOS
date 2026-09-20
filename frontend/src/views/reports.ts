@@ -8,6 +8,7 @@ let currentReportPeriod = 'month';
 let monthlyReportData: any = null;
 let pnlChart: any = null;
 let comprehensiveCache: { key: string; data: any } | null = null;
+let chartAccountFilter = '';
 
 function reportPeriodRange(period = currentReportPeriod): { from: string; to: string } {
   const today = businessDate();
@@ -198,10 +199,12 @@ export async function editBalanceSheetAccounts() {
 }
 
 async function loadChartAccounts() {
-  const accounts = await apiGet<any[]>('/accounts');
-  return `<div class="report-section-heading"><div><h3>Chart of Accounts</h3><span>Basic account list connected to POS balances</span></div><div style="display:flex;gap:var(--space-2);flex-wrap:wrap"><button class="btn btn-sm" onclick="editBalanceSheetAccounts()">Manage Opening Balances</button><button class="btn btn-primary btn-sm" onclick="showChartAccountModal()">+ New Account</button></div></div><div class="report-filters"><label>Filter type</label><select id="coa-type-filter" onchange="reloadChartAccounts()"><option value="">All accounts</option>${['asset','liability','equity','revenue','expense'].map(type => `<option value="${type}">${type[0].toUpperCase()+type.slice(1)}</option>`).join('')}</select></div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Account</th><th>Type</th><th>Current Balance</th><th>Description</th><th>Status</th><th>Actions</th></tr></thead><tbody>${accounts.length ? accounts.map(account => `<tr><td>${esc(account.code)}</td><td><strong>${esc(account.name)}</strong></td><td>${esc(account.type)}</td><td>${fmtPeso(Number(account.balance || 0))}</td><td>${esc(account.description || '—')}</td><td><span class="status-badge ${account.is_active ? 'status-paid' : 'status-pending'}">${account.is_active ? 'Active' : 'Inactive'}</span></td><td><button class="btn btn-sm" onclick='showChartAccountModal(${JSON.stringify(account)})'>Edit</button> <button class="btn btn-sm" onclick="toggleChartAccount('${account.id}',${account.is_active ? 0 : 1})">${account.is_active ? 'Deactivate' : 'Activate'}</button></td></tr>`).join('') : `<tr><td colspan="7">No accounts found</td></tr>`}</tbody></table></div>`;
+  const accounts = await apiGet<any[]>(chartAccountFilter ? `/accounts?type=${chartAccountFilter}` : '/accounts');
+  const types = [['','All'],['asset','Assets'],['liability','Liabilities'],['equity','Equity'],['revenue','Revenue'],['expense','Expenses']];
+  return `<div class="report-section-heading"><div><h3>Chart of Accounts</h3><span>Basic account list connected to POS balances</span></div><div style="display:flex;gap:var(--space-2);flex-wrap:wrap"><button class="btn btn-sm" onclick="editBalanceSheetAccounts()">Manage Opening Balances</button><button class="btn btn-primary btn-sm" onclick="showChartAccountModal()">+ New Account</button></div></div><div class="coa-filter-tabs" role="tablist" aria-label="Account type filter">${types.map(([value,label]) => `<button class="nav-btn ${chartAccountFilter === value ? 'active' : ''}" onclick="filterChartAccounts('${value}')">${label}</button>`).join('')}</div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Account</th><th>Type</th><th>Current Balance</th><th>Description</th><th>Status</th><th>Actions</th></tr></thead><tbody>${accounts.length ? accounts.map(account => `<tr><td>${esc(account.code)}</td><td><strong>${esc(account.name)}</strong></td><td>${esc(account.type)}</td><td>${fmtPeso(Number(account.balance || 0))}</td><td>${esc(account.description || '—')}</td><td><span class="status-badge ${account.is_active ? 'status-paid' : 'status-pending'}">${account.is_active ? 'Active' : 'Inactive'}</span></td><td><button class="btn btn-sm" onclick='showChartAccountModal(${JSON.stringify(account)})'>Edit</button> <button class="btn btn-sm" onclick="toggleChartAccount('${account.id}',${account.is_active ? 0 : 1})">${account.is_active ? 'Deactivate' : 'Activate'}</button></td></tr>`).join('') : `<tr><td colspan="7">No accounts found</td></tr>`}</tbody></table></div>`;
 }
 
+export async function filterChartAccounts(type: string) { chartAccountFilter = type; const el = document.getElementById('report-content'); if (el) el.innerHTML = await loadChartAccounts(); }
 export async function reloadChartAccounts() { const el = document.getElementById('report-content'); if (el) el.innerHTML = await loadChartAccounts(); }
 
 export function showChartAccountModal(account: any = null) {
