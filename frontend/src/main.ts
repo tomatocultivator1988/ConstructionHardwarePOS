@@ -128,6 +128,7 @@ Object.assign(window, {
   showChartAccountModal: reports.showChartAccountModal,
   saveChartAccount: reports.saveChartAccount,
   toggleChartAccount: reports.toggleChartAccount,
+  reloadCashFlow: reports.reloadCashFlow,
   reloadBooks: reports.reloadBooks,
   reloadFinancialSummary: reports.reloadFinancialSummary,
   switchSettingsTab: settings.switchSettingsTab,

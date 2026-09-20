@@ -3,7 +3,7 @@ import { esc, fmtDate, fmtPeso, businessDate, businessMonth } from '../lib/helpe
 import { showToast, showModal, closeModal } from '../lib/helpers';
 import { showExportPeriodModal, exportTable, type ExportPeriod } from '../lib/export';
 
-let currentSubTab = 'daily';
+let currentSubTab = 'monthly';
 let currentReportPeriod = 'month';
 let monthlyReportData: any = null;
 let pnlChart: any = null;
@@ -48,24 +48,15 @@ export async function renderReports(): Promise<string> {
     </div>
     <div id="report-period-control">${reportPeriodControl()}</div>
     <div class="report-tabs" role="tablist" aria-label="Report types">
-      <button class="nav-btn ${currentSubTab === 'daily' ? 'active' : ''}" onclick="switchReportTab('daily')" style="font-size:var(--fs-sm)">Daily Sales</button>
       <button class="nav-btn ${currentSubTab === 'monthly' ? 'active' : ''}" onclick="switchReportTab('monthly')" style="font-size:var(--fs-sm)">P&L</button>
-      <button class="nav-btn ${currentSubTab === 'books' ? 'active' : ''}" onclick="switchReportTab('books')" style="font-size:var(--fs-sm)">Books</button>
-      <button class="nav-btn ${currentSubTab === 'inventory' ? 'active' : ''}" onclick="switchReportTab('inventory')" style="font-size:var(--fs-sm)">Inventory</button>
-      <button class="nav-btn ${currentSubTab === 'product-sales' ? 'active' : ''}" onclick="switchReportTab('product-sales')" style="font-size:var(--fs-sm)">Products</button>
-      <button class="nav-btn ${currentSubTab === 'payments' ? 'active' : ''}" onclick="switchReportTab('payments')" style="font-size:var(--fs-sm)">Payments</button>
-      <button class="nav-btn ${currentSubTab === 'z-reading' ? 'active' : ''}" onclick="switchReportTab('z-reading')" style="font-size:var(--fs-sm)">Z-Reading</button>
-      <button class="nav-btn ${currentSubTab === 'returns' ? 'active' : ''}" onclick="switchReportTab('returns')" style="font-size:var(--fs-sm)">Returns</button>
-      <button class="nav-btn ${currentSubTab === 'aging' ? 'active' : ''}" onclick="switchReportTab('aging')" style="font-size:var(--fs-sm)">A/R Aging</button>
-      <button class="nav-btn ${currentSubTab === 'expenses' ? 'active' : ''}" onclick="switchReportTab('expenses')" style="font-size:var(--fs-sm)">Expenses</button>
-      <button class="nav-btn ${currentSubTab === 'purchases' ? 'active' : ''}" onclick="switchReportTab('purchases')" style="font-size:var(--fs-sm)">Purchases</button>
-      <button class="nav-btn ${currentSubTab === 'deliveries' ? 'active' : ''}" onclick="switchReportTab('deliveries')" style="font-size:var(--fs-sm)">Deliveries</button>
-      <button class="nav-btn ${currentSubTab === 'staff' ? 'active' : ''}" onclick="switchReportTab('staff')" style="font-size:var(--fs-sm)">Staff</button>
-      <button class="nav-btn ${currentSubTab === 'balance-sheet' ? 'active' : ''}" onclick="switchReportTab('balance-sheet')" style="font-size:var(--fs-sm)">Balance Sheet</button>
       <button class="nav-btn ${currentSubTab === 'chart-accounts' ? 'active' : ''}" onclick="switchReportTab('chart-accounts')" style="font-size:var(--fs-sm)">Chart of Accounts</button>
+      <button class="nav-btn ${currentSubTab === 'balance-sheet' ? 'active' : ''}" onclick="switchReportTab('balance-sheet')" style="font-size:var(--fs-sm)">Balance Sheet</button>
+      <button class="nav-btn ${currentSubTab === 'cash-flow' ? 'active' : ''}" onclick="switchReportTab('cash-flow')" style="font-size:var(--fs-sm)">Cash Flow</button>
+      <button class="nav-btn ${currentSubTab === 'aging' ? 'active' : ''}" onclick="switchReportTab('aging')" style="font-size:var(--fs-sm)">A/R Aging</button>
+      <button class="nav-btn ${currentSubTab === 'inventory' ? 'active' : ''}" onclick="switchReportTab('inventory')" style="font-size:var(--fs-sm)">Inventory</button>
     </div>
     <div id="report-content">
-      ${await loadDailyReport()}
+      ${await loadMonthlyReport()}
     </div>
   `;
 }
@@ -83,6 +74,7 @@ export async function switchReportTab(tab: string) {
     else if (tab === 'tax') el.innerHTML = await loadTaxReport();
     else if (tab === 'range') el.innerHTML = await loadRangeForm();
     else if (tab === 'books') el.innerHTML = await loadBooksReport();
+    else if (tab === 'cash-flow') el.innerHTML = await loadCashFlowReport();
     else if (['inventory','product-sales','payments','z-reading','returns','aging','expenses','purchases','deliveries','staff'].includes(tab)) el.innerHTML = await loadComprehensiveReport(tab);
     else if (tab === 'balance-sheet') el.innerHTML = await loadBalanceSheetReport();
     else if (tab === 'chart-accounts') el.innerHTML = await loadChartAccounts();
@@ -532,6 +524,14 @@ async function loadBooksReport(from?: string, to?: string) {
     <h3>Accounts Receivable</h3><div class="table-wrap"><table><thead><tr><th>Invoice</th><th>Buyer</th><th>Total</th><th>Paid</th><th>Balance</th></tr></thead><tbody>${rows(data.receivables,['invoice_number','buyer','total','paid','balance'])}</tbody></table></div>
     <h3>Cash Flow Summary</h3><div class="summary-line"><span>Cash receipts</span><b>${fmtPeso(cash.cash_receipts)}</b></div><div class="summary-line"><span>Cash refunds</span><b>${fmtPeso(cash.cash_refunds)}</b></div><div class="summary-line"><span>Cash expenses</span><b>${fmtPeso(cash.cash_expenses)}</b></div><div class="summary-line total"><span>Net cash change</span><b>${fmtPeso(cash.net_cash_change)}</b></div>`;
 }
+
+async function loadCashFlowReport(from?: string, to?: string) {
+  const period = reportPeriodRange(); const start = from || period.from; const end = to || period.to;
+  const cash = await apiGet<any>(`/reports/cash-flow?from=${start}&to=${end}`);
+  return `<div class="report-section-heading"><div><h3>Cash Flow</h3><span>${fmtDate(start)} – ${fmtDate(end)}</span></div></div><div class="report-filters"><label>From</label><input id="rpt-cash-from" type="date" value="${start}" /><label>To</label><input id="rpt-cash-to" type="date" value="${end}" /><button class="btn btn-primary btn-sm" onclick="reloadCashFlow()">Load</button></div><div class="dashboard-grid report-metrics report-metrics-4"><div class="dashboard-card card-success"><div class="card-label">Cash Receipts</div><div class="card-value">${fmtPeso(cash.cash_receipts)}</div></div><div class="dashboard-card card-danger"><div class="card-label">Cash Refunds</div><div class="card-value">${fmtPeso(cash.cash_refunds)}</div></div><div class="dashboard-card card-warning"><div class="card-label">Cash Expenses</div><div class="card-value">${fmtPeso(cash.cash_expenses)}</div></div><div class="dashboard-card card-info"><div class="card-label">Net Cash Change</div><div class="card-value">${fmtPeso(cash.net_cash_change)}</div></div></div>`;
+}
+
+export async function reloadCashFlow() { const from = (document.getElementById('rpt-cash-from') as HTMLInputElement)?.value; const to = (document.getElementById('rpt-cash-to') as HTMLInputElement)?.value; const el = document.getElementById('report-content'); if (el) el.innerHTML = await loadCashFlowReport(from, to); }
 
 export async function reloadBooks() {
   const from = (document.getElementById('rpt-books-from') as HTMLInputElement)?.value;
