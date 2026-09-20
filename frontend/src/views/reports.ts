@@ -83,7 +83,7 @@ export async function switchReportTab(tab: string) {
 }
 
 async function loadBalanceSheetReport() {
-  const asOf = businessDate();
+  const asOf = reportPeriodRange().to;
   const data = await apiGet<any>(`/reports/balance-sheet?asOf=${asOf}`);
   const money = (value: any) => value === null || value === undefined ? 'Not tracked' : fmtPeso(Number(value));
   const manual = data.manual_accounts || {};
@@ -589,10 +589,7 @@ async function loadMonthlyReport(month?: string) {
   const netColor = data.net_profit >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
   const momColor = data.mom_change >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
   return `
-    <div class="report-filters">
-      <input type="month" id="rpt-month" value="${m}" onchange="reloadMonthly()" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
-      <button class="btn btn-primary btn-sm" onclick="printReport('monthly', '${m}')">Export</button>
-    </div>
+    <div class="report-filters"><button class="btn btn-primary btn-sm" onclick="printReport('monthly', '${m}')">Export</button></div>
     <div class="dashboard-grid report-metrics report-metrics-5">
       <div class="dashboard-card card-success"><div class="card-label">Net Sales</div><div class="card-value">${fmtPeso(data.revenue)}</div><div class="card-sub">Accrual basis</div></div>
       <div class="dashboard-card card-warning"><div class="card-label">COGS</div><div class="card-value">${fmtPeso(data.cogs)}</div></div>
