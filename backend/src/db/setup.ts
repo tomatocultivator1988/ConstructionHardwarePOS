@@ -72,6 +72,7 @@ async function seedChartAccountsIfMissing() {
   if (!accountInfo.some((r: any) => r.name === 'opening_balance')) await db.exec("ALTER TABLE chart_accounts ADD COLUMN opening_balance REAL NOT NULL DEFAULT 0");
   if (!accountInfo.some((r: any) => r.name === 'opening_balance_date')) await db.exec("ALTER TABLE chart_accounts ADD COLUMN opening_balance_date TEXT");
   if (!accountInfo.some((r: any) => r.name === 'balance_source')) await db.exec("ALTER TABLE chart_accounts ADD COLUMN balance_source TEXT NOT NULL DEFAULT 'manual'");
+  if (!accountInfo.some((r: any) => r.name === 'category')) await db.exec("ALTER TABLE chart_accounts ADD COLUMN category TEXT NOT NULL DEFAULT ''");
   const count = await db.prepare('SELECT COUNT(*) count FROM chart_accounts').get() as any;
   const accounts = [
     ['1000','Cash on Hand','asset','POS drawer cash','pos'], ['1010','Bank','asset','Manual bank balance','manual'], ['1020','GCash','asset','Manual GCash balance','manual'],
@@ -202,6 +203,7 @@ async function initTables() {
       code TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       type TEXT NOT NULL CHECK (type IN ('asset','liability','equity','revenue','expense')),
+      category TEXT NOT NULL DEFAULT '',
       description TEXT,
       opening_balance REAL NOT NULL DEFAULT 0,
       opening_balance_date TEXT,

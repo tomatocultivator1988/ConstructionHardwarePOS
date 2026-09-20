@@ -12,7 +12,7 @@ router.get('/', async (req: Request, res: Response) => {
   const db = getDb();
   const type = String(req.query.type || '').trim();
   const where = type && types.has(type) ? 'WHERE type = ?' : '';
-  const rows = await db.prepare(`SELECT id, code, name, type, description, opening_balance, opening_balance_date, balance_source, is_active, created_at, updated_at FROM chart_accounts ${where} ORDER BY code`).all(...(where ? [type] : [])) as any[];
+  const rows = await db.prepare(`SELECT id, code, name, type, category, description, opening_balance, opening_balance_date, balance_source, is_active, created_at, updated_at FROM chart_accounts ${where} ORDER BY code`).all(...(where ? [type] : [])) as any[];
   const [sales, returns, cogs, expenses, payments, refunds, inventory, receivables, manualRow] = await Promise.all([
     db.prepare("SELECT COALESCE(SUM(net_sales),0) value FROM v_invoice_financials WHERE status <> 'voided'").get(),
     db.prepare("SELECT COALESCE(SUM(total_credit),0) value FROM invoice_returns").get(),
@@ -44,11 +44,12 @@ router.post('/', async (req: Request, res: Response) => {
   const name = String(req.body?.name || '').trim();
   const type = String(req.body?.type || '').trim();
   const description = String(req.body?.description || '').trim();
+  const category = String(req.body?.category || type).trim();
   const openingBalance = Number(req.body?.opening_balance || 0);
   const openingDate = req.body?.opening_balance_date ? String(req.body.opening_balance_date) : null;
   if (!/^\d{3,6}$/.test(code) || !name || !types.has(type)) return res.status(400).json({ error: 'Code, name, and a valid account type are required' });
   try {
-    await db.prepare('INSERT INTO chart_accounts (id,code,name,type,description,opening_balance,opening_balance_date,balance_source) VALUES (?,?,?,?,?,?,?,?)').run(uuidv4(), code, name, type, description, openingBalance, openingDate, 'manual');
+    await db.prepare('INSERT INTO chart_accounts (id,code,name,type,category,description,opening_balance,opening_balance_date,balance_source) VALUES (?,?,?,?,?,?,?,?,?)').run(uuidv4(), code, name, type, category, description, openingBalance, openingDate, 'manual');
     res.status(201).json({ ok: true });
   } catch (e: any) { res.status(400).json({ error: e.message?.includes('UNIQUE') ? 'Account code already exists' : 'Unable to create account' }); }
 });
@@ -59,13 +60,14 @@ router.put('/:id', async (req: Request, res: Response) => {
   const name = String(req.body?.name || '').trim();
   const type = String(req.body?.type || '').trim();
   const description = String(req.body?.description || '').trim();
+  const category = String(req.body?.category || type).trim();
   const openingBalance = Number(req.body?.opening_balance || 0);
   const openingDate = req.body?.opening_balance_date ? String(req.body.opening_balance_date) : null;
   const current = await db.prepare('SELECT balance_source FROM chart_accounts WHERE id=?').get(req.params.id) as any;
-  if (current?.balance_source === 'pos' && (req.body?.opening_balance !== undefined || req.body?.opening_balance_date !== undefined)) return res.status(400).json({ error: 'POS-connected account balances are calculated automatically' });
+  if (current?.balance_source === 'pos' && (req.body?.code !== undefined || req.body?.type !== undefined || req.body?.opening_balance !== undefined || req.body?.opening_balance_date !== undefined)) return res.status(400).json({ error: 'POS-linked account code, type, and balance are managed automatically' });
   if (!/^\d{3,6}$/.test(code) || !name || !types.has(type)) return res.status(400).json({ error: 'Code, name, and a valid account type are required' });
   try {
-    await db.prepare("UPDATE chart_accounts SET code=?, name=?, type=?, description=?, opening_balance=?, opening_balance_date=?, updated_at=datetime('now') WHERE id=?").run(code, name, type, description, openingBalance, openingDate, req.params.id);
+    await db.prepare("UPDATE chart_accounts SET code=?, name=?, type=?, category=?, description=?, opening_balance=?, opening_balance_date=?, updated_at=datetime('now') WHERE id=?").run(code, name, type, category, description, openingBalance, openingDate, req.params.id);
     const settingKey = manualSettingByCode[code];
     if (settingKey) {
       const existing = await db.prepare("SELECT value FROM settings WHERE key='balance_sheet_manual_accounts'").get() as any;
