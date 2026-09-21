@@ -79,7 +79,9 @@ export async function showPOModal(editId?: string) {
       ${editing?.items?.length ? editing.items.map((item: any) => renderLineItem(++lineItemCount, matOpts, item)).join('') : renderLineItem(++lineItemCount, matOpts)}
     </div>
     <button class="btn btn-sm" onclick="addPOLineItem()" style="margin-bottom:var(--space-4)">+ Add Item</button>
+    <div id="po-notes-wrap" class="form-group" style="display:${editing?.notes ? 'block' : 'none'}"><label>Notes (optional)</label><textarea id="pof-notes" rows="3" maxlength="500" placeholder="Add notes for this purchase order">${esc(editing?.notes || '')}</textarea></div>
     <div class="modal-actions">
+      <button class="btn btn-sm" onclick="togglePONotes()">Notes</button>
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" id="pof-save-btn" onclick="createPO()">${editing ? 'Save Changes' : 'Create PO'}</button>
     </div>
@@ -148,6 +150,11 @@ export function poMaterialChanged(n: number) {
   }
 }
 
+export function togglePONotes() {
+  const wrap = document.getElementById('po-notes-wrap');
+  if (wrap) wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+}
+
 export function updatePOMargin(n: number) {
   const select = document.getElementById(`po-mat-${n}`) as HTMLSelectElement | null;
   const costInput = document.getElementById(`po-cost-${n}`) as HTMLInputElement | null;
@@ -190,8 +197,9 @@ export async function createPO() {
 
   disableBtn('pof-save-btn', true);
   try {
-    if (editingPOId) await apiPut(`/purchase-orders/${editingPOId}`, { supplier_id: supplierId, items, order_date: orderDate });
-    else await apiPost('/purchase-orders', { supplier_id: supplierId, items, order_date: orderDate });
+    const notes = (document.getElementById('pof-notes') as HTMLTextAreaElement)?.value.trim() || null;
+    if (editingPOId) await apiPut(`/purchase-orders/${editingPOId}`, { supplier_id: supplierId, items, order_date: orderDate, notes });
+    else await apiPost('/purchase-orders', { supplier_id: supplierId, items, order_date: orderDate, notes });
     closeModal(); loadView('purchase-orders');
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('pof-save-btn', false); }
@@ -205,6 +213,7 @@ export async function showPODetail(id: string) {
     <div class="summary-line"><span>Status</span><span class="status-badge ${po.status}">${po.status}</span></div>
     <div class="summary-line"><span>Order Date</span><span>${fmtDate(po.order_date)}</span></div>
     ${po.received_date ? `<div class="summary-line"><span>Received</span><span>${fmtDate(po.received_date)}</span></div>` : ''}
+    ${po.notes ? `<div class="summary-line"><span>Notes</span><span style="white-space:pre-wrap;text-align:right">${esc(po.notes)}</span></div>` : ''}
     <h4 style="margin-top:var(--space-4)">Items</h4>
     <table style="margin-top:var(--space-2)">
       <thead><tr><th>Material</th><th>Description</th><th>Qty</th><th>Unit Cost</th><th>Selling Price</th><th>Average Price</th><th>Margin</th><th>Total</th></tr></thead>

@@ -102,6 +102,7 @@ Object.assign(window, {
   editSupplier: suppliers.editSupplier,
   delSupplier: suppliers.delSupplier,
   showPOModal: purchaseOrders.showPOModal,
+  togglePONotes: purchaseOrders.togglePONotes,
   addPOLineItem: purchaseOrders.addPOLineItem,
   poMaterialChanged: purchaseOrders.poMaterialChanged,
   updatePOMargin: purchaseOrders.updatePOMargin,

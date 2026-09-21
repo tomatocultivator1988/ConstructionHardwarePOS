@@ -25,13 +25,14 @@ export async function renderSuppliers(): Promise<string> {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Name</th><th>Contact Person</th><th>Phone</th><th>Email</th><th>TIN</th><th class="actions">Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Contact Person</th><th>Phone</th><th>Address</th><th>Email</th><th>TIN</th><th class="actions">Actions</th></tr></thead>
         <tbody>
           ${suppliers.length ? suppliers.map((s: Supplier) => `
             <tr>
               <td data-label="Name" style="font-weight:600">${esc(s.name)}</td>
               <td data-label="Contact Person">${esc(s.contact_person || '-')}</td>
               <td data-label="Phone">${esc(s.phone || '-')}</td>
+              <td data-label="Address">${esc(s.address || '-')}</td>
               <td data-label="Email">${esc(s.email || '-')}</td>
               <td data-label="TIN">${esc(s.tin || '-')}</td>
               <td data-label="" class="actions">
@@ -39,7 +40,7 @@ export async function renderSuppliers(): Promise<string> {
                 <button class="btn btn-danger btn-sm" onclick="delSupplier('${s.id}')">Delete</button>
               </td>
             </tr>
-          `).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--c-text-muted);padding:2rem">No suppliers yet</td></tr>'}
+          `).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--c-text-muted);padding:2rem">No suppliers yet</td></tr>'}
         </tbody>
       </table>
     </div>
