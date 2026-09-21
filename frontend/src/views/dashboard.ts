@@ -206,7 +206,7 @@ export async function renderDashboard(): Promise<string> {
             index,
           }));
         } } },
-        tooltip: { callbacks: { label: (context: any) => { const value = Number(context.raw) || 0; const percentage = expenseTotal > 0 ? ((value / expenseTotal) * 100).toFixed(1) : '0.0'; return ` ${context.label}: ₱${value.toFixed(2)} (${percentage}%)`; } } }
+        tooltip: { callbacks: { label: (context: any) => { const value = Number(context.raw) || 0; const percentage = expenseTotal > 0 ? ((value / expenseTotal) * 100).toFixed(1) : '0.0'; return ` ${context.label}: ${fmtPeso(value)} (${percentage}%)`; } } }
       } } }));
     }
     const ctx7 = (document.getElementById('chart-pnl') as HTMLCanvasElement)?.getContext('2d');

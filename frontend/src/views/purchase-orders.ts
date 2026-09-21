@@ -12,7 +12,7 @@ export async function renderPurchaseOrders(): Promise<string> {
   const pos = Array.isArray(posResponse) ? posResponse : [];
   const materialsResponse = await apiGet<Material[]>('/materials');
   const materials = Array.isArray(materialsResponse) ? materialsResponse : [];
-  (window as any).__poMaterialNames = Object.fromEntries(materials.map((m: Material) => [m.id, `${m.name} (₱${(m.cost_price || 0).toFixed(2)})`]));
+  (window as any).__poMaterialNames = Object.fromEntries(materials.map((m: Material) => [m.id, `${m.name} (${fmtPeso(m.cost_price || 0)})`]));
   const grouped = new Map<string, PurchaseOrder[]>();
   [...pos].sort((a, b) => String(b.order_date).localeCompare(String(a.order_date))).forEach(po => {
     const month = String(po.order_date || '').slice(0, 7) || 'unknown';
@@ -63,7 +63,7 @@ export async function showPOModal(editId?: string) {
   lineItemCount = 0;
 
   const supplierOpts = suppliers.map(s => `<option value="${s.id}" ${editing?.supplier_id === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('');
-  const matOpts = materials.map(m => `<option value="${m.id}">${esc(m.name)} (₱${(m.cost_price || 0).toFixed(2)})</option>`).join('');
+  const matOpts = materials.map(m => `<option value="${m.id}">${esc(m.name)} (${fmtPeso(m.cost_price || 0)})</option>`).join('');
 
   showModal(`
     <h3>${editing ? `Edit ${esc(editing.po_number)}` : 'New Purchase Order'}</h3>
@@ -131,7 +131,7 @@ function renderLineItem(n: number, matOpts: string, data?: any) {
 
 export function addPOLineItem() {
   const materials = (window as any).__poMaterials || [];
-  const matOpts = materials.map((m: Material) => `<option value="${m.id}">${esc(m.name)} (₱${(m.cost_price || 0).toFixed(2)})</option>`).join('');
+  const matOpts = materials.map((m: Material) => `<option value="${m.id}">${esc(m.name)} (${fmtPeso(m.cost_price || 0)})</option>`).join('');
   lineItemCount++;
   const container = document.getElementById('po-line-items');
   if (container) {

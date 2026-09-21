@@ -32,7 +32,7 @@ export function fmtTime(d: string): string {
 
 export function fmtPeso(n: number): string {
   const v = Number(n);
-  return '₱' + (isNaN(v) ? '0.00' : v.toFixed(2));
+  return '₱' + (isNaN(v) ? '0.00' : v.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 }
 
 export function val(id: string): string {
