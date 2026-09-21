@@ -117,19 +117,21 @@ async function seedChartAccountsIfMissing() {
   const canonical = new Set(Object.keys(Object.fromEntries(accounts.map((account) => [account[0], true]))));
   for (const account of accounts) {
     const [code, name, type, description, source] = account as string[];
+    const typeRow = await db.prepare('SELECT name FROM account_types WHERE lower(name)=lower(?) OR lower(base_type)=lower(?) ORDER BY CASE WHEN lower(name)=lower(?) THEN 0 ELSE 1 END LIMIT 1').get(type, type, type) as any;
+    const accountType = String(typeRow?.name || type);
     let row = await db.prepare('SELECT id FROM chart_accounts WHERE code=?').get(code) as any;
     if (!row) {
       const aliases = legacyAliases[code] || [];
       const candidates = await db.prepare('SELECT id,name FROM chart_accounts WHERE lower(trim(name)) IN (' + aliases.map(() => '?').join(',') + ') ORDER BY is_active DESC, created_at ASC').all(...aliases) as any[];
       if (candidates.length) {
         row = candidates[0];
-        await db.prepare('UPDATE chart_accounts SET code=?, name=?, type=?, category=?, description=?, balance_source=?, opening_balance=CASE WHEN ?=\'pos\' THEN 0 ELSE opening_balance END, updated_at=datetime(\'now\') WHERE id=?').run(code, name, type, description, description, source, source, row.id);
+        await db.prepare('UPDATE chart_accounts SET code=?, name=?, type=?, category=?, description=?, balance_source=?, opening_balance=CASE WHEN ?=\'pos\' THEN 0 ELSE opening_balance END, updated_at=datetime(\'now\') WHERE id=?').run(code, name, accountType, description, description, source, source, row.id);
       }
     }
     if (!row) {
-      await db.prepare('INSERT INTO chart_accounts (id,code,name,type,description,balance_source) VALUES (?,?,?,?,?,?)').run(uuidv4(), code, name, type, description, source);
+      await db.prepare('INSERT INTO chart_accounts (id,code,name,type,description,balance_source) VALUES (?,?,?,?,?,?)').run(uuidv4(), code, name, accountType, description, source);
     }
-    await db.prepare('UPDATE chart_accounts SET balance_source=?, type=?, name=?, description=?, is_active=1 WHERE code=?').run(source, type, name, description, code);
+    await db.prepare('UPDATE chart_accounts SET balance_source=?, type=?, name=?, description=?, is_active=1 WHERE code=?').run(source, accountType, name, description, code);
   }
   for (const [code, aliases] of Object.entries(legacyAliases)) {
     if (!canonical.has(code)) continue;
