@@ -9,7 +9,7 @@ const router = Router();
 
 router.get('/', requireAdmin, async (_req: Request, res: Response) => {
   const db = getDb();
-  const users = await db.prepare('SELECT id, username, role, is_active, created_at FROM users ORDER BY created_at ASC').all();
+  const users = await db.prepare('SELECT id, username, role, is_active, created_at FROM users WHERE is_active=1 ORDER BY created_at ASC').all();
   res.json(users);
 });
 
