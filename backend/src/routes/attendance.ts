@@ -19,7 +19,7 @@ router.get('/', async (req: Request, res: Response) => {
   const db = getDb();
   const month = validMonth(req.query.month) ? String(req.query.month) : new Date().toISOString().slice(0, 7);
   const userId = typeof req.query.user_id === 'string' ? req.query.user_id : '';
-  const staff = await db.prepare("SELECT id, username FROM users WHERE role='staff' ORDER BY username COLLATE NOCASE").all();
+  const staff = await db.prepare("SELECT id, username FROM users WHERE role='staff' AND is_active=1 ORDER BY username COLLATE NOCASE").all();
   const records = await db.prepare(`
     SELECT a.id, a.user_id, a.attendance_date, a.status, n.remarks
     FROM attendance a JOIN users u ON u.id=a.user_id
@@ -38,7 +38,7 @@ router.put('/remark', async (req: Request, res: Response) => {
   const attendanceDate = req.body?.date;
   const remarks = typeof req.body?.remarks === 'string' ? req.body.remarks.trim() : '';
   if (!userId || !validDate(attendanceDate) || remarks.length > 250) { res.status(400).json({ error: 'Staff, valid date, and remarks up to 250 characters are required' }); return; }
-  const staff = await db.prepare("SELECT id, username FROM users WHERE id=? AND role='staff'").get(userId) as any;
+  const staff = await db.prepare("SELECT id, username FROM users WHERE id=? AND role='staff' AND is_active=1").get(userId) as any;
   if (!staff) { res.status(404).json({ error: 'Staff member not found' }); return; }
   const existing = await db.prepare('SELECT id, remarks FROM attendance_notes WHERE user_id=? AND attendance_date=?').get(userId, attendanceDate) as any;
   if (existing) await db.prepare("UPDATE attendance_notes SET remarks=?, updated_at=datetime('now') WHERE id=?").run(remarks, existing.id);
