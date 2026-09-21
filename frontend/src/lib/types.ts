@@ -121,6 +121,7 @@ export interface PurchaseOrder {
   status: 'pending' | 'received' | 'cancelled';
   total: number;
   order_date: string;
+  notes: string | null;
   received_date: string | null;
   created_at: string;
   items: PoItem[];

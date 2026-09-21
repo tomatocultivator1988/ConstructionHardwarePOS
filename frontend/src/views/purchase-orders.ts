@@ -8,8 +8,10 @@ let lineItemCount = 0;
 let editingPOId: string | null = null;
 
 export async function renderPurchaseOrders(): Promise<string> {
-  const pos = await apiGet<PurchaseOrder[]>('/purchase-orders');
-  const materials = await apiGet<Material[]>('/materials');
+  const posResponse = await apiGet<PurchaseOrder[]>('/purchase-orders');
+  const pos = Array.isArray(posResponse) ? posResponse : [];
+  const materialsResponse = await apiGet<Material[]>('/materials');
+  const materials = Array.isArray(materialsResponse) ? materialsResponse : [];
   (window as any).__poMaterialNames = Object.fromEntries(materials.map((m: Material) => [m.id, `${m.name} (₱${(m.cost_price || 0).toFixed(2)})`]));
   const grouped = new Map<string, PurchaseOrder[]>();
   [...pos].sort((a, b) => String(b.order_date).localeCompare(String(a.order_date))).forEach(po => {
@@ -50,8 +52,10 @@ export async function renderPurchaseOrders(): Promise<string> {
 
 
 export async function showPOModal(editId?: string) {
-  const suppliers = await apiGet<Supplier[]>('/suppliers');
-  const materials = await apiGet<Material[]>('/materials');
+  const suppliersResponse = await apiGet<Supplier[]>('/suppliers');
+  const materialsResponse = await apiGet<Material[]>('/materials');
+  const suppliers = Array.isArray(suppliersResponse) ? suppliersResponse : [];
+  const materials = Array.isArray(materialsResponse) ? materialsResponse : [];
   const editing = editId ? await apiGet<PurchaseOrder>(`/purchase-orders/${editId}`) : null;
   editingPOId = editId || null;
   (window as any).__poMaterials = materials;
