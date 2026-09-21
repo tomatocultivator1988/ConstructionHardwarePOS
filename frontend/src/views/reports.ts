@@ -303,12 +303,52 @@ export function exportReports() {
       await exportDetailedWorkbook(period);
       return;
     }
+    const query = `from=${encodeURIComponent(period.from)}&to=${encodeURIComponent(period.to)}`;
     if (currentSubTab === 'monthly') {
-      const data = await apiGet<any>(`/reports/range?type=profit&from=${period.from}&to=${period.to}`);
-      exportTable('Profit and Loss Report', period, ['Metric', 'Amount'], [['Revenue', fmtPeso(data.revenue)], ['COGS', fmtPeso(data.cogs)], ['Gross Profit', fmtPeso(data.gross_profit)], ['Expenses', fmtPeso(data.expenses)], ['Net Profit', fmtPeso(data.net_profit)]], format, `Period: ${period.label}`);
+      const data = await apiGet<any>(`/reports/range?type=profit&${query}`);
+      exportTable('Profit and Loss Statement', period, ['Metric', 'Amount'], [['Revenue', fmtPeso(data.revenue)], ['COGS', fmtPeso(data.cogs)], ['Gross Profit', fmtPeso(data.gross_profit)], ['Expenses', fmtPeso(data.expenses)], ['Net Profit', fmtPeso(data.net_profit)]], format, `Period: ${period.label}`);
       return;
     }
-    const data = await apiGet<any>(`/reports/range?type=sales&from=${period.from}&to=${period.to}`);
+    if (currentSubTab === 'cash-flow') {
+      const data = await apiGet<any>(`/reports/cash-flow?${query}`);
+      const rows = [['Cash sales and collections', fmtPeso(data.cash_receipts)], ['Cash refunds', fmtPeso(data.cash_refunds)], ['Cash expenses', fmtPeso(data.cash_expenses)], ['Cash-in drawer adjustments', fmtPeso(data.cash_in)], ['Cash-out drawer adjustments', fmtPeso(data.cash_out)], ['Net cash from operating activities', fmtPeso(data.net_cash_change)], ['Opening cash total', fmtPeso(data.opening_cash)], ['Expected cash total', fmtPeso(data.expected_cash)], ['Counted closing cash total', fmtPeso(data.closing_cash)], ['Drawer variance', fmtPeso(data.variance)]];
+      exportTable('Statement of Cash Flows', period, ['Account / Activity', 'Amount'], rows, format, `POS cash drawer activity · ${period.label}`);
+      return;
+    }
+    if (currentSubTab === 'balance-sheet') {
+      const data = await apiGet<any>(`/reports/balance-sheet?asOf=${encodeURIComponent(period.to)}`);
+      const rows: unknown[][] = [];
+      const add = (section: string, name: string, value: unknown, note: string) => rows.push([section, name, value === null || value === undefined ? 'Not tracked' : fmtPeso(Number(value)), note]);
+      add('Current Assets', 'Cash / recorded drawer cash', data.assets?.recorded_cash, 'POS-linked');
+      add('Current Assets', 'Accounts receivable', data.assets?.receivables, 'POS-linked');
+      add('Current Assets', 'Inventory at cost', data.assets?.inventory_cost, 'POS-linked');
+      add('Fixed Assets', 'Land', data.manual_accounts?.land, 'Manual account');
+      add('Fixed Assets', 'Equipment', data.manual_accounts?.equipment, 'Manual account');
+      add('Current Liabilities', 'Supplier payables', data.manual_accounts?.supplier_payables, 'Manual account');
+      add('Equity', "Owner's capital", data.manual_accounts?.owner_capital, 'Manual account');
+      add('Equity', 'Retained earnings', data.equity?.retained_earnings, 'POS-derived');
+      exportTable('Balance Sheet', period, ['Section', 'Account / Line Item', 'Amount', 'Notes'], rows, format, `POS-based financial position as of ${period.to}`);
+      return;
+    }
+    if (currentSubTab === 'chart-accounts') {
+      const accounts = await apiGet<any[]>('/accounts');
+      const rows = accounts.map((account: any) => [account.code, account.name, account.base_type || account.type, account.category || '—', fmtPeso(account.current_balance ?? account.opening_balance), account.balance_source === 'manual' ? 'Manual' : 'POS-linked', account.is_active ? 'Active' : 'Inactive']);
+      exportTable('Chart of Accounts', period, ['Code', 'Account', 'Type', 'Category', 'Balance', 'Source', 'Status'], rows, format, `Account list exported · ${period.label}`);
+      return;
+    }
+    if (currentSubTab === 'aging' || currentSubTab === 'inventory') {
+      const data = await apiGet<any>(`/reports/comprehensive?${query}`);
+      const config = comprehensiveLabels[currentSubTab];
+      const items = data[config.key] || [];
+      const rows = items.map((item: any) => config.fields.map((field) => {
+        const value = item[field];
+        if (value === null || value === undefined || value === '') return '—';
+        return ['amount','balance','total','stock_value','cost_price','price_per_unit'].includes(field) ? fmtPeso(Number(value)) : String(value);
+      }));
+      exportTable(config.title, period, config.headers, rows, format, period.label);
+      return;
+    }
+    const data = await apiGet<any>(`/reports/range?type=sales&${query}`);
     const rows = (data.invoices || []).map((row: any) => [row.invoice_number, row.customer_name, fmtDate(row.issued_date), row.status, fmtPeso(row.total), fmtPeso(row.paid)]);
     exportTable('Sales Report', period, ['Invoice', 'Buyer', 'Issued', 'Status', 'Total', 'Paid'], rows, format, `Gross sales: ${fmtPeso(data.totals?.gross_sales || 0)} · Profit: ${fmtPeso(data.totals?.profit || 0)} · ${rows.length} invoice${rows.length === 1 ? '' : 's'}`);
   });
