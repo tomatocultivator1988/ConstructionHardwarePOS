@@ -106,7 +106,7 @@ async function loadBalanceSheetReport() {
   const customRows = (type: string) => customAccounts.filter((account: any) => (account.base_type || account.type) === type).map((account: any) => `<tr><td>${esc(account.category || (type === 'asset' ? 'Assets' : type === 'liability' ? 'Liabilities' : 'Equity'))}</td><td>${esc(account.name)}</td><td>${fmtPeso(Number(account.opening_balance || 0))}</td><td>Manual opening balance${account.opening_balance_date ? ` as of ${fmtDate(account.opening_balance_date)}` : ''}</td></tr>`).join('');
   const sectionRow = (label: string) => `<tr style="background:var(--c-primary);color:#fff"><th colspan="4" style="color:#fff;letter-spacing:.08em">${label}</th></tr>`;
   const totalRow = (label: string, amount: string, note: string) => `<tr style="font-weight:800;border-top:2px solid var(--c-primary)"><td colspan="2">${label}</td><td>${amount}</td><td>${note}</td></tr>`;
-  return `<div class="report-section-heading"><div><h3>Balance Sheet</h3><span>POS-based financial position as of ${fmtDate(data.as_of)}</span></div><button class="btn btn-primary btn-sm" onclick="exportBalanceSheet()">Export Balance Sheet</button></div>
+  return `<div class="report-section-heading"><div><h3>Balance Sheet</h3><span>POS-based financial position as of ${fmtDate(data.as_of)}</span></div><div><button class="btn btn-primary btn-sm" onclick="printReport('balance-sheet','As of ${fmtDate(data.as_of)}')">PDF / Print</button> <button class="btn btn-primary btn-sm" onclick="exportBalanceSheet()">Excel</button></div></div>
     <div class="notice-card" style="margin:var(--space-4) 0;padding:var(--space-4);border:1px solid var(--c-warning);border-radius:var(--radius-md);background:var(--c-warning-soft,#fff7e6)"><strong>Important:</strong> This report uses only recorded POS data. Bank, GCash, owner capital, supplier payables, loans, fixed assets, and withdrawals are not tracked here.</div>
     <div class="dashboard-grid report-metrics report-metrics-3">
       <div class="dashboard-card card-info"><div class="card-label">Inventory at Cost</div><div class="card-value">${fmtPeso(data.assets.inventory_cost)}</div></div>
@@ -628,7 +628,7 @@ async function loadMonthlyReport(month?: string) {
   const netColor = data.net_profit >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
   const momColor = data.mom_change >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
   return `
-    <div class="report-filters"><button class="btn btn-primary btn-sm" onclick="printReport('monthly', '${m}')">Export</button></div>
+    <div class="report-filters"><button class="btn btn-primary btn-sm" onclick="printReport('monthly', '${m}')">PDF / Print</button></div>
     <div class="dashboard-grid report-metrics report-metrics-5">
       <div class="dashboard-card card-success"><div class="card-label">Net Sales</div><div class="card-value">${fmtPeso(data.revenue)}</div><div class="card-sub">Accrual basis</div></div>
       <div class="dashboard-card card-warning"><div class="card-label">COGS</div><div class="card-value">${fmtPeso(data.cogs)}</div></div>
@@ -800,10 +800,13 @@ export function printReport(type: string, date: string) {
       @page { size: A4; margin: 16mm; }
       * { box-sizing: border-box; }
       body { font-family: Arial, sans-serif; color: #17202a; background: #fff; margin: 0; font-size: 10pt; }
-      body:before { content: 'BUILDPRO CONSTRUCTION SUPPLY'; display: block; font-size: 18pt; font-weight: 800; letter-spacing: .03em; margin-bottom: 3px; }
-      body:after { content: 'Generated ${date}'; display: block; margin-top: 18px; padding-top: 8px; border-top: 1px solid #cbd5e1; color: #64748b; font-size: 8pt; }
+      body:before { content: 'JEG ENTERPRISES'; display: block; text-align:center; font-size: 18pt; font-weight: 800; letter-spacing: .03em; margin-bottom: 3px; }
+      body:after { content: 'POS-based report · Generated ${date}'; display: block; margin-top: 18px; padding-top: 8px; border-top: 1px solid #cbd5e1; color: #64748b; font-size: 8pt; text-align:center; }
       #report-content, .report-content { display: block !important; }
       h2 { font-size: 15pt; margin: 0 0 14px; }
+      h2 { text-align:center; font-size:16pt; margin: 0 0 4px; }
+      .formal-title { text-align:center; font-size:14pt; font-weight:700; margin:0 0 16px; color:#334155; }
+      .formal-title small { display:block; font-size:9pt; font-weight:400; margin-top:4px; color:#64748b; }
       h3, h4 { color: #334155; margin: 14px 0 7px; }
       .dashboard-grid { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; gap: 8px !important; margin: 0 0 14px !important; }
       .dashboard-card, .chart-card { background: #fff !important; border: 1px solid #cbd5e1 !important; border-radius: 4px !important; padding: 9px !important; box-shadow: none !important; }
@@ -818,7 +821,7 @@ export function printReport(type: string, date: string) {
       .table-wrap { overflow: visible !important; }
       .summary-line { display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding: 6px 0; }
       .summary-line.total { font-weight: 800; border-top: 2px solid #334155; border-bottom: 0; }
-    </style></head><body><div id="report-content">${content}</div>
+    </style></head><body><div class="formal-title">${type === 'monthly' ? 'Profit and Loss Statement' : type === 'balance-sheet' ? 'Balance Sheet' : type === 'cash-flow' ? 'Statement of Cash Flows' : 'POS Report'}<small>${date}</small></div><div id="report-content">${content}</div>
     <script>window.onload=function(){window.print()}</script>
     </body></html>
   `);
