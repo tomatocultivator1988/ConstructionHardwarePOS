@@ -36,8 +36,11 @@ router.put('/types/:id/status', async (req: Request, res: Response) => {
 router.get('/', async (req: Request, res: Response) => {
   const db = getDb();
   const type = String(req.query.type || '').trim();
-  const where = type ? 'WHERE ca.type = ?' : '';
-  const rows = await db.prepare(`SELECT ca.id, ca.code, ca.name, ca.type, at.base_type, ca.category, ca.description, ca.opening_balance, ca.opening_balance_date, ca.balance_source, ca.is_active, ca.created_at, ca.updated_at FROM chart_accounts ca JOIN account_types at ON at.name=ca.type ${where} ORDER BY ca.code`).all(...(where ? [type] : [])) as any[];
+  const includeInactive = String(req.query.includeInactive || '') === '1';
+  const filters = [includeInactive ? '' : 'ca.is_active=1', type ? 'ca.type = ?' : ''].filter(Boolean);
+  const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
+  const params = type ? (includeInactive ? [type] : [type]) : [];
+  const rows = await db.prepare(`SELECT ca.id, ca.code, ca.name, ca.type, at.base_type, ca.category, ca.description, ca.opening_balance, ca.opening_balance_date, ca.balance_source, ca.is_active, ca.created_at, ca.updated_at FROM chart_accounts ca JOIN account_types at ON at.name=ca.type ${where} ORDER BY ca.code`).all(...params) as any[];
   const [sales, returns, cogs, expenses, payments, refunds, inventory, receivables, manualRow] = await Promise.all([
     db.prepare("SELECT COALESCE(SUM(net_sales),0) value FROM v_invoice_financials WHERE status <> 'voided'").get(),
     db.prepare("SELECT COALESCE(SUM(total_credit),0) value FROM invoice_returns").get(),

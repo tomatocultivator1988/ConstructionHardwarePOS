@@ -136,6 +136,9 @@ async function seedChartAccountsIfMissing() {
     const placeholders = aliases.map(() => '?').join(',');
     await db.prepare(`UPDATE chart_accounts SET is_active=0, updated_at=datetime('now') WHERE code<>? AND lower(trim(name)) IN (${placeholders})`).run(code, ...aliases);
   }
+  // Hide known legacy rows even when their names no longer match after a
+  // previous partial migration. Custom/manual accounts remain untouched.
+  await db.prepare("UPDATE chart_accounts SET is_active=0, updated_at=datetime('now') WHERE code IN ('1001','114','2001','3001','3002','4001','5001','5002','7001','7002')").run();
   const manualRow = await db.prepare("SELECT value FROM settings WHERE key='balance_sheet_manual_accounts'").get() as any;
   let manual: Record<string, number> = {}; try { manual = JSON.parse(manualRow?.value || '{}'); } catch { manual = {}; }
   const map: Record<string, string> = { bank:'1010', gcash:'1020', owner_capital:'3000', supplier_payables:'2000' };
