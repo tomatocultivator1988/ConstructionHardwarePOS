@@ -1209,6 +1209,10 @@ tr.low-stock td:first-child { box-shadow:inset 4px 0 0 var(--c-warning); }
 
 /* Reports use compact, wrapping controls and metric cards on small screens. */
 .report-tabs { display:flex; flex-wrap:wrap; gap:3px; width:100%; margin-bottom:var(--space-5); padding:3px; border-radius:var(--radius-md); background:var(--c-bg); }
+.modal-content:has(#po-line-items) { width:min(1100px, calc(100vw - 2rem)); max-width:none; }
+.modal-content:has(#po-line-items) .line-item { display:grid !important; grid-template-columns:minmax(150px,2fr) minmax(150px,2fr) 90px repeat(3,minmax(110px,1fr)) 80px 42px; align-items:end !important; gap:10px !important; }
+.modal-content:has(#po-line-items) .line-item > div { min-width:0; }
+.modal-content:has(#po-line-items) .line-item input, .modal-content:has(#po-line-items) .line-item select { box-sizing:border-box; width:100% !important; }
 .report-period-bar { display:flex; align-items:center; justify-content:space-between; gap:var(--space-4); margin-bottom:var(--space-3); padding:var(--space-3) var(--space-4); border:1px solid var(--c-border); border-radius:var(--radius-lg); background:var(--c-surface); }
 .report-period-bar > div { display:flex; flex-direction:column; gap:2px; }
 .report-period-bar strong { color:var(--c-text); font-size:var(--fs-sm); }

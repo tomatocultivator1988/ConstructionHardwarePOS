@@ -46,6 +46,7 @@ export interface Payment {
   method: string;
   payment_date: string;
   notes: string | null;
+  mode_of_payment: string | null;
 }
 
 export interface Invoice {

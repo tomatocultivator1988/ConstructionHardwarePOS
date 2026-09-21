@@ -51,7 +51,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 
 router.post('/', async (req: Request, res: Response) => {
   const db = getDb();
-  const { supplier_id, items, order_date, notes } = req.body;
+  const { supplier_id, items, order_date, notes, mode_of_payment } = req.body;
 
   if (!supplier_id) { res.status(400).json({ error: 'Supplier is required' }); return; }
   if (!items || !items.length) { res.status(400).json({ error: 'At least one item is required' }); return; }
@@ -91,8 +91,8 @@ router.post('/', async (req: Request, res: Response) => {
     total = Math.round(total * 100) / 100;
 
     await db.prepare(
-      'INSERT INTO purchase_orders (id, supplier_id, po_number, status, total, order_date, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(poId, supplier_id, poNumber, 'pending', total, order_date, notes?.trim() || null);
+      'INSERT INTO purchase_orders (id, supplier_id, po_number, status, total, order_date, notes, mode_of_payment) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(poId, supplier_id, poNumber, 'pending', total, order_date, notes?.trim() || null, mode_of_payment?.trim() || null);
 
     for (const item of items) {
       const lineTotal = Math.round((item.quantity * item.unit_cost) * 100) / 100;
@@ -120,7 +120,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     res.status(400).json({ error: 'Cancelled purchase orders cannot be edited' }); return;
   }
 
-  const { supplier_id, items, order_date, notes } = req.body;
+  const { supplier_id, items, order_date, notes, mode_of_payment } = req.body;
 
   if (order_date !== undefined && (typeof order_date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(order_date))) { res.status(400).json({ error: 'Invalid order date' }); return; }
   if (items !== undefined) {
@@ -144,12 +144,14 @@ router.put('/:id', async (req: Request, res: Response) => {
     const oldQty = new Map<string, number>();
     oldItems.forEach((item: any) => { if (item.material_id) oldQty.set(item.material_id, (oldQty.get(item.material_id) || 0) + Number(item.quantity || 0)); });
     if (supplier_id) {
-      await db.prepare('UPDATE purchase_orders SET supplier_id = ?, order_date = ?, notes = ? WHERE id = ?')
-        .run(supplier_id, order_date || existing.order_date, notes !== undefined ? (String(notes).trim() || null) : existing.notes, req.params.id);
+      await db.prepare('UPDATE purchase_orders SET supplier_id = ?, order_date = ?, notes = ?, mode_of_payment = ? WHERE id = ?')
+        .run(supplier_id, order_date || existing.order_date, notes !== undefined ? (String(notes).trim() || null) : existing.notes, mode_of_payment !== undefined ? (String(mode_of_payment).trim() || null) : existing.mode_of_payment, req.params.id);
     } else if (order_date) {
-      await db.prepare('UPDATE purchase_orders SET order_date = ?, notes = ? WHERE id = ?').run(order_date, notes !== undefined ? (String(notes).trim() || null) : existing.notes, req.params.id);
+      await db.prepare('UPDATE purchase_orders SET order_date = ?, notes = ?, mode_of_payment = ? WHERE id = ?').run(order_date, notes !== undefined ? (String(notes).trim() || null) : existing.notes, mode_of_payment !== undefined ? (String(mode_of_payment).trim() || null) : existing.mode_of_payment, req.params.id);
     } else if (notes !== undefined) {
       await db.prepare('UPDATE purchase_orders SET notes = ? WHERE id = ?').run(String(notes).trim() || null, req.params.id);
+    } else if (mode_of_payment !== undefined) {
+      await db.prepare('UPDATE purchase_orders SET mode_of_payment = ? WHERE id = ?').run(String(mode_of_payment).trim() || null, req.params.id);
     }
 
     if (items && items.length) {

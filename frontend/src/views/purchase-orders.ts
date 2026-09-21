@@ -25,6 +25,7 @@ export async function renderPurchaseOrders(): Promise<string> {
               <td data-label="PO #" style="font-weight:600">${esc(po.po_number)}</td>
               <td data-label="Supplier">${esc(po.supplier_name)}</td>
               <td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(po.total)}</td>
+              <td data-label="Mode of Payment">${esc(po.mode_of_payment || '-')}</td>
               <td data-label="Status"><span class="status-badge ${po.status}">${po.status}</span></td>
               <td data-label="Order Date">${fmtDate(po.order_date)}</td>
               <td data-label="Received">${po.received_date ? fmtDate(po.received_date) : '-'}</td>
@@ -41,9 +42,9 @@ export async function renderPurchaseOrders(): Promise<string> {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>PO #</th><th>Supplier</th><th>Total</th><th>Status</th><th>Order Date</th><th>Received</th><th class="actions">Actions</th></tr></thead>
+        <thead><tr><th>PO #</th><th>Supplier</th><th>Total</th><th>Mode of Payment</th><th>Status</th><th>Order Date</th><th>Received</th><th class="actions">Actions</th></tr></thead>
         <tbody>
-          ${pos.length ? poRows : '<tr><td colspan="7" style="text-align:center;color:var(--c-text-muted);padding:2rem">No purchase orders yet</td></tr>'}
+          ${pos.length ? poRows : '<tr><td colspan="8" style="text-align:center;color:var(--c-text-muted);padding:2rem">No purchase orders yet</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -77,6 +78,10 @@ export async function showPOModal(editId?: string) {
         <input id="pof-date" type="date" value="${new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date())}" />
         <div class="field-error" id="pof-date-err"></div>
       </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Mode of Payment</label><select id="pof-payment"><option value="">Select mode...</option>${['Cash','Bank Transfer','GCash','Credit','Check'].map(method => `<option value="${method}" ${editing?.mode_of_payment === method ? 'selected' : ''}>${method}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Notes (optional)</label><input id="pof-notes-short" maxlength="500" value="${esc(editing?.notes || '')}" placeholder="Optional note" /></div>
     </div>
     <h4>Line Items</h4>
     <div id="po-line-items">
@@ -201,9 +206,10 @@ export async function createPO() {
 
   disableBtn('pof-save-btn', true);
   try {
-    const notes = (document.getElementById('pof-notes') as HTMLTextAreaElement)?.value.trim() || null;
-    if (editingPOId) await apiPut(`/purchase-orders/${editingPOId}`, { supplier_id: supplierId, items, order_date: orderDate, notes });
-    else await apiPost('/purchase-orders', { supplier_id: supplierId, items, order_date: orderDate, notes });
+    const notes = (document.getElementById('pof-notes') as HTMLTextAreaElement)?.value.trim() || (document.getElementById('pof-notes-short') as HTMLInputElement)?.value.trim() || null;
+    const mode_of_payment = (document.getElementById('pof-payment') as HTMLSelectElement)?.value || null;
+    if (editingPOId) await apiPut(`/purchase-orders/${editingPOId}`, { supplier_id: supplierId, items, order_date: orderDate, notes, mode_of_payment });
+    else await apiPost('/purchase-orders', { supplier_id: supplierId, items, order_date: orderDate, notes, mode_of_payment });
     closeModal(); loadView('purchase-orders');
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('pof-save-btn', false); }
@@ -217,6 +223,7 @@ export async function showPODetail(id: string) {
     <div class="summary-line"><span>Status</span><span class="status-badge ${po.status}">${po.status}</span></div>
     <div class="summary-line"><span>Order Date</span><span>${fmtDate(po.order_date)}</span></div>
     ${po.received_date ? `<div class="summary-line"><span>Received</span><span>${fmtDate(po.received_date)}</span></div>` : ''}
+    ${po.mode_of_payment ? `<div class="summary-line"><span>Mode of Payment</span><span>${esc(po.mode_of_payment)}</span></div>` : ''}
     ${po.notes ? `<div class="summary-line"><span>Notes</span><span style="white-space:pre-wrap;text-align:right">${esc(po.notes)}</span></div>` : ''}
     <h4 style="margin-top:var(--space-4)">Items</h4>
     <table style="margin-top:var(--space-2)">

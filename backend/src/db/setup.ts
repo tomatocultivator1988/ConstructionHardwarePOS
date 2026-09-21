@@ -284,6 +284,7 @@ async function initTables() {
       total REAL NOT NULL,
       order_date TEXT NOT NULL,
       notes TEXT,
+      mode_of_payment TEXT,
       received_date TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
@@ -482,6 +483,7 @@ async function migrateSchema() {
   if (!invoiceCols.includes('delivered_by')) await db.exec("ALTER TABLE invoices ADD COLUMN delivered_by TEXT");
   const poInfo = (await db.prepare("PRAGMA table_info('purchase_orders')").all()) as any[];
   if (!poInfo.some((r: any) => r.name === 'notes')) await db.exec("ALTER TABLE purchase_orders ADD COLUMN notes TEXT");
+  if (!poInfo.some((r: any) => r.name === 'mode_of_payment')) await db.exec("ALTER TABLE purchase_orders ADD COLUMN mode_of_payment TEXT");
 
   await db.exec("UPDATE invoices SET delivery_status = CASE WHEN delivery_person_id IS NOT NULL AND trim(delivery_person_id) <> '' THEN 'assigned' WHEN delivery_person IS NOT NULL AND trim(delivery_person) <> '' THEN 'assigned' ELSE 'unassigned' END WHERE delivery_status IS NULL OR trim(delivery_status) = ''");
 
