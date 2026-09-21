@@ -20,7 +20,7 @@ export async function renderPurchaseOrders(): Promise<string> {
     grouped.get(month)!.push(po);
   });
   const monthLabel = (month: string) => month === 'unknown' ? 'Undated' : new Date(`${month}-01T00:00:00`).toLocaleDateString('en-PH', { month: 'long', year: 'numeric' });
-  const poRows = [...grouped.entries()].map(([month, monthPOs]) => `<tr class="po-month-divider"><td colspan="7"><strong>${esc(monthLabel(month))}</strong><span>${monthPOs.length} purchase order${monthPOs.length === 1 ? '' : 's'}</span></td></tr>${monthPOs.map((po: PurchaseOrder) => `
+  const poRows = [...grouped.entries()].map(([month, monthPOs]) => `<tr class="po-month-divider"><td colspan="8"><strong>${esc(monthLabel(month))}</strong><span>${monthPOs.length} purchase order${monthPOs.length === 1 ? '' : 's'}</span></td></tr>${monthPOs.map((po: PurchaseOrder) => `
             <tr>
               <td data-label="PO #" style="font-weight:600">${esc(po.po_number)}</td>
               <td data-label="Supplier">${esc(po.supplier_name)}</td>
@@ -75,7 +75,7 @@ export async function showPOModal(editId?: string) {
       </div>
       <div class="form-group">
         <label>Order Date *</label>
-        <input id="pof-date" type="date" value="${new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date())}" />
+        <input id="pof-date" type="date" value="${editing?.order_date || new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date())}" />
         <div class="field-error" id="pof-date-err"></div>
       </div>
     </div>
