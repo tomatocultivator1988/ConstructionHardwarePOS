@@ -845,6 +845,21 @@ export async function downloadStatementPdf(type: 'cash-flow' | 'monthly' | 'bala
   wrapper.appendChild(clone);
   document.body.appendChild(wrapper);
   clone.querySelectorAll('input,select,button,.report-filters').forEach((node) => ((node as HTMLElement).style.display = 'none'));
+  const pdfStyle = document.createElement('style');
+  pdfStyle.textContent = `
+    .report-section-heading { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #0f3557; padding:0 0 8px; margin:0 0 16px; }
+    .report-section-heading h3 { margin:0; font-size:16px; color:#0f3557; }
+    .report-section-heading span { color:#64748b; font-size:11px; }
+    .dashboard-grid { display:block !important; margin:0 0 16px !important; }
+    .dashboard-card { display:flex !important; align-items:baseline; justify-content:space-between; gap:18px; min-height:0 !important; padding:8px 0 !important; border:0 !important; border-bottom:1px solid #e2e8f0 !important; border-radius:0 !important; box-shadow:none !important; background:#fff !important; }
+    .dashboard-card .card-label { color:#334155 !important; font-size:9pt !important; letter-spacing:.03em; }
+    .dashboard-card .card-value { color:#0f172a !important; font-size:11pt !important; font-weight:700; white-space:nowrap; }
+    .dashboard-card .card-sub { font-size:8pt !important; }
+    .chart-card { page-break-inside:avoid; }
+    .table-wrap { page-break-inside:auto; }
+    tr { page-break-inside:avoid; }
+  `;
+  wrapper.prepend(pdfStyle);
   try {
     const canvas = await html2canvas(wrapper, { scale: 2, backgroundColor: '#fff', useCORS: true, logging: false });
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
