@@ -13,7 +13,7 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 
   const db = getDb();
-  const user = await db.prepare('SELECT * FROM users WHERE username = ?').get(username) as any;
+  const user = await db.prepare('SELECT * FROM users WHERE username = ? AND is_active=1').get(username) as any;
   if (!user) {
     console.log('Login failed: user not found:', username);
     res.status(401).json({ error: 'Invalid credentials' });

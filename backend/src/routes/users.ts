@@ -9,7 +9,7 @@ const router = Router();
 
 router.get('/', requireAdmin, async (_req: Request, res: Response) => {
   const db = getDb();
-  const users = await db.prepare('SELECT id, username, role, created_at FROM users ORDER BY created_at ASC').all();
+  const users = await db.prepare('SELECT id, username, role, is_active, created_at FROM users ORDER BY created_at ASC').all();
   res.json(users);
 });
 
@@ -27,7 +27,7 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
   const hash = bcrypt.hashSync(pin, 10);
   await db.prepare('INSERT INTO users (id, username, pin_hash, role) VALUES (?, ?, ?, ?)').run(id, username.trim(), hash, role || 'staff');
 
-  const user = await db.prepare('SELECT id, username, role, created_at FROM users WHERE id = ?').get(id);
+  const user = await db.prepare('SELECT id, username, role, is_active, created_at FROM users WHERE id = ?').get(id);
   await logAudit(req.user?.id || null, 'create', 'user', id, `Created user ${username}`, null, user);
   res.status(201).json(user);
 });
@@ -67,9 +67,18 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
     if (adminCount <= 1) { res.status(400).json({ error: 'Cannot delete the last admin' }); return; }
   }
 
-  await db.prepare('DELETE FROM users WHERE id = ?').run(uid);
-  await logAudit(req.user?.id || null, 'delete', 'user', uid, `Deleted user ${existing.username}`, existing, null);
+  await db.prepare('UPDATE users SET is_active=0 WHERE id = ?').run(uid);
+  await logAudit(req.user?.id || null, 'update', 'user', uid, `Deactivated user ${existing.username}`, existing, { ...existing, is_active: 0 });
   res.status(204).send();
+});
+
+router.put('/:id/status', requireAdmin, async (req: Request, res: Response) => {
+  const uid = String(req.params.id);
+  const existing = await getDb().prepare('SELECT * FROM users WHERE id=?').get(uid) as any;
+  if (!existing) { res.status(404).json({ error: 'User not found' }); return; }
+  if (uid === req.user?.id && !req.body?.is_active) { res.status(400).json({ error: 'You cannot deactivate your own account' }); return; }
+  await getDb().prepare('UPDATE users SET is_active=? WHERE id=?').run(req.body?.is_active ? 1 : 0, uid);
+  res.json({ ok: true });
 });
 
 router.get('/me', (req: Request, res: Response) => {

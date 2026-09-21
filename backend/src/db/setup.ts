@@ -321,6 +321,7 @@ async function initTables() {
       username TEXT NOT NULL UNIQUE,
       pin_hash TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'staff',
+      is_active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -428,6 +429,8 @@ async function initTables() {
     INSERT OR IGNORE INTO invoice_sequence (id, next_number) VALUES (1, 1);
     INSERT OR IGNORE INTO po_sequence (id, next_number) VALUES (1, 1);
   `);
+  const userCols = await db.prepare("PRAGMA table_info('users')").all() as any[];
+  if (!userCols.some((c: any) => c.name === 'is_active')) await db.exec("ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1");
   const catalogDefaults: Record<string, string[]> = {
     category: ['Cement', 'Steel/Rebar', 'Lumber/Wood', 'Plumbing', 'Electrical', 'Paint', 'Hardware', 'Sand/Gravel', 'Roofing', 'Tools', 'Other'],
     unit: ['Each', 'Kilogram', 'Meter', 'Roll', 'Gallon', 'Pieces', 'Liter', 'Box', 'Set', 'Bag', 'Pair', 'Sack', 'Bottle', 'Pack'],

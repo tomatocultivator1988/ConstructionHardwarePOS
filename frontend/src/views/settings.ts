@@ -229,16 +229,17 @@ async function loadUsersTab() {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Username</th><th>Role</th><th>Created</th><th class="actions">Actions</th></tr></thead>
+        <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Created</th><th class="actions">Actions</th></tr></thead>
         <tbody>
           ${users.map((u: any) => `
             <tr>
               <td data-label="Username" style="font-weight:600">${esc(u.username)}</td>
               <td data-label="Role"><span class="status-badge" style="background:${u.role === 'admin' ? 'var(--c-primary-bg)' : 'var(--c-success-bg)'};color:${u.role === 'admin' ? 'var(--c-primary)' : 'var(--c-success)'}">${u.role}</span></td>
+              <td data-label="Status"><span class="status-badge" style="background:${u.is_active ? 'var(--c-success-bg)' : 'var(--c-warning-bg)'};color:${u.is_active ? 'var(--c-success)' : 'var(--c-warning)'}">${u.is_active ? 'Active' : 'Deactivated'}</span></td>
               <td data-label="Created">${fmtDate(u.created_at)}</td>
               <td data-label="" class="actions">
                 <button class="btn btn-primary btn-sm" onclick="showUserModal('${u.id}')">Edit</button>
-                <button class="btn btn-danger btn-sm" onclick="delUser('${u.id}')">Delete</button>
+                <button class="btn ${u.is_active ? 'btn-danger' : 'btn-primary'} btn-sm" onclick="delUser('${u.id}',${u.is_active ? 0 : 1})">${u.is_active ? 'Deactivate' : 'Activate'}</button>
               </td>
             </tr>
           `).join('')}
@@ -297,10 +298,10 @@ export async function updateUser(id: string) {
   } catch (e: any) { showToast(e.message); } finally { disableBtn('uf-save-btn', false); }
 }
 
-export async function delUser(id: string) {
-  const ok = await showConfirmModal(`<h3>Delete User</h3><p style="color:var(--c-text-secondary)">Are you sure?</p>`);
+export async function delUser(id: string, active = 0) {
+  const ok = await showConfirmModal(`<h3>${active ? 'Activate' : 'Deactivate'} User</h3><p style="color:var(--c-text-secondary)">${active ? 'Allow this cashier to log in and open shifts again?' : 'This keeps all historical sales and shifts but hides the cashier from active use.'}</p>`);
   if (!ok) return;
-  try { await apiDel(`/users/${id}`); switchSettingsTab('users'); }
+  try { await apiPut(`/users/${id}/status`, { is_active: active }); switchSettingsTab('users'); }
   catch (e: any) { showToast(e.message); }
 }
 

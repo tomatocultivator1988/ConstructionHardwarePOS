@@ -74,7 +74,7 @@ router.post('/open', requireAdmin, async (req: Request, res: Response) => {
   const targetUserId = typeof req.body?.user_id === 'string' ? req.body.user_id : '';
   if (!Number.isFinite(openingCash) || openingCash < 0) { res.status(400).json({ error: 'Opening cash must be zero or greater' }); return; }
   if (!targetUserId) { res.status(400).json({ error: 'Staff member is required' }); return; }
-  const target = await db.prepare("SELECT id, username, role FROM users WHERE id = ?").get(targetUserId) as any;
+  const target = await db.prepare("SELECT id, username, role FROM users WHERE id = ? AND is_active=1").get(targetUserId) as any;
   if (!target) { res.status(404).json({ error: 'Staff member not found' }); return; }
   if (target.role !== 'staff' && !(target.role === 'admin' && target.id === req.user!.id)) { res.status(400).json({ error: 'Select a staff account or open your own admin shift' }); return; }
   const open = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id = ? AND status = 'open'").get(targetUserId);
