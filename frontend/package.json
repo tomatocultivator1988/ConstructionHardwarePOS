@@ -17,6 +17,8 @@
     "vite": "^8.0.16"
   },
   "dependencies": {
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "xlsx-js-style": "^1.2.0"
   }
 }

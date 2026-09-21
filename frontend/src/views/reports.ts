@@ -791,6 +791,10 @@ export async function reloadTax() {
 }
 
 export function printReport(type: string, date: string) {
+  if (type === 'cash-flow' || type === 'monthly' || type === 'balance-sheet') {
+    void downloadStatementPdf(type, date);
+    return;
+  }
   const w = window.open('', '_blank', 'width=800,height=700');
   if (!w) return;
   const content = document.getElementById('report-content')?.innerHTML || '';
@@ -826,4 +830,44 @@ export function printReport(type: string, date: string) {
     </body></html>
   `);
   w.document.close();
+}
+
+export async function downloadStatementPdf(type: 'cash-flow' | 'monthly' | 'balance-sheet', date: string) {
+  const source = document.getElementById('report-content');
+  if (!source) return;
+  const { default: html2canvas } = await import('html2canvas');
+  const { jsPDF } = await import('jspdf');
+  const title = type === 'monthly' ? 'Profit and Loss Statement' : type === 'balance-sheet' ? 'Balance Sheet' : 'Statement of Cash Flows';
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'position:fixed;left:-100000px;top:0;width:1100px;padding:40px;background:#fff;color:#17202a;font-family:Arial,sans-serif;';
+  wrapper.innerHTML = `<div style="text-align:center;font-size:24px;font-weight:800;letter-spacing:.03em">JEG ENTERPRISES</div><div style="text-align:center;font-size:18px;font-weight:700;margin:8px 0 20px">${title}<div style="font-size:12px;font-weight:400;color:#64748b;margin-top:4px">${date}</div></div>`;
+  const clone = source.cloneNode(true) as HTMLElement;
+  wrapper.appendChild(clone);
+  document.body.appendChild(wrapper);
+  clone.querySelectorAll('input,select,button,.report-filters').forEach((node) => ((node as HTMLElement).style.display = 'none'));
+  try {
+    const canvas = await html2canvas(wrapper, { scale: 2, backgroundColor: '#fff', useCORS: true, logging: false });
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const margin = 10;
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imageWidth = pageWidth - margin * 2;
+    const imageHeight = canvas.height * imageWidth / canvas.width;
+    const image = canvas.toDataURL('image/jpeg', 0.95);
+    let heightLeft = imageHeight;
+    let position = margin;
+    pdf.addImage(image, 'JPEG', margin, position, imageWidth, imageHeight);
+    heightLeft -= pageHeight - margin * 2;
+    while (heightLeft > 0) {
+      position = heightLeft - imageHeight + margin;
+      pdf.addPage();
+      pdf.addImage(image, 'JPEG', margin, position, imageWidth, imageHeight);
+      heightLeft -= pageHeight - margin * 2;
+    }
+    const filename = type === 'monthly' ? 'profit-and-loss' : type === 'balance-sheet' ? 'balance-sheet' : 'statement-of-cash-flows';
+    pdf.save(`jeg-enterprises-${filename}.pdf`);
+    showToast('PDF downloaded', 'success');
+  } finally {
+    wrapper.remove();
+  }
 }

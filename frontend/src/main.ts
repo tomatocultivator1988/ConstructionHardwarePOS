@@ -119,6 +119,7 @@ Object.assign(window, {
   reloadTax: reports.reloadTax,
   loadRangeReport: reports.loadRangeReport,
   printReport: reports.printReport,
+  downloadStatementPdf: reports.downloadStatementPdf,
   applyReportPeriod: reports.applyReportPeriod,
   exportReports: reports.exportReports,
   exportBalanceSheet: reports.exportBalanceSheet,
