@@ -155,12 +155,19 @@ router.get('/cash-flow', async (req: Request, res: Response) => {
   const db = getDb();
   const from = (req.query.from as string) || businessDate();
   const to = (req.query.to as string) || from;
-  const [receipts, refunds, expenses, drawer, shifts] = await Promise.all([
+  const [receipts, refunds, expenses, drawer, shifts, shiftBreakdown] = await Promise.all([
     db.prepare("SELECT COALESCE(SUM(p.amount),0) total FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE p.method='cash' AND i.status <> 'voided' AND date(p.payment_date, '+8 hours') BETWEEN ? AND ?").get(from,to),
     db.prepare("SELECT COALESCE(SUM(r.amount),0) total FROM refunds r JOIN invoices i ON i.id=r.invoice_id WHERE r.method='cash' AND i.status <> 'voided' AND date(r.created_at, '+8 hours') BETWEEN ? AND ?").get(from,to),
     db.prepare("SELECT COALESCE(SUM(amount),0) total FROM expenses WHERE payment_method='cash' AND date(expense_date, '+8 hours') BETWEEN ? AND ?").get(from,to),
     db.prepare("SELECT COALESCE(SUM(CASE WHEN type='cash_in' THEN amount ELSE 0 END),0) cash_in, COALESCE(SUM(CASE WHEN type='cash_out' THEN amount ELSE 0 END),0) cash_out FROM cash_drawer_events WHERE date(created_at, '+8 hours') BETWEEN ? AND ?").get(from,to),
     db.prepare("SELECT COALESCE(SUM(opening_cash),0) opening_cash, COALESCE(SUM(expected_cash),0) expected_cash, COALESCE(SUM(closing_cash),0) closing_cash, COALESCE(SUM(variance),0) variance, COUNT(*) shift_count FROM cashier_shifts WHERE status='closed' AND date(COALESCE(closed_at, opened_at), '+8 hours') BETWEEN ? AND ?").get(from,to),
+    db.prepare(`SELECT cs.id, u.username cashier, cs.opened_at, cs.closed_at, cs.opening_cash, cs.expected_cash, cs.closing_cash, cs.variance,
+      COALESCE((SELECT SUM(p.amount) FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE p.shift_id=cs.id AND p.method='cash' AND i.status <> 'voided'),0) cash_sales,
+      COALESCE((SELECT SUM(r.amount) FROM refunds r JOIN invoices i ON i.id=r.invoice_id WHERE r.shift_id=cs.id AND r.method='cash' AND i.status <> 'voided'),0) cash_refunds,
+      COALESCE((SELECT SUM(CASE WHEN e.type='cash_in' THEN e.amount ELSE 0 END) FROM cash_drawer_events e WHERE e.shift_id=cs.id),0) cash_in,
+      COALESCE((SELECT SUM(CASE WHEN e.type='cash_out' THEN e.amount ELSE 0 END) FROM cash_drawer_events e WHERE e.shift_id=cs.id),0) cash_out
+      FROM cashier_shifts cs JOIN users u ON u.id=cs.user_id
+      WHERE cs.status='closed' AND date(COALESCE(cs.closed_at, cs.opened_at), '+8 hours') BETWEEN ? AND ? ORDER BY cs.closed_at DESC`).all(from,to),
   ]);
   const cashReceipts = Number((receipts as any).total || 0);
   const cashRefunds = Number((refunds as any).total || 0);
@@ -171,7 +178,7 @@ router.get('/cash-flow', async (req: Request, res: Response) => {
   const expectedCash = Number((shifts as any).expected_cash || 0);
   const closingCash = Number((shifts as any).closing_cash || 0);
   const variance = Number((shifts as any).variance || 0);
-  res.json({ from, to, cash_receipts: cashReceipts, cash_refunds: cashRefunds, cash_expenses: cashExpenses, cash_in: cashIn, cash_out: cashOut, opening_cash: openingCash, expected_cash: expectedCash, closing_cash: closingCash, variance, shift_count: Number((shifts as any).shift_count || 0), net_cash_change: cashReceipts - cashRefunds - cashExpenses + cashIn - cashOut });
+  res.json({ from, to, cash_receipts: cashReceipts, cash_refunds: cashRefunds, cash_expenses: cashExpenses, cash_in: cashIn, cash_out: cashOut, opening_cash: openingCash, expected_cash: expectedCash, closing_cash: closingCash, variance, shift_count: Number((shifts as any).shift_count || 0), shift_breakdown: shiftBreakdown, net_cash_change: cashReceipts - cashRefunds - cashExpenses + cashIn - cashOut });
 });
 
 // Single accounting summary used for reconciliation and accountant review.
