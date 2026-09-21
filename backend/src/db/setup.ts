@@ -104,6 +104,38 @@ async function seedChartAccountsIfMissing() {
     const stmt = db.prepare('INSERT INTO chart_accounts (id,code,name,type,description,balance_source) VALUES (?,?,?,?,?,?)');
     for (const account of accounts) await stmt.run(uuidv4(), ...account);
   }
+  // Older demo data used different account codes and left POS accounts as
+  // manual. Adopt those rows into the canonical POS mapping so reports do not
+  // show duplicate/conflicting Cash, A/R, Inventory, Sales, or Returns rows.
+  const legacyAliases: Record<string, string[]> = {
+    '1000': ['cash on hand', 'cash'], '1010': ['bank'], '1020': ['gcash'],
+    '1100': ['accounts receivable'], '1200': ['inventory'],
+    '2000': ['supplier payables', 'accounts payable'], '3000': ["owner's capital", 'owner capital'],
+    '3100': ['retained earnings'], '4000': ['sales'], '4100': ['sales return', 'sales returns'],
+    '5000': ['cost of goods sold', 'cogs'], '6000': ['operating expenses', 'expenses'],
+  };
+  const canonical = new Set(Object.keys(Object.fromEntries(accounts.map((account) => [account[0], true]))));
+  for (const account of accounts) {
+    const [code, name, type, description, source] = account as string[];
+    let row = await db.prepare('SELECT id FROM chart_accounts WHERE code=?').get(code) as any;
+    if (!row) {
+      const aliases = legacyAliases[code] || [];
+      const candidates = await db.prepare('SELECT id,name FROM chart_accounts WHERE lower(trim(name)) IN (' + aliases.map(() => '?').join(',') + ') ORDER BY is_active DESC, created_at ASC').all(...aliases) as any[];
+      if (candidates.length) {
+        row = candidates[0];
+        await db.prepare('UPDATE chart_accounts SET code=?, name=?, type=?, category=?, description=?, balance_source=?, opening_balance=CASE WHEN ?=\'pos\' THEN 0 ELSE opening_balance END, updated_at=datetime(\'now\') WHERE id=?').run(code, name, type, description, description, source, source, row.id);
+      }
+    }
+    if (!row) {
+      await db.prepare('INSERT INTO chart_accounts (id,code,name,type,description,balance_source) VALUES (?,?,?,?,?,?)').run(uuidv4(), code, name, type, description, source);
+    }
+    await db.prepare('UPDATE chart_accounts SET balance_source=?, type=?, name=?, description=?, is_active=1 WHERE code=?').run(source, type, name, description, code);
+  }
+  for (const [code, aliases] of Object.entries(legacyAliases)) {
+    if (!canonical.has(code)) continue;
+    const placeholders = aliases.map(() => '?').join(',');
+    await db.prepare(`UPDATE chart_accounts SET is_active=0, updated_at=datetime('now') WHERE code<>? AND lower(trim(name)) IN (${placeholders})`).run(code, ...aliases);
+  }
   const manualRow = await db.prepare("SELECT value FROM settings WHERE key='balance_sheet_manual_accounts'").get() as any;
   let manual: Record<string, number> = {}; try { manual = JSON.parse(manualRow?.value || '{}'); } catch { manual = {}; }
   const map: Record<string, string> = { bank:'1010', gcash:'1020', owner_capital:'3000', supplier_payables:'2000' };
