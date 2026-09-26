@@ -4,9 +4,24 @@ const CACHE_TTL = 30000;
 const cache = new Map<string, { data: any; ts: number }>();
 const inFlight = new Map<string, Promise<any>>();
 
+const RELATED_CACHE_KEYS: Record<string, string[]> = {
+  invoices: ['materials', 'analytics', 'payments', 'reports', 'receivables', 'customers'],
+  materials: ['catalog', 'analytics', 'invoices'],
+  payments: ['invoices', 'receivables', 'analytics', 'reports'],
+  expenses: ['analytics', 'reports'],
+  'purchase-orders': ['materials', 'analytics', 'reports'],
+  shifts: ['analytics'],
+  catalog: ['materials', 'expenses'],
+  customers: ['receivables', 'invoices'],
+  suppliers: ['purchase-orders'],
+};
+
 function invalidatePattern(pattern: string) {
-  for (const key of cache.keys()) {
-    if (key.startsWith('/' + pattern) || key.startsWith(pattern)) cache.delete(key);
+  const patternsToClear = [pattern, ...(RELATED_CACHE_KEYS[pattern] || [])];
+  for (const p of patternsToClear) {
+    for (const key of cache.keys()) {
+      if (key.startsWith('/' + p) || key.startsWith(p)) cache.delete(key);
+    }
   }
 }
 

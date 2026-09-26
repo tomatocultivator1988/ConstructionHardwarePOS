@@ -47,8 +47,13 @@ router.get('/', async (req: Request, res: Response) => {
   if (req.query.page !== undefined) {
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 15));
-    const total = Number((await db.prepare(`SELECT COUNT(*) total FROM invoices i${where}`).get(...params) as any).total);
-    const data = req.query.export === '1' ? await db.prepare(baseQuery).all(...params) : await db.prepare(`${baseQuery} LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize);
+    const [totalRow, data] = await Promise.all([
+      db.prepare(`SELECT COUNT(*) total FROM invoices i${where}`).get(...params) as Promise<any>,
+      req.query.export === '1'
+        ? (db.prepare(baseQuery).all(...params) as Promise<any[]>)
+        : (db.prepare(`${baseQuery} LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize) as Promise<any[]>)
+    ]);
+    const total = Number(totalRow?.total || 0);
     res.json({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
     return;
   }
@@ -261,121 +266,153 @@ router.post('/', async (req: Request, res: Response) => {
   }
 
   const invoiceId = uuidv4();
-
-  const insertItem = db.prepare(
-    'INSERT INTO invoice_items (id, invoice_id, material_id, description, quantity, unit_price, cost_price, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-  );
-  const deductStock = db.prepare('UPDATE materials SET stock = stock - ? WHERE id = ?');
-  const getSeq = db.prepare('SELECT next_number FROM invoice_sequence WHERE id = 1');
-  const updateSeq = db.prepare('UPDATE invoice_sequence SET next_number = next_number + 1 WHERE id = 1');
-  let invoice_number = '';
-  const insertMovement = db.prepare(
-    'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  );
-  const insertPayment = db.prepare(
-    'INSERT INTO payments (id, invoice_id, amount, method, notes, shift_id) VALUES (?, ?, ?, ?, ?, ?)'
-  );
   const paymentId = checkoutPayment ? uuidv4() : null;
-  let materialMap = new Map<string, any>();
 
-  const txn = db.transaction(async () => {
-    const seq = await getSeq.get() as any;
-    const num = seq.next_number;
-    await updateSeq.run();
-    invoice_number = `INV-${String(num).padStart(4, '0')}`;
+  try {
+    const paymentMethod = checkoutPayment ? checkoutPayment.method.trim().toLowerCase() : null;
+    const [seqRow, mats, taxSetting, activeShift] = await Promise.all([
+      db.prepare('SELECT next_number FROM invoice_sequence WHERE id = 1').get() as Promise<any>,
+      usedMaterialIds.size > 0
+        ? (db.prepare(`SELECT id, name, stock, unit, cost_price, price_per_unit, wholesale_price FROM materials WHERE id IN (${Array.from(usedMaterialIds).map(() => '?').join(',')})`).all(...usedMaterialIds) as Promise<any[]>)
+        : Promise.resolve([]),
+      normalizedTaxRate === null
+        ? (db.prepare("SELECT value FROM settings WHERE key = 'default_tax_rate'").get() as Promise<any>)
+        : Promise.resolve(null),
+      checkoutPayment && paymentMethod !== 'credit'
+        ? (db.prepare("SELECT id FROM cashier_shifts WHERE user_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1").get((req as any).user?.id) as Promise<any>)
+        : Promise.resolve(null),
+    ]);
 
-    if (usedMaterialIds.size > 0) {
-      const placeholders = Array.from(usedMaterialIds).map(() => '?').join(',');
-      const mats = await db.prepare(`SELECT id, name, stock, unit, cost_price, price_per_unit, wholesale_price FROM materials WHERE id IN (${placeholders})`).all(...usedMaterialIds) as any[];
-      materialMap = new Map(mats.map((m: any) => [m.id, m]));
-      for (const materialId of usedMaterialIds) {
-        const mat = materialMap.get(materialId);
-        if (!mat) throw new Error(`Material ${materialId} not found`);
-        const qtyNeeded = items.filter((it: any) => it.material_id === materialId).reduce((s: number, it: any) => s + it.quantity, 0);
-        if (mat.stock < qtyNeeded) throw new Error(`Insufficient stock for ${mat.name}: have ${mat.stock} ${mat.unit}, need ${qtyNeeded} ${mat.unit}`);
-        if (req.user?.role === 'staff') {
-          for (const item of items.filter((it: any) => it.material_id === materialId)) {
-            const allowed = [Number(mat.price_per_unit), Number(mat.wholesale_price)].filter(v => v > 0);
-            if (!allowed.some(v => Math.abs(v - Number(item.unit_price)) <= 0.005)) {
-              throw new Error(`Price for ${mat.name} must match the configured retail or wholesale price`);
-            }
+    const num = Number(seqRow?.next_number || 1);
+    const invoice_number = `INV-${String(num).padStart(4, '0')}`;
+
+    const materialMap = new Map((mats || []).map((m: any) => [m.id, m]));
+    for (const materialId of usedMaterialIds) {
+      const mat = materialMap.get(materialId);
+      if (!mat) throw new Error(`Material ${materialId} not found`);
+      const qtyNeeded = items.filter((it: any) => it.material_id === materialId).reduce((s: number, it: any) => s + it.quantity, 0);
+      if (Number(mat.stock) < qtyNeeded) throw new Error(`Insufficient stock for ${mat.name}: have ${mat.stock} ${mat.unit}, need ${qtyNeeded} ${mat.unit}`);
+      if (req.user?.role === 'staff') {
+        for (const item of items.filter((it: any) => it.material_id === materialId)) {
+          const allowed = [Number(mat.price_per_unit), Number(mat.wholesale_price)].filter(v => v > 0);
+          if (!allowed.some(v => Math.abs(v - Number(item.unit_price)) <= 0.005)) {
+            throw new Error(`Price for ${mat.name} must match the configured retail or wholesale price`);
           }
         }
       }
     }
 
-    await db.prepare(
-      "INSERT INTO invoices (id, customer_id, invoice_number, subtotal, tax_rate, total, discount_amount, amount_received, change_amount, due_date, delivery_person, credit_account_name, buyer_address, notes, idempotency_key, issued_date, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)"
-    ).run(invoiceId, customer_id || null, invoice_number, 0, normalizedTaxRate ?? 0, 0, 0, checkoutPayment?.received_amount ?? checkoutPayment?.amount ?? null, 0, due_date || null, delivery_person?.trim() || null, creditName || null, buyerAddress || null, invoiceNotes || null, idempotencyKey || null, issued_date || null, (req as any).user?.id || null);
-
     let subtotal = 0;
     for (const item of items) {
-      const lineTotal = item.quantity * item.unit_price;
-      subtotal += lineTotal;
-      const cost = item.material_id ? Number(materialMap.get(item.material_id)?.cost_price || 0) : 0;
-      await insertItem.run(uuidv4(), invoiceId, item.material_id || null, item.description.trim(), item.quantity, item.unit_price, cost, Math.round(lineTotal * 100) / 100);
+      subtotal += item.quantity * item.unit_price;
     }
 
-    const configuredTaxRate = Number((await db.prepare("SELECT value FROM settings WHERE key = 'default_tax_rate'").get() as any)?.value ?? 0);
+    const configuredTaxRate = normalizedTaxRate !== null ? normalizedTaxRate : Number(taxSetting?.value ?? 0);
     if (!Number.isFinite(configuredTaxRate) || configuredTaxRate < 0 || configuredTaxRate > 1) throw new Error('Configured default tax rate is invalid');
-    const appliedTaxRate = normalizedTaxRate ?? configuredTaxRate;
+    const appliedTaxRate = configuredTaxRate;
     const roundedSubtotal = Math.round(subtotal * 100) / 100;
     const taxAmount = Math.round(roundedSubtotal * Number(appliedTaxRate) * 100) / 100;
     if (requestedDiscount > roundedSubtotal + taxAmount + 0.005) throw new Error('Discount cannot exceed the sale total');
     const total = Math.round((roundedSubtotal + taxAmount - requestedDiscount) * 100) / 100;
 
-    await db.prepare('UPDATE invoices SET subtotal = ?, tax_rate = ?, tax_amount = ?, total = ? WHERE id = ?')
-      .run(roundedSubtotal, appliedTaxRate, taxAmount, total, invoiceId);
-    await db.prepare('UPDATE invoices SET discount_amount=? WHERE id=?').run(requestedDiscount, invoiceId);
+    let invoiceStatus = 'pending';
+    let amountReceived: number | null = null;
+    let changeAmount = 0;
+    let paidDate: string | null = null;
 
     if (checkoutPayment) {
-      const paymentMethod = checkoutPayment.method.trim().toLowerCase();
       if (paymentMethod === 'credit') {
-        await db.prepare("UPDATE invoices SET status='pending' WHERE id=?").run(invoiceId);
-        await insertPayment.run(paymentId, invoiceId, 0, 'credit', checkoutPayment.notes || null, null);
+        invoiceStatus = 'pending';
       } else {
         const paymentAmount = Number(checkoutPayment.amount);
         if (Math.abs(paymentAmount - total) > 0.005) throw new Error('Payment amount must match the sale total');
         const receivedAmount = Number(checkoutPayment.received_amount ?? paymentAmount);
         if (!Number.isFinite(receivedAmount) || receivedAmount < total - 0.005) throw new Error('Amount received cannot be less than the sale total');
-        const activeShift = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1").get((req as any).user?.id) as any;
         if (!activeShift) throw new Error('Open a cashier shift before completing a paid sale');
-        await insertPayment.run(paymentId, invoiceId, total, paymentMethod, checkoutPayment.notes || null, activeShift.id);
-        await db.prepare("UPDATE invoices SET amount_received=?, change_amount=?, status='paid', paid_date=datetime('now') WHERE id=?").run(receivedAmount, Math.max(0, receivedAmount - total), invoiceId);
+        invoiceStatus = 'paid';
+        amountReceived = receivedAmount;
+        changeAmount = Math.max(0, receivedAmount - total);
+        paidDate = new Date().toISOString();
       }
+    }
+
+    const batchStatements: Array<{ sql: string; args: any[] }> = [
+      {
+        sql: 'UPDATE invoice_sequence SET next_number = next_number + 1 WHERE id = 1 AND next_number = ?',
+        args: [num]
+      },
+      {
+        sql: `INSERT INTO invoices (
+          id, customer_id, invoice_number, subtotal, tax_rate, tax_amount, total,
+          discount_amount, amount_received, change_amount, status, paid_date,
+          due_date, delivery_person, credit_account_name, buyer_address, notes,
+          idempotency_key, issued_date, user_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)`,
+        args: [
+          invoiceId, customer_id || null, invoice_number, roundedSubtotal, appliedTaxRate, taxAmount, total,
+          requestedDiscount, amountReceived, changeAmount, invoiceStatus, paidDate,
+          due_date || null, delivery_person?.trim() || null, creditName || null, buyerAddress || null, invoiceNotes || null,
+          idempotencyKey || null, issued_date || null, (req as any).user?.id || null
+        ]
+      }
+    ];
+
+    for (const item of items) {
+      const lineTotal = item.quantity * item.unit_price;
+      const cost = item.material_id ? Number(materialMap.get(item.material_id)?.cost_price || 0) : 0;
+      batchStatements.push({
+        sql: 'INSERT INTO invoice_items (id, invoice_id, material_id, description, quantity, unit_price, cost_price, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        args: [uuidv4(), invoiceId, item.material_id || null, item.description.trim(), item.quantity, item.unit_price, cost, Math.round(lineTotal * 100) / 100]
+      });
+    }
+
+    if (checkoutPayment) {
+      const payAmount = paymentMethod === 'credit' ? 0 : total;
+      const shiftId = paymentMethod === 'credit' ? null : activeShift.id;
+      batchStatements.push({
+        sql: 'INSERT INTO payments (id, invoice_id, amount, method, notes, shift_id) VALUES (?, ?, ?, ?, ?, ?)',
+        args: [paymentId, invoiceId, payAmount, paymentMethod, checkoutPayment.notes || null, shiftId]
+      });
     }
 
     for (const materialId of usedMaterialIds) {
       const qtyNeeded = items
         .filter((it: any) => it.material_id === materialId)
         .reduce((s: number, it: any) => s + it.quantity, 0);
-      const stockUpdate = await db.prepare('UPDATE materials SET stock = stock - ? WHERE id = ? AND stock >= ?').run(qtyNeeded, materialId, qtyNeeded);
-      if (stockUpdate.changes !== 1) throw new Error('Stock changed while completing the sale. Please refresh and try again.');
-      await insertMovement.run(uuidv4(), materialId, 'sale', -qtyNeeded, invoiceId, 'invoice', `Sold in ${invoice_number}`);
+      batchStatements.push({
+        sql: 'UPDATE materials SET stock = stock - ? WHERE id = ? AND stock >= ?',
+        args: [qtyNeeded, materialId, qtyNeeded]
+      });
+      batchStatements.push({
+        sql: 'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        args: [uuidv4(), materialId, 'sale', -qtyNeeded, invoiceId, 'invoice', `Sold in ${invoice_number}`]
+      });
     }
-  });
 
-  try {
-    await txn();
+    const batchResults = await db.batch(batchStatements, 'write');
+    if (batchResults[0].rowsAffected !== 1) {
+      throw new Error('Concurrent sale detected. Please retry.');
+    }
+
     clearCache('analytics:');
-    const createdInvoice = await db.prepare('SELECT * FROM invoices WHERE id=?').get(invoiceId);
-    await logAudit((req as any).user?.id || null, 'create', 'invoice', invoiceId, `Created ${invoice_number}`, null, createdInvoice);
+    const [invoice, invoiceItems, invoicePayments] = await Promise.all([
+      db.prepare(`
+        SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name
+        FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id WHERE i.id = ?
+      `).get(invoiceId),
+      db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(invoiceId),
+      db.prepare('SELECT * FROM payments WHERE invoice_id = ?').all(invoiceId)
+    ]);
+
+    await logAudit((req as any).user?.id || null, 'create', 'invoice', invoiceId, `Created ${invoice_number}`, null, invoice);
+    res.status(201).json({ ...(invoice as any), items: invoiceItems, payments: invoicePayments });
   } catch (e: any) {
     if (idempotencyKey && /unique|constraint/i.test(String(e.message))) {
       const previous = await db.prepare('SELECT id FROM invoices WHERE idempotency_key=?').get(idempotencyKey) as any;
       if (previous) { res.status(200).json(await db.prepare('SELECT * FROM invoices WHERE id=?').get(previous.id)); return; }
     }
     res.status(400).json({ error: e.message });
-    return;
   }
-
-  const invoice = await db.prepare(`
-    SELECT i.*, COALESCE(c.name, 'Walk-in') AS customer_name
-    FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id WHERE i.id = ?
-  `).get(invoiceId);
-  const invoiceItems = await db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ?').all(invoiceId);
-  const invoicePayments = await db.prepare('SELECT * FROM payments WHERE invoice_id = ?').all(invoiceId);
-  res.status(201).json({ ...invoice as any, items: invoiceItems, payments: invoicePayments });
 });
 
 router.put('/:id/delivery', requireAdmin, async (req: Request, res: Response) => {

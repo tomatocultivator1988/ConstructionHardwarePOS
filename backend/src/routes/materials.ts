@@ -52,9 +52,11 @@ router.get('/', async (req: Request, res: Response) => {
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 15));
   if (req.query.page !== undefined) {
     const countQuery = query.replace('SELECT *', 'SELECT COUNT(*) AS total');
-    const total = Number((await db.prepare(countQuery).get(...params) as any).total);
-    query += ' LIMIT ? OFFSET ?';
-    const rows = await db.prepare(query).all(...params, pageSize, (page - 1) * pageSize);
+    const [totalRow, rows] = await Promise.all([
+      db.prepare(countQuery).get(...params) as Promise<any>,
+      db.prepare(`${query} LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize) as Promise<any[]>
+    ]);
+    const total = Number(totalRow?.total || 0);
     res.json({ data: rows, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
     return;
   }

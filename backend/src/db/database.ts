@@ -58,6 +58,10 @@ export class Database {
     await executor().executeMultiple(sql);
   }
 
+  async batch(statements: Array<{ sql: string; args?: any[] } | string>, mode: 'write' | 'read' | 'deferred' = 'write'): Promise<any[]> {
+    return (await client.batch(statements as any, mode)) as any[];
+  }
+
   transaction<T>(fn: () => T | Promise<T>): () => Promise<T> {
     return async () => {
       const txn = await client.transaction('write');

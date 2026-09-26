@@ -301,6 +301,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
     // Keep the dashboard responsive during repeated navigation and avoid
     // re-running the full aggregate set on every cold/warm page refresh.
     setCache('analytics:dashboard', result, 60_000);
+    res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     res.json(result);
   } catch (e: any) {
     console.error('Analytics error:', e.message);

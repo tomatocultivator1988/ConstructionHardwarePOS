@@ -6,6 +6,8 @@ let db: Database;
 let dbInitPromise: Promise<void> | null = null;
 const businessDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date());
 
+const CURRENT_SCHEMA_VERSION = '2026.09.26';
+
 export async function initDb(): Promise<void> {
   if (dbInitPromise) return dbInitPromise;
   if (db) return;
@@ -13,11 +15,20 @@ export async function initDb(): Promise<void> {
     try {
       await initDatabase();
       db = new Database();
+      try {
+        const ver = await db.prepare("SELECT value FROM settings WHERE key='schema_version'").get() as any;
+        if (ver?.value === CURRENT_SCHEMA_VERSION) {
+          return;
+        }
+      } catch {
+        // Settings table might not exist yet on fresh DB; proceed to full init
+      }
       await initTables();
       await migrateSchema();
       await seedAccountTypes();
       await seedBalanceSheetAccountsIfMissing();
       await seedChartAccountsIfMissing();
+      await db.prepare("INSERT INTO settings (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(CURRENT_SCHEMA_VERSION);
     } catch (err) {
       db = undefined as any;
       console.error('Failed to open database:', err);
@@ -644,8 +655,10 @@ async function migrateSchema() {
   await db.exec('CREATE INDEX IF NOT EXISTS idx_payments_invoice_method ON payments(invoice_id, method)');
   await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_idempotency ON invoices(idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''");
   await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_payments_idempotency ON payments(idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''");
-  await db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_refunds_idempotency ON refunds(idempotency_key) WHERE idempotency_key IS NOT NULL AND idempotency_key <> ''");
   await db.exec("CREATE INDEX IF NOT EXISTS idx_returns_idempotency ON invoice_returns(invoice_id, idempotency_key)");
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_invoices_created_at ON invoices(created_at DESC)");
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_invoice_items_material ON invoice_items(material_id)");
+  await db.exec("CREATE INDEX IF NOT EXISTS idx_stock_mov_created ON stock_movements(created_at DESC)");
 
   // Views are created idempotently. Dropping and recreating them on every
   // serverless cold start creates a race when multiple Vercel instances

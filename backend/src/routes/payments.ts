@@ -35,22 +35,24 @@ router.get('/receipts', async (req: Request, res: Response) => {
 router.get('/summary', async (_req: Request, res: Response) => {
   const db = getDb();
   try {
-    const daily = await db.prepare(`
+    const [daily, today] = await Promise.all([
+      db.prepare(`
       SELECT date(payment_date) as date, COALESCE(SUM(amount), 0) as total
       FROM payments p JOIN invoices i ON i.id=p.invoice_id
       WHERE i.status <> 'voided' AND
       p.payment_date >= datetime('now', '-7 days')
       GROUP BY date(payment_date)
       ORDER BY date ASC
-    `).all();
-
-    const today = await db.prepare(`
+    `).all() as Promise<any[]>,
+      db.prepare(`
       SELECT COALESCE(SUM(p.amount), 0) - COALESCE((SELECT SUM(r.amount) FROM refunds r JOIN invoices ri ON ri.id=r.invoice_id WHERE ri.status <> 'voided' AND date(r.created_at, '+8 hours') = date('now', '+8 hours')), 0) as total
       FROM payments p JOIN invoices i ON i.id=p.invoice_id
       WHERE i.status <> 'voided' AND date(p.payment_date, '+8 hours') = date('now', '+8 hours')
-    `).get() as any;
+    `).get() as Promise<any>,
+    ]);
 
-    res.json({ daily, todayTotal: today.total });
+    res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
+    res.json({ daily, todayTotal: today?.total ?? 0 });
   } catch (e: any) {
     console.error('Payments summary error:', e.message);
     res.status(503).json({ daily: [], todayTotal: 0, error: 'Payment summary temporarily unavailable', retryable: true });

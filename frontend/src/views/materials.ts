@@ -51,6 +51,28 @@ function catOptions(selected?: string) {
   return MAT_CATEGORIES.map(c => `<option value="${esc(c)}"${c === selected ? ' selected' : ''}>${esc(c) || '- All Categories -'}</option>`).join('');
 }
 
+function renderMaterialRow(m: Material): string {
+  const isLow = m.stock <= m.reorder_point;
+  const profit = m.price_per_unit - (m.cost_price || 0);
+  const margin = m.price_per_unit > 0 ? (profit / m.price_per_unit * 100) : 0;
+  return `<tr class="material-row ${isLow ? 'low-stock' : ''}" data-material-row="${m.id}">
+    <td data-label="Name" style="font-weight:600">${esc(m.name)}</td>
+    <td class="material-secondary" data-label="Category"><span style="font-size:var(--fs-xs);color:var(--c-text-muted)">${esc(m.category || '-')}</span></td>
+    <td class="material-secondary" data-label="Unit">${esc(m.unit)}</td>
+    <td data-label="Stock">${m.stock}${isLow ? ' ⚠' : ''}</td>
+    <td class="material-secondary" data-label="Cost">${fmtPeso(m.cost_price || 0)}</td>
+    <td data-label="Retail">${fmtPeso(m.price_per_unit)}</td>
+    <td class="material-secondary" data-label="Profit" style="color:${profit > 0 ? 'var(--c-success)' : profit < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${fmtPeso(profit)}</td>
+    <td class="material-secondary" data-label="Margin" style="color:${margin > 0 ? 'var(--c-success)' : margin < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${margin.toFixed(1)}%</td>
+    <td data-label="" class="actions">
+      <button class="btn btn-sm mobile-details-btn" onclick="toggleMobileDetails('${m.id}')">Details</button>
+      <button class="btn btn-primary btn-sm" onclick="editMaterial('${m.id}')">Edit</button>
+      <button class="btn btn-sm" onclick="showStockHistory('${m.id}')">History</button>
+      <button class="btn btn-danger btn-sm" onclick="delMaterial('${m.id}')">Delete</button>
+    </td>
+  </tr>`;
+}
+
 export async function renderMaterials(): Promise<string> {
   const query = new URLSearchParams({ page: String(materialPage), pageSize: String(MATERIAL_PAGE_SIZE) });
   if (materialSearch) query.set('search', materialSearch);
@@ -70,8 +92,8 @@ export async function renderMaterials(): Promise<string> {
     <div class="page-header">
       <h2>Products</h2>
       <div class="material-toolbar" style="display:flex;gap:var(--space-3);align-items:center">
-        <input id="mat-search" type="search" placeholder="Search materials..." value="${esc(materialSearch)}" oninput="filterMaterials()" style="min-height:36px;min-width:220px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
-        <select id="mat-cat-filter" onchange="filterMaterials()" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)">
+        <input id="mat-search" type="search" placeholder="Search materials..." value="${esc(materialSearch)}" oninput="filterMaterials(true)" onkeydown="if(event.key==='Enter')filterMaterials(false)" style="min-height:36px;min-width:220px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
+        <select id="mat-cat-filter" onchange="filterMaterials(false)" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)">
           ${catOptions(materialCategory)}
         </select>
         <button class="btn btn-primary" onclick="showMaterialModal()">+ Add Product</button>
@@ -81,27 +103,7 @@ export async function renderMaterials(): Promise<string> {
       <table>
         <thead><tr><th>Name</th><th>Category</th><th>Unit</th><th>Stock</th><th>Cost</th><th>Retail</th><th>Profit</th><th>Margin</th><th class="actions">Actions</th></tr></thead>
         <tbody>
-          ${materials.length ? materials.map((m: Material) => {
-            const isLow = m.stock <= m.reorder_point;
-            const profit = m.price_per_unit - (m.cost_price || 0);
-            const margin = m.price_per_unit > 0 ? (profit / m.price_per_unit * 100) : 0;
-            return `<tr class="material-row ${isLow ? 'low-stock' : ''}" data-material-row="${m.id}">
-              <td data-label="Name" style="font-weight:600">${esc(m.name)}</td>
-              <td class="material-secondary" data-label="Category"><span style="font-size:var(--fs-xs);color:var(--c-text-muted)">${esc(m.category || '-')}</span></td>
-              <td class="material-secondary" data-label="Unit">${esc(m.unit)}</td>
-              <td data-label="Stock">${m.stock}${isLow ? ' ⚠' : ''}</td>
-              <td class="material-secondary" data-label="Cost">${fmtPeso(m.cost_price || 0)}</td>
-              <td data-label="Retail">${fmtPeso(m.price_per_unit)}</td>
-              <td class="material-secondary" data-label="Profit" style="color:${profit > 0 ? 'var(--c-success)' : profit < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${fmtPeso(profit)}</td>
-              <td class="material-secondary" data-label="Margin" style="color:${margin > 0 ? 'var(--c-success)' : margin < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${margin.toFixed(1)}%</td>
-              <td data-label="" class="actions">
-                <button class="btn btn-sm mobile-details-btn" onclick="toggleMobileDetails('${m.id}')">Details</button>
-                <button class="btn btn-primary btn-sm" onclick="editMaterial('${m.id}')">Edit</button>
-                <button class="btn btn-sm" onclick="showStockHistory('${m.id}')">History</button>
-                <button class="btn btn-danger btn-sm" onclick="delMaterial('${m.id}')">Delete</button>
-              </td>
-            </tr>`;
-          }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--c-text-muted);padding:2rem">No materials yet</td></tr>'}
+          ${materials.length ? materials.map(renderMaterialRow).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--c-text-muted);padding:2rem">No materials yet</td></tr>'}
         </tbody>
       </table>
     </div>
@@ -114,7 +116,7 @@ function paginationMarkup(total: number) {
   return `<div class="pagination"><span>Showing ${(materialPage-1)*MATERIAL_PAGE_SIZE+1}–${Math.min(materialPage*MATERIAL_PAGE_SIZE, total)} of ${total}</span><button class="btn btn-sm" ${materialPage===1?'disabled':''} onclick="changeMaterialPage(${materialPage-1})">Previous</button><strong>Page ${materialPage} of ${pages}</strong><button class="btn btn-sm" ${materialPage>=pages?'disabled':''} onclick="changeMaterialPage(${materialPage+1})">Next</button></div>`;
 }
 
-export function changeMaterialPage(page: number) { materialPage = Math.max(1, page); loadView('materials'); }
+export function changeMaterialPage(page: number) { materialPage = Math.max(1, page); executeFilterMaterials(); }
 
 export function showMaterialModal(data?: Material) {
   const isEdit = !!data;
@@ -244,44 +246,54 @@ export async function showStockHistory(materialId: string) {
   `, 'stock-history-modal');
 }
 
-export async function filterMaterials() {
-  materialPage = 1;
-  const cat = (document.getElementById('mat-cat-filter') as HTMLSelectElement)?.value ?? '';
-  const search = (document.getElementById('mat-search') as HTMLInputElement)?.value.trim() ?? '';
+let filterTimer: any = null;
+let materialRequestSeq = 0;
+
+export function filterMaterials(debounce = false) {
+  clearTimeout(filterTimer);
+  if (debounce) {
+    filterTimer = setTimeout(() => {
+      materialPage = 1;
+      executeFilterMaterials();
+    }, 250);
+  } else {
+    materialPage = 1;
+    executeFilterMaterials();
+  }
+}
+
+async function executeFilterMaterials() {
+  const reqSeq = ++materialRequestSeq;
+  const cat = (document.getElementById('mat-cat-filter') as HTMLSelectElement)?.value ?? materialCategory;
+  const search = (document.getElementById('mat-search') as HTMLInputElement)?.value.trim() ?? materialSearch;
   materialCategory = cat;
   materialSearch = search;
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({ page: String(materialPage), pageSize: String(MATERIAL_PAGE_SIZE) });
   if (cat) params.set('category', cat);
   if (search) params.set('search', search);
-  const url = params.toString() ? `/materials?${params}` : '/materials';
-  const response = await apiGet<Material[] | { data: Material[]; total: number }>(`${url}${url.includes('?') ? '&' : '?'}page=${materialPage}&pageSize=${MATERIAL_PAGE_SIZE}`);
-  const materials = Array.isArray(response) ? response : response.data;
-  const totalMaterials = Array.isArray(response) ? response.length : response.total;
-  const tbody = document.querySelector('table tbody');
-  if (!tbody) return;
-  tbody.innerHTML = materials.length ? materials.slice((materialPage - 1) * MATERIAL_PAGE_SIZE, materialPage * MATERIAL_PAGE_SIZE).map((m: Material) => {
-    const isLow = m.stock <= m.reorder_point;
-    const profit = m.price_per_unit - (m.cost_price || 0);
-    const margin = m.price_per_unit > 0 ? (profit / m.price_per_unit * 100) : 0;
-    return `<tr class="material-row ${isLow ? 'low-stock' : ''}" data-material-row="${m.id}">
-      <td data-label="Name" style="font-weight:600">${esc(m.name)}</td>
-      <td class="material-secondary" data-label="Category"><span style="font-size:var(--fs-xs);color:var(--c-text-muted)">${esc(m.category || '-')}</span></td>
-      <td class="material-secondary" data-label="Unit">${esc(m.unit)}</td>
-      <td data-label="Stock">${m.stock}${isLow ? ' ⚠' : ''}</td>
-      <td class="material-secondary" data-label="Cost">${fmtPeso(m.cost_price || 0)}</td>
-      <td data-label="Retail">${fmtPeso(m.price_per_unit)}</td>
-      <td class="material-secondary" data-label="Profit" style="color:${profit > 0 ? 'var(--c-success)' : profit < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${fmtPeso(profit)}</td>
-      <td class="material-secondary" data-label="Margin" style="color:${margin > 0 ? 'var(--c-success)' : margin < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${margin.toFixed(1)}%</td>
-      <td data-label="" class="actions">
-        <button class="btn btn-sm mobile-details-btn" onclick="toggleMobileDetails('${m.id}')">Details</button>
-        <button class="btn btn-primary btn-sm" onclick="editMaterial('${m.id}')">Edit</button>
-        <button class="btn btn-sm" onclick="showStockHistory('${m.id}')">History</button>
-        <button class="btn btn-danger btn-sm" onclick="delMaterial('${m.id}')">Delete</button>
-      </td>
-    </tr>`;
-  }).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--c-text-muted);padding:2rem">No materials found</td></tr>';
-  const pager = document.getElementById('materials-pagination');
-  if (pager) pager.innerHTML = totalMaterials > MATERIAL_PAGE_SIZE ? paginationMarkup(totalMaterials) : '';
+
+  const tbody = document.querySelector('table tbody') as HTMLElement | null;
+  if (tbody) tbody.style.opacity = '0.5';
+
+  try {
+    const response = await apiGet<Material[] | { data: Material[]; total: number }>(`/materials?${params}`);
+    if (reqSeq !== materialRequestSeq) return;
+
+    const materials = Array.isArray(response) ? response : response.data;
+    const totalMaterials = Array.isArray(response) ? response.length : response.total;
+    (window as any).__materialNames = Object.fromEntries(materials.map((m: Material) => [m.id, m.name]));
+
+    if (tbody) {
+      tbody.style.opacity = '1';
+      tbody.innerHTML = materials.length ? materials.map(renderMaterialRow).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--c-text-muted);padding:2rem">No materials found</td></tr>';
+    }
+    const pager = document.getElementById('materials-pagination');
+    if (pager) pager.innerHTML = totalMaterials > MATERIAL_PAGE_SIZE ? paginationMarkup(totalMaterials) : '';
+  } catch (err: any) {
+    if (reqSeq !== materialRequestSeq) return;
+    if (tbody) tbody.style.opacity = '1';
+    showToast(err.message || 'Failed to filter materials');
+  }
 }
 
 export function toggleMobileDetails(id: string) {

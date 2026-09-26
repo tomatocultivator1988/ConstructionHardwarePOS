@@ -100,7 +100,13 @@ export function scanPOSBarcode(event: KeyboardEvent) {
   const input = event.currentTarget as HTMLInputElement;
   const code = input.value.trim().toLowerCase();
   const material = ((window as any).__invMaterials || []).find((m: Material) => String(m.barcode || '').trim().toLowerCase() === code);
-  if (material) { input.value = ''; addPOSItem(material.id); }
+  if (material) {
+    clearTimeout(posFilterTimer);
+    input.value = '';
+    posSearch = '';
+    addPOSItem(material.id);
+    renderPOSProductGrid();
+  }
   else if (code) showToast('No product found for that barcode');
 }
 
@@ -108,7 +114,7 @@ export function setPOSQty(id: string, value: string) {
   const item = posCart.find(entry => entry.material.id === id); const quantity = Number(value);
   if (!item || !Number.isFinite(quantity) || quantity <= 0) { showToast('Quantity must be greater than zero'); return; }
   if (quantity > Number(item.material.stock)) { showToast(`Only ${item.material.stock} ${item.material.unit} available`); return; }
-  item.quantity = quantity; loadView('invoices');
+  item.quantity = quantity; renderPOSCart();
 }
 
 export async function renderInvoices(): Promise<string> {
@@ -184,8 +190,96 @@ export async function saveDeliveryPerson(invoiceId: string) {
   catch (e: any) { showToast(e.message || 'Unable to update delivery person'); }
 }
 
-export function setPOSCategory(category: string) { posCategory = category; loadView('invoices'); }
-export function filterPOSMaterials(value: string) { posSearch = value; renderPOSProductGrid(); }
+function renderCartItemsHTML(): string {
+  if (!posCart.length) {
+    return '<div class="pos-cart-empty">Select a material to start a sale.</div>';
+  }
+  return posCart.map(item => `
+    <div class="pos-cart-item">
+      <div class="pos-cart-info">
+        <strong>${esc(item.material.name)}</strong>
+        <span>${fmtPeso(item.material.price_per_unit)} · ${esc(item.material.unit)}</span>
+      </div>
+      <div class="pos-qty">
+        <button type="button" onclick="changePOSQty('${item.material.id}', -1)">−</button>
+        <input class="pos-qty-input" type="number" min="0.01" max="${Number(item.material.stock)}" step="0.01" value="${item.quantity}" aria-label="Quantity" onchange="setPOSQty('${item.material.id}', this.value)" />
+        <button type="button" onclick="changePOSQty('${item.material.id}', 1)">+</button>
+      </div>
+      <strong class="pos-line-total">${fmtPeso(item.quantity * Number(item.material.price_per_unit))}</strong>
+      <button type="button" class="pos-remove" onclick="removePOSItem('${item.material.id}')" aria-label="Remove item">×</button>
+    </div>
+  `).join('');
+}
+
+export function renderPOSCart() {
+  const cartContainer = document.querySelector('.pos-cart-items');
+  if (!cartContainer) {
+    loadView('invoices');
+    return;
+  }
+  cartContainer.innerHTML = renderCartItemsHTML();
+  const cartTotal = posCart.reduce((sum, item) => sum + item.quantity * Number(item.material.price_per_unit), 0);
+  const taxRate = Number((window as any).__invDefaultTax || 0);
+  const tax = Math.round(cartTotal * taxRate * 100) / 100;
+  const discount = posDiscountEnabled ? Math.min(posDiscountAmount, cartTotal + tax) : 0;
+  const total = Math.max(0, Math.round((cartTotal + tax - discount) * 100) / 100);
+  (window as any).__posTotal = total;
+
+  const toggleBtn = document.querySelector('.pos-cart-toggle');
+  if (toggleBtn) {
+    toggleBtn.textContent = `Cart · ${posCart.length} · ${fmtPeso(total)}`;
+  }
+
+  const summaryEl = document.querySelector('.pos-summary');
+  if (summaryEl) {
+    summaryEl.innerHTML = `
+      <div><span>Subtotal</span><strong>${fmtPeso(cartTotal)}</strong></div>
+      ${taxRate > 0 ? `<div><span>Tax</span><strong>${fmtPeso(tax)}</strong></div>` : ''}
+      <div class="pos-discount-toggle">
+        <label><input type="checkbox" ${posDiscountEnabled ? 'checked' : ''} onchange="togglePOSDiscount(this.checked)" /> Discount</label>
+        ${posDiscountEnabled ? `<input id="pos-discount" type="number" min="0" step="0.01" value="${discount.toFixed(2)}" oninput="setPOSDiscount(this.value)" />` : ''}
+      </div>
+      ${posDiscountEnabled && discount > 0 ? `<div><span>Discount</span><strong>-${fmtPeso(discount)}</strong></div>` : ''}
+      <div class="pos-grand-total"><span>Total</span><strong>${fmtPeso(total)}</strong></div>
+    `;
+  }
+
+  const receivedInput = document.getElementById('pos-received') as HTMLInputElement | null;
+  if (receivedInput) {
+    receivedInput.value = total.toFixed(2);
+  }
+
+  const completeBtn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null;
+  if (completeBtn) completeBtn.disabled = !posCart.length;
+
+  const clearBtn = document.querySelector('.pos-clear') as HTMLButtonElement | null;
+  if (clearBtn) clearBtn.disabled = !posCart.length;
+
+  updatePOSPayment();
+}
+
+export function setPOSCategory(category: string) {
+  posCategory = category;
+  document.querySelectorAll('.pos-category').forEach(btn => {
+    const text = btn.textContent?.trim();
+    if (!category && text === 'All Categories') {
+      btn.classList.add('active');
+    } else if (category && text === category) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+  renderPOSProductGrid();
+}
+let posFilterTimer: any = null;
+export function filterPOSMaterials(value: string) {
+  posSearch = value;
+  clearTimeout(posFilterTimer);
+  posFilterTimer = setTimeout(() => {
+    renderPOSProductGrid();
+  }, 100);
+}
 export function togglePOSCart() {
   const page = document.querySelector('.pos-page');
   const toggle = document.querySelector('.pos-cart-toggle');
@@ -208,13 +302,13 @@ export function addPOSItem(id: string) {
   if (existing) { if (existing.quantity < Number(material.stock)) existing.quantity += 1; else showToast(`Only ${material.stock} ${material.unit} available`); }
   else if (Number(material.stock) > 0) posCart.push({ material, quantity: 1 });
   else showToast(`${material.name} is out of stock`);
-  loadView('invoices');
+  renderPOSCart();
 }
-export function changePOSQty(id: string, delta: number) { const item = posCart.find(i => i.material.id === id); if (!item) return; const next = item.quantity + delta; if (next <= 0) posCart = posCart.filter(i => i.material.id !== id); else if (next <= Number(item.material.stock)) item.quantity = next; else showToast(`Only ${item.material.stock} ${item.material.unit} available`); loadView('invoices'); }
-export function removePOSItem(id: string) { posCart = posCart.filter(i => i.material.id !== id); loadView('invoices'); }
-export function clearPOSCart() { posCart = []; loadView('invoices'); }
-export function togglePOSDiscount(enabled: boolean) { posDiscountEnabled = enabled; if (!enabled) posDiscountAmount = 0; loadView('invoices'); }
-export function setPOSDiscount(value: string) { posDiscountAmount = Math.max(0, Number(value) || 0); const total = getPOSCurrentTotal(); const target = document.querySelector('.pos-grand-total strong'); if (target) target.textContent = fmtPeso(total); }
+export function changePOSQty(id: string, delta: number) { const item = posCart.find(i => i.material.id === id); if (!item) return; const next = item.quantity + delta; if (next <= 0) posCart = posCart.filter(i => i.material.id !== id); else if (next <= Number(item.material.stock)) item.quantity = next; else showToast(`Only ${item.material.stock} ${item.material.unit} available`); renderPOSCart(); }
+export function removePOSItem(id: string) { posCart = posCart.filter(i => i.material.id !== id); renderPOSCart(); }
+export function clearPOSCart() { posCart = []; renderPOSCart(); }
+export function togglePOSDiscount(enabled: boolean) { posDiscountEnabled = enabled; if (!enabled) posDiscountAmount = 0; renderPOSCart(); }
+export function setPOSDiscount(value: string) { posDiscountAmount = Math.max(0, Number(value) || 0); const total = getPOSCurrentTotal(); const target = document.querySelector('.pos-grand-total strong'); if (target) target.textContent = fmtPeso(total); updatePOSPayment(); }
 export function updatePOSPayment() { const total = getPOSCurrentTotal(); const received = Number((document.getElementById('pos-received') as HTMLInputElement)?.value || 0); const method = (document.getElementById('pos-method') as HTMLSelectElement)?.value; const fields = document.getElementById('pos-cash-fields'); const warning = document.getElementById('pos-credit-warning'); const required = document.getElementById('pos-name-required'); if (fields) fields.style.display = method === 'credit' ? 'none' : ''; if (warning) warning.style.display = method === 'credit' ? 'block' : 'none'; if (required) required.textContent = method === 'credit' ? '* required for Credit' : '(optional unless Credit)'; const change = method === 'cash' ? Math.max(0, received - total) : 0; const target = document.getElementById('pos-change-value'); if (target) target.textContent = fmtPeso(change); const btn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null; if (btn) btn.disabled = !posCart.length; }
 export async function completePOSSale() {
   if (!posCart.length) { showToast('Add at least one material'); return; }
