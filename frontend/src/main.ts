@@ -14,6 +14,7 @@ import * as receipts from './views/receipts';
 import * as productMix from './views/product-mix';
 import * as receivables from './views/receivables';
 import * as deliveries from './views/deliveries';
+import * as customers from './views/customers';
 import { openHelp } from './lib/help';
 import { submitExportPeriod, toggleExportCustomRange } from './lib/export';
 
@@ -42,6 +43,12 @@ Object.assign(window, {
   showReceivableNameModal: receivables.showReceivableNameModal,
   saveReceivableName: receivables.saveReceivableName,
   exportReceivables: receivables.exportReceivables,
+  showCustomerModal: customers.showCustomerModal,
+  editCustomer: customers.editCustomer,
+  delCustomer: customers.delCustomer,
+  showCustomerStatement: customers.showCustomerStatement,
+  changeCustomerPage: customers.changeCustomerPage,
+  toggleCustomerDetails: customers.toggleCustomerDetails,
   toggleMobileDetails: materials.toggleMobileDetails,
   showInvoiceDetail: invoices.showInvoiceDetail,
   recordPayment: invoices.recordPayment,

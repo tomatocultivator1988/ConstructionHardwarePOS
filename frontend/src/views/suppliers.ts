@@ -8,12 +8,20 @@ import { showExportPeriodModal, exportTable, type ExportPeriod } from '../lib/ex
 
 let supplierTab: 'suppliers' | 'purchase-orders' = 'suppliers';
 
+export function setSupplierTab(tab: 'suppliers' | 'purchase-orders') {
+  supplierTab = tab;
+}
+
+export function getSupplierTab(): 'suppliers' | 'purchase-orders' {
+  return supplierTab;
+}
+
 export async function renderSupplierHub(): Promise<string> {
   const content = supplierTab === 'suppliers' ? await renderSuppliers() : await renderPurchaseOrders();
   return `<div class="supplier-hub"><div class="po-subtabs"><button class="nav-btn ${supplierTab === 'suppliers' ? 'active' : ''}" onclick="switchSupplierTab('suppliers')">Suppliers</button><button class="nav-btn ${supplierTab === 'purchase-orders' ? 'active' : ''}" onclick="switchSupplierTab('purchase-orders')">Purchase Orders</button></div>${content}</div>`;
 }
 
-export function switchSupplierTab(tab: 'suppliers' | 'purchase-orders') { supplierTab = tab; loadView('suppliers'); }
+export function switchSupplierTab(tab: 'suppliers' | 'purchase-orders') { supplierTab = tab; loadView(tab === 'purchase-orders' ? 'purchase-orders' : 'suppliers'); }
 
 export async function renderSuppliers(): Promise<string> {
   const suppliers = await apiGet<Supplier[]>('/suppliers');
