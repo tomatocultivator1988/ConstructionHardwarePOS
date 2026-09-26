@@ -117,6 +117,10 @@ router.get('/balance-sheet', async (req: Request, res: Response) => {
   const withdrawals = Number(manual.owner_withdrawals || 0);
   const customEquity = (chartRows as any[]).filter(row => row.balance_source === 'manual' && row.base_type === 'equity' && row.code !== '3000').reduce((sum, row) => sum + Number(row.opening_balance || 0), 0);
   const totalEquity = ownerCapital + retainedEarnings + customEquity - withdrawals;
+  manual.bank = bankVal;
+  manual.gcash = gcashVal;
+  manual.supplier_payables = Number(manual['2000'] ?? manual.supplier_payables ?? 0);
+  manual.owner_capital = ownerCapital;
   res.json({
     as_of: asOf,
     assets: { inventory_cost: inventoryCost, inventory_retail: Number(inventory.retail_total || 0), receivables: receivableTotal, recorded_cash: recordedCash, bank: manual['1010'] ?? manual.bank ?? null, gcash: manual['1020'] ?? manual.gcash ?? null, manual_total: totalManualAssets, known_total: totalAssets },

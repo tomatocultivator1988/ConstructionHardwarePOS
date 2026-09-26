@@ -59,8 +59,8 @@ router.get('/', async (req: Request, res: Response) => {
     '1000': byMethod(payments as any[], 'cash') - byMethod(refunds as any[], 'cash'),
     '1010': Number(rows.find(row => row.code === '1010')?.opening_balance || 0) + byMethod(payments as any[], 'bank') - byMethod(refunds as any[], 'bank'),
     '1020': Number(rows.find(row => row.code === '1020')?.opening_balance || 0) + byMethod(payments as any[], 'gcash') - byMethod(refunds as any[], 'gcash'),
-    '1100': amount(receivables), '1200': amount(inventory), '2000': Number(manual.supplier_payables || 0),
-    '3000': Number(rows.find(row => row.code === '3000')?.opening_balance || manual.owner_capital || 0), '3100': amount(sales) - amount(cogs) - amount(expenses),
+    '1100': amount(receivables), '1200': amount(inventory), '2000': Number(rows.find(row => row.code === '2000')?.opening_balance ?? manual.supplier_payables ?? 0),
+    '3000': Number(rows.find(row => row.code === '3000')?.opening_balance ?? manual.owner_capital ?? 0), '3100': amount(sales) - amount(cogs) - amount(expenses),
     '4000': amount(sales), '4100': amount(returns), '5000': amount(cogs), '6000': amount(expenses),
   };
   res.json(rows.map(row => ({ ...row, balance: Math.round((balances[row.code] ?? Number(row.opening_balance || manual[row.code] || 0)) * 100) / 100 })));

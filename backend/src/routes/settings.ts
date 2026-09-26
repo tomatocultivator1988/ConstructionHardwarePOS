@@ -45,6 +45,28 @@ router.put('/:key', requireAdmin, async (req: Request, res: Response) => {
     'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
   ).run(req.params.key, String(value));
   const settingKey = String(req.params.key);
+
+  if (settingKey === 'balance_sheet_manual_accounts') {
+    try {
+      const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+      const codeMap: Record<string, string> = {
+        bank: '1010',
+        gcash: '1020',
+        supplier_payables: '2000',
+        owner_capital: '3000'
+      };
+      for (const [prop, code] of Object.entries(codeMap)) {
+        if (parsed[prop] !== undefined) {
+          await db.prepare(
+            "UPDATE chart_accounts SET opening_balance = ?, updated_at = datetime('now') WHERE code = ? AND balance_source = 'manual'"
+          ).run(Number(parsed[prop] || 0), code);
+        }
+      }
+    } catch (e: any) {
+      console.error('Failed to sync chart accounts from balance sheet manual accounts:', e.message);
+    }
+  }
+
   await logAudit(req.user?.id || null, 'update', 'setting', settingKey, `Updated setting ${settingKey}`, previous, { value: String(value) });
   res.json({ key: req.params.key, value: String(value) });
 });
