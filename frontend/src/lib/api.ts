@@ -14,6 +14,8 @@ const RELATED_CACHE_KEYS: Record<string, string[]> = {
   catalog: ['materials', 'expenses'],
   customers: ['receivables', 'invoices'],
   suppliers: ['purchase-orders'],
+  accounts: ['accounts', 'reports'],
+  settings: ['settings', 'reports'],
 };
 
 function invalidatePattern(pattern: string) {
