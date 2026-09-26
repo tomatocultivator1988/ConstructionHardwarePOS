@@ -67,6 +67,8 @@ Object.assign(window, {
   togglePOSDiscount: invoices.togglePOSDiscount,
   setPOSDiscount: invoices.setPOSDiscount,
   completePOSSale: invoices.completePOSSale,
+  showAddCustomPOSItemModal: invoices.showAddCustomPOSItemModal,
+  submitCustomPOSItem: invoices.submitCustomPOSItem,
   exportSalesHistory: invoices.exportSalesHistory,
   enhancePOS: invoices.enhancePOS,
   startPOSCameraScan: invoices.startPOSCameraScan,

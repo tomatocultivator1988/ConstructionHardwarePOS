@@ -36,7 +36,10 @@ export function enhancePOS() {
   document.querySelector('.pos-history tbody td[colspan="7"]')?.setAttribute('colspan', '6');
   document.querySelectorAll('.pos-cart-item').forEach((row, index) => {
     const item = posCart[index]; const qty = row.querySelector('.pos-qty');
-    if (item && qty && !qty.querySelector('input')) qty.innerHTML = `<input class="pos-qty-input" type="number" min="0.01" max="${Number(item.material.stock)}" step="0.01" value="${item.quantity}" aria-label="Quantity" onchange="setPOSQty('${item.material.id}', this.value)" />`;
+    if (item && qty && !qty.querySelector('input')) {
+      const isCustom = Boolean((item.material as any).is_custom);
+      qty.innerHTML = `<input class="pos-qty-input" type="number" min="0.01" ${isCustom ? '' : `max="${Number(item.material.stock)}"`} step="0.01" value="${item.quantity}" aria-label="Quantity" onchange="setPOSQty('${item.material.id}', this.value)" />`;
+    }
   });
 }
 
@@ -113,7 +116,8 @@ export function scanPOSBarcode(event: KeyboardEvent) {
 export function setPOSQty(id: string, value: string) {
   const item = posCart.find(entry => entry.material.id === id); const quantity = Number(value);
   if (!item || !Number.isFinite(quantity) || quantity <= 0) { showToast('Quantity must be greater than zero'); return; }
-  if (quantity > Number(item.material.stock)) { showToast(`Only ${item.material.stock} ${item.material.unit} available`); return; }
+  const isCustom = Boolean((item.material as any).is_custom);
+  if (!isCustom && quantity > Number(item.material.stock)) { showToast(`Only ${item.material.stock} ${item.material.unit} available`); return; }
   item.quantity = quantity; renderPOSCart();
 }
 
@@ -144,7 +148,9 @@ export async function renderInvoices(): Promise<string> {
     <div class="pos-layout">
       <aside class="pos-categories"><div class="pos-panel-title">Categories</div><button class="pos-category ${!posCategory ? 'active' : ''}" onclick="setPOSCategory('')">All Categories</button>${categoryButtons}</aside>
       <section class="pos-products"><div class="pos-search"><input id="pos-search" type="search" value="${esc(posSearch)}" placeholder="Search material name, category, or unit..." oninput="filterPOSMaterials(this.value)" /><button class="btn btn-sm pos-camera-btn" onclick="startPOSCameraScan()" title="Scan barcode with camera">Scan Barcode</button><span>${filteredMaterials.length} item${filteredMaterials.length === 1 ? '' : 's'}</span></div><div class="pos-product-grid">${filteredMaterials.length ? filteredMaterials.map((m: Material) => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('') : '<div class="pos-empty">No materials match your search.</div>'}</div></section>
-      <aside class="pos-cart-panel"><div class="pos-panel-title pos-cart-title"><span>Current Sale</span><button class="pos-cart-toggle" onclick="togglePOSCart()" aria-expanded="false">Cart · ${posCart.length} · ${fmtPeso(total)}</button></div><div class="pos-cart-items">${renderCartItemsHTML()}</div>
+      <aside class="pos-cart-panel"><div class="pos-panel-title pos-cart-title"><span>Current Sale</span><button class="pos-cart-toggle" onclick="togglePOSCart()" aria-expanded="false">Cart · ${posCart.length} · ${fmtPeso(total)}</button></div>
+        <button type="button" class="btn btn-sm btn-outline pos-add-custom-btn" onclick="showAddCustomPOSItemModal()" style="width:100%;margin-bottom:var(--space-2);display:flex;align-items:center;justify-content:center;gap:0.35rem;font-weight:600;padding:0.45rem">+ Custom / Misc Item</button>
+        <div class="pos-cart-items">${renderCartItemsHTML()}</div>
         <div class="pos-customer-box"><div id="pos-credit-fields"><label for="pos-credit-name">Name <span id="pos-name-required">(optional unless Credit)</span></label><input id="pos-credit-name" maxlength="120" placeholder="Buyer or charge-to name" /><label for="pos-credit-address">Address <span>(optional)</span></label><input id="pos-credit-address" maxlength="250" placeholder="Buyer address" /><label for="pos-credit-notes">Notes <span>(optional)</span></label><input id="pos-credit-notes" maxlength="250" placeholder="Sale notes" /></div></div>
         <div class="pos-summary"><div><span>Subtotal</span><strong>${fmtPeso(cartTotal)}</strong></div>${taxRate > 0 ? `<div><span>Tax</span><strong>${fmtPeso(tax)}</strong></div>` : ''}<div class="pos-discount-toggle"><label><input type="checkbox" ${posDiscountEnabled ? 'checked' : ''} onchange="togglePOSDiscount(this.checked)" /> Discount</label>${posDiscountEnabled ? `<input id="pos-discount" type="number" min="0" step="0.01" value="${discount.toFixed(2)}" oninput="setPOSDiscount(this.value)" />` : ''}</div>${posDiscountEnabled && discount > 0 ? `<div><span>Discount</span><strong>-${fmtPeso(discount)}</strong></div>` : ''}<div class="pos-grand-total"><span>Total</span><strong>${fmtPeso(total)}</strong></div></div>
         <div class="pos-payment"><label for="pos-method">Payment Method</label><select id="pos-method" onchange="updatePOSPayment()"><option value="cash">Cash</option><option value="card">Card</option><option value="bank">Bank Transfer</option><option value="gcash">GCash</option><option value="check">Check</option><option value="credit">Credit / On Account</option></select><div id="pos-credit-warning" class="pos-credit-warning" role="status">Credit sales require a Charge To / Buyer Name.</div><div id="pos-cash-fields"><label for="pos-received">Amount Received</label><input id="pos-received" type="number" min="0" step="0.01" value="${total.toFixed(2)}" oninput="updatePOSPayment()" /><div class="pos-change"><span>Change</span><strong id="pos-change-value">${fmtPeso(0)}</strong></div></div></div>
@@ -192,23 +198,26 @@ export async function saveDeliveryPerson(invoiceId: string) {
 
 function renderCartItemsHTML(): string {
   if (!posCart.length) {
-    return '<div class="pos-cart-empty">Select a material to start a sale.</div>';
+    return '<div class="pos-cart-empty">Select a material or add a custom item to start a sale.</div>';
   }
-  return posCart.map(item => `
-    <div class="pos-cart-item">
+  return posCart.map(item => {
+    const isCustom = Boolean((item.material as any).is_custom);
+    return `
+    <div class="pos-cart-item ${isCustom ? 'pos-cart-custom' : ''}">
       <div class="pos-cart-info">
         <strong>${esc(item.material.name)}</strong>
-        <span>${fmtPeso(item.material.price_per_unit)} · ${esc(item.material.unit)}</span>
+        <span>${fmtPeso(item.material.price_per_unit)}${isCustom ? ' · <em style="color:var(--c-primary);font-style:normal;font-weight:600">Misc</em>' : ` · ${esc(item.material.unit)}`}</span>
       </div>
       <div class="pos-qty">
         <button type="button" onclick="changePOSQty('${item.material.id}', -1)">−</button>
-        <input class="pos-qty-input" type="number" min="0.01" max="${Number(item.material.stock)}" step="0.01" value="${item.quantity}" aria-label="Quantity" onchange="setPOSQty('${item.material.id}', this.value)" />
+        <input class="pos-qty-input" type="number" min="0.01" ${isCustom ? '' : `max="${Number(item.material.stock)}"`} step="0.01" value="${item.quantity}" aria-label="Quantity" onchange="setPOSQty('${item.material.id}', this.value)" />
         <button type="button" onclick="changePOSQty('${item.material.id}', 1)">+</button>
       </div>
       <strong class="pos-line-total">${fmtPeso(item.quantity * Number(item.material.price_per_unit))}</strong>
       <button type="button" class="pos-remove" onclick="removePOSItem('${item.material.id}')" aria-label="Remove item">×</button>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 export function renderPOSCart() {
@@ -293,7 +302,17 @@ function renderPOSProductGrid() {
   const materials: Material[] = (window as any).__invMaterials || [];
   const filtered = materials.filter(m => (!posCategory || m.category === posCategory) && (!posSearch || `${m.name} ${m.category} ${m.unit} ${m.barcode || ''}`.toLowerCase().includes(posSearch.toLowerCase())));
   if (count) count.textContent = `${filtered.length} item${filtered.length === 1 ? '' : 's'}`;
-  if (grid) grid.innerHTML = filtered.length ? filtered.map(m => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('') : '<div class="pos-empty">No materials match your search.</div>';
+  if (grid) {
+    if (filtered.length) {
+      grid.innerHTML = filtered.map(m => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('');
+    } else {
+      const q = posSearch.trim();
+      grid.innerHTML = `<div class="pos-empty">
+        <p>No materials match your search.</p>
+        ${q ? `<button type="button" class="btn btn-sm btn-primary" onclick="showAddCustomPOSItemModal('${esc(q).replace(/'/g, "\\'")}')" style="margin-top:var(--space-2)">+ Add "${esc(q)}" as Custom Item</button>` : `<button type="button" class="btn btn-sm btn-outline" onclick="showAddCustomPOSItemModal()" style="margin-top:var(--space-2)">+ Add Custom / Misc Item</button>`}
+      </div>`;
+    }
+  }
 }
 export function addPOSItem(id: string) {
   const material = ((window as any).__invMaterials || []).find((m: Material) => m.id === id) as Material | undefined;
@@ -304,14 +323,29 @@ export function addPOSItem(id: string) {
   else showToast(`${material.name} is out of stock`);
   renderPOSCart();
 }
-export function changePOSQty(id: string, delta: number) { const item = posCart.find(i => i.material.id === id); if (!item) return; const next = Math.round((item.quantity + delta) * 1000) / 1000; if (next <= 0) posCart = posCart.filter(i => i.material.id !== id); else if (next <= Number(item.material.stock)) item.quantity = next; else showToast(`Only ${item.material.stock} ${item.material.unit} available`); renderPOSCart(); }
+export function changePOSQty(id: string, delta: number) {
+  const item = posCart.find(i => i.material.id === id);
+  if (!item) return;
+  const next = Math.round((item.quantity + delta) * 1000) / 1000;
+  if (next <= 0) {
+    posCart = posCart.filter(i => i.material.id !== id);
+  } else {
+    const isCustom = Boolean((item.material as any).is_custom);
+    if (isCustom || next <= Number(item.material.stock)) {
+      item.quantity = next;
+    } else {
+      showToast(`Only ${item.material.stock} ${item.material.unit} available`);
+    }
+  }
+  renderPOSCart();
+}
 export function removePOSItem(id: string) { posCart = posCart.filter(i => i.material.id !== id); renderPOSCart(); }
 export function clearPOSCart() { posCart = []; renderPOSCart(); }
 export function togglePOSDiscount(enabled: boolean) { posDiscountEnabled = enabled; if (!enabled) posDiscountAmount = 0; renderPOSCart(); }
 export function setPOSDiscount(value: string) { posDiscountAmount = Math.max(0, Number(value) || 0); const total = getPOSCurrentTotal(); const target = document.querySelector('.pos-grand-total strong'); if (target) target.textContent = fmtPeso(total); updatePOSPayment(); }
 export function updatePOSPayment() { const total = getPOSCurrentTotal(); const received = Number((document.getElementById('pos-received') as HTMLInputElement)?.value || 0); const method = (document.getElementById('pos-method') as HTMLSelectElement)?.value; const fields = document.getElementById('pos-cash-fields'); const warning = document.getElementById('pos-credit-warning'); const required = document.getElementById('pos-name-required'); if (fields) fields.style.display = method === 'credit' ? 'none' : ''; if (warning) warning.style.display = method === 'credit' ? 'block' : 'none'; if (required) required.textContent = method === 'credit' ? '* required for Credit' : '(optional unless Credit)'; const change = method === 'cash' ? Math.max(0, received - total) : 0; const target = document.getElementById('pos-change-value'); if (target) target.textContent = fmtPeso(change); const btn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null; if (btn) btn.disabled = !posCart.length; }
 export async function completePOSSale() {
-  if (!posCart.length) { showToast('Add at least one material'); return; }
+  if (!posCart.length) { showToast('Add at least one item'); return; }
   const total = getPOSCurrentTotal();
   const method = (document.getElementById('pos-method') as HTMLSelectElement)?.value || 'cash';
   const received = Number((document.getElementById('pos-received') as HTMLInputElement)?.value || 0);
@@ -320,7 +354,12 @@ export async function completePOSSale() {
   const buyer_address = (document.getElementById('pos-credit-address') as HTMLInputElement)?.value.trim() || '';
   const notes = (document.getElementById('pos-credit-notes') as HTMLInputElement)?.value.trim() || '';
   if (method === 'credit' && !credit_account_name) { showToast('Enter the buyer or charge-to name for a credit sale'); (document.getElementById('pos-credit-name') as HTMLInputElement)?.focus(); return; }
-  const items = posCart.map(item => ({ material_id: item.material.id, description: item.material.name, quantity: item.quantity, unit_price: Number(item.material.price_per_unit) }));
+  const items = posCart.map(item => ({
+    material_id: (item.material as any).is_custom ? null : item.material.id,
+    description: item.material.name,
+    quantity: item.quantity,
+    unit_price: Number(item.material.price_per_unit)
+  }));
   const customer_id = null;
   const btn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null; if (btn) btn.disabled = true;
   try {
@@ -584,3 +623,107 @@ export async function returnItems(invoiceId: string, returnView = getCurrentView
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('ret-btn', false); }
 }
+
+export function showAddCustomPOSItemModal(initialName: string = '') {
+  showModal(`
+    <h3>Add Custom / Misc Item</h3>
+    <p class="modal-help" style="color:var(--c-text-secondary);margin-bottom:var(--space-3);font-size:var(--fs-sm)">
+      Record non-inventory income (e.g. ice/yelo, snacks, scrap, delivery). Adds directly to sales and cash drawer without deducting stock.
+    </p>
+    <div class="form-group" style="margin-bottom:var(--space-3)">
+      <label for="pos-custom-name">Item Name / Description *</label>
+      <input id="pos-custom-name" maxlength="100" placeholder="e.g. Ice / Yelo, Empty Sacks, Scrap" value="${esc(initialName)}" />
+      <div class="field-error" id="pos-custom-name-err"></div>
+    </div>
+    <div class="form-row" style="display:flex;gap:var(--space-3)">
+      <div class="form-group" style="flex:1">
+        <label for="pos-custom-price">Price (₱) *</label>
+        <input id="pos-custom-price" type="number" step="0.01" min="0.01" placeholder="0.00" />
+        <div class="field-error" id="pos-custom-price-err"></div>
+      </div>
+      <div class="form-group" style="flex:1">
+        <label for="pos-custom-qty">Quantity</label>
+        <input id="pos-custom-qty" type="number" step="1" min="1" value="1" />
+      </div>
+    </div>
+    <div class="modal-actions" style="margin-top:var(--space-4)">
+      <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" id="pos-custom-submit-btn" onclick="submitCustomPOSItem()">Add to Cart</button>
+    </div>
+  `, 'pos-custom-modal');
+
+  setTimeout(() => {
+    const nameInput = document.getElementById('pos-custom-name') as HTMLInputElement;
+    const priceInput = document.getElementById('pos-custom-price') as HTMLInputElement;
+    const qtyInput = document.getElementById('pos-custom-qty') as HTMLInputElement;
+    if (initialName && priceInput) priceInput.focus();
+    else if (nameInput) nameInput.focus();
+
+    const handleEnter = (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        submitCustomPOSItem();
+      }
+    };
+    nameInput?.addEventListener('keydown', handleEnter);
+    priceInput?.addEventListener('keydown', handleEnter);
+    qtyInput?.addEventListener('keydown', handleEnter);
+  }, 50);
+}
+
+export function submitCustomPOSItem() {
+  clearErr('pos-custom-name-err');
+  clearErr('pos-custom-price-err');
+  const nameInput = document.getElementById('pos-custom-name') as HTMLInputElement;
+  const priceInput = document.getElementById('pos-custom-price') as HTMLInputElement;
+  const qtyInput = document.getElementById('pos-custom-qty') as HTMLInputElement;
+  const name = nameInput?.value.trim() || '';
+  const price = Number(priceInput?.value || 0);
+  const qty = Number(qtyInput?.value || 1);
+
+  if (!name) {
+    setErr('pos-custom-name-err', 'Please enter an item description');
+    nameInput?.focus();
+    return;
+  }
+  if (!Number.isFinite(price) || price <= 0) {
+    setErr('pos-custom-price-err', 'Please enter a valid price greater than 0');
+    priceInput?.focus();
+    return;
+  }
+  if (!Number.isFinite(qty) || qty <= 0) {
+    showToast('Quantity must be greater than 0');
+    qtyInput?.focus();
+    return;
+  }
+
+  const existing = posCart.find(item => (item.material as any).is_custom && item.material.name.toLowerCase() === name.toLowerCase() && Math.abs(Number(item.material.price_per_unit) - price) < 0.005);
+  if (existing) {
+    existing.quantity += qty;
+  } else {
+    const customId = `custom_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    posCart.push({
+      material: {
+        id: customId,
+        name,
+        unit: 'item',
+        stock: 999999,
+        cost_price: 0,
+        price_per_unit: price,
+        wholesale_price: price,
+        reorder_point: 0,
+        category: 'Miscellaneous',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        is_custom: true
+      } as any,
+      quantity: qty
+    });
+  }
+
+  closeModal();
+  renderPOSCart();
+  updatePOSPayment();
+  showToast(`Added "${name}" to cart`, 'success');
+}
+
