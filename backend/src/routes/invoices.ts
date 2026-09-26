@@ -71,10 +71,11 @@ router.get('/receivables', async (req: Request, res: Response) => {
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 15));
   const netPaid = `(COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id AND p.method <> 'credit'),0) - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0))`;
   const balance = `i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) - ${netPaid}`;
-  // A credit sale remains a receivable after any partial payment. Do not
-  // require the original zero-value credit payment row to exist: older sales
-  // and imported records may only have credit_account_name set.
-  const conditions = ["i.status <> 'voided'", "(EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit') OR (i.credit_account_name IS NOT NULL AND trim(i.credit_account_name) <> ''))"];
+  // A credit sale is an invoice charged to credit (or opened as an unpaid account invoice).
+  // Immediate cash, check, card, or GCash sales that were paid upfront at checkout are not credit sales,
+  // even if a buyer name is recorded on the receipt.
+  const creditSaleCondition = "(EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit') OR (i.status IN ('pending', 'partial') AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id=i.id AND p.method <> 'credit' AND p.amount >= i.total - 0.005)))";
+  const conditions = ["i.status <> 'voided'", creditSaleCondition];
   const params: any[] = [];
   if (search) { conditions.push("COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Unassigned Credit') LIKE ?"); params.push(`%${search}%`); }
   if (status === 'unpaid') conditions.push(`${balance} > 0.005 AND ${netPaid} <= 0.005`);
@@ -98,7 +99,7 @@ router.get('/receivables', async (req: Request, res: Response) => {
 
 router.get('/receivables-trend', async (_req: Request, res: Response) => {
   const db = getDb();
-  const creditSale = "(EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit') OR (i.credit_account_name IS NOT NULL AND trim(i.credit_account_name) <> ''))";
+  const creditSale = "(EXISTS (SELECT 1 FROM payments cp WHERE cp.invoice_id=i.id AND cp.method='credit') OR (i.status IN ('pending', 'partial') AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id=i.id AND p.method <> 'credit' AND p.amount >= i.total - 0.005)))";
   const rows = await db.prepare(`
     WITH RECURSIVE months(month_start, month_end, step) AS (
       SELECT date('now', '+8 hours', 'start of month', '-2 months'), date('now', '+8 hours', 'start of month', '-1 day'), 0

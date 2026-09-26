@@ -56,7 +56,7 @@ router.get('/comprehensive', async (req: Request, res: Response) => {
       UNION ALL SELECT 'credit memo', cm.created_at, i.invoice_number, NULL, NULL, cm.amount, NULL FROM credit_memos cm JOIN invoices i ON i.id=cm.invoice_id WHERE cm.status='issued' AND ${dateFilter('cm.created_at')}
       UNION ALL SELECT 'void', i.issued_date, i.invoice_number, NULL, NULL, i.total, NULL FROM invoices i WHERE i.status='voided' AND ${dateFilter('i.issued_date')}
       ORDER BY event_date DESC`).all(from,to,from,to,from,to,from,to),
-    db.prepare(`SELECT * FROM (SELECT i.invoice_number, i.issued_date, COALESCE(c.name,'Walk-in') buyer,
+    db.prepare(`SELECT * FROM (SELECT i.invoice_number, i.issued_date, COALESCE(NULLIF(i.credit_account_name,''), c.name,'Walk-in') buyer,
       i.total - COALESCE((SELECT SUM(cm.amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued' AND date(cm.created_at,'+8 hours') <= ?),0)
         - COALESCE((SELECT SUM(ir.total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id AND date(ir.created_at,'+8 hours') <= ?),0) total,
       COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id=i.id AND date(p.payment_date,'+8 hours') <= ?),0)
@@ -67,7 +67,7 @@ router.get('/comprehensive', async (req: Request, res: Response) => {
       WHERE total > paid ORDER BY days_outstanding DESC`).all(to,to,to,to,to,to,to,to,to),
     db.prepare(`SELECT expense_date, category, vendor, payment_method, description, amount FROM expenses WHERE ${dateFilter('expense_date')} ORDER BY expense_date DESC`).all(from, to),
     db.prepare(`SELECT po.po_number, po.order_date, po.received_date, s.name supplier, po.status, po.total FROM purchase_orders po JOIN suppliers s ON s.id=po.supplier_id WHERE date(po.order_date,'+8 hours') BETWEEN ? AND ? ORDER BY po.order_date DESC`).all(from, to),
-    db.prepare(`SELECT i.invoice_number, i.issued_date, COALESCE(c.name,'Walk-in') buyer, i.delivery_status, COALESCE(dp.name,i.delivery_person,'Not assigned') delivery_person, i.buyer_address FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN delivery_personnel dp ON dp.id=i.delivery_person_id WHERE i.status <> 'voided' AND ${dateFilter('i.issued_date')} ORDER BY CASE WHEN i.delivery_status='unassigned' THEN 0 WHEN i.delivery_status='assigned' THEN 1 ELSE 2 END, i.issued_date DESC`).all(from, to),
+    db.prepare(`SELECT i.invoice_number, i.issued_date, COALESCE(NULLIF(i.credit_account_name,''), c.name,'Walk-in') buyer, i.delivery_status, COALESCE(dp.name,i.delivery_person,'Not assigned') delivery_person, i.buyer_address FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN delivery_personnel dp ON dp.id=i.delivery_person_id WHERE i.status <> 'voided' AND ${dateFilter('i.issued_date')} ORDER BY CASE WHEN i.delivery_status='unassigned' THEN 0 WHEN i.delivery_status='assigned' THEN 1 ELSE 2 END, i.issued_date DESC`).all(from, to),
     db.prepare(`SELECT u.username, COUNT(DISTINCT i.id) invoices, COALESCE(SUM(f.net_sales),0) net_sales, COALESCE(SUM(f.net_collections),0) collections,
       COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.created_by=u.id AND ${dateFilter('r.created_at')}),0) refunds,
       COALESCE((SELECT COUNT(*) FROM attendance a WHERE a.user_id=u.id AND a.status='present' AND a.attendance_date BETWEEN ? AND ?),0) days_present
@@ -157,10 +157,10 @@ router.get('/books', async (req: Request, res: Response) => {
   const from = (req.query.from as string) || businessDate();
   const to = (req.query.to as string) || from;
   const [sales, receipts, expenses, receivables] = await Promise.all([
-      db.prepare(`SELECT f.invoice_number, f.issued_date, COALESCE(c.name,'Walk-in') buyer, f.net_sales, f.adjusted_tax, f.adjusted_total, f.status FROM v_invoice_financials f LEFT JOIN customers c ON c.id=f.customer_id WHERE f.status <> 'voided' AND date(f.issued_date, '+8 hours') BETWEEN ? AND ? ORDER BY f.issued_date`).all(from,to),
+      db.prepare(`SELECT f.invoice_number, f.issued_date, COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') buyer, f.net_sales, f.adjusted_tax, f.adjusted_total, f.status FROM v_invoice_financials f JOIN invoices i ON i.id=f.invoice_id LEFT JOIN customers c ON c.id=f.customer_id WHERE f.status <> 'voided' AND date(f.issued_date, '+8 hours') BETWEEN ? AND ? ORDER BY f.issued_date`).all(from,to),
     db.prepare(`SELECT p.payment_date, i.invoice_number, p.method, p.amount FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE i.status <> 'voided' AND p.method <> 'credit' AND date(p.payment_date, '+8 hours') BETWEEN ? AND ? ORDER BY p.payment_date`).all(from,to),
     db.prepare(`SELECT expense_date, category, vendor, description, amount, payment_method FROM expenses WHERE date(expense_date, '+8 hours') BETWEEN ? AND ? ORDER BY expense_date`).all(from,to),
-    db.prepare(`SELECT f.invoice_number, COALESCE(c.name,'Walk-in') buyer, f.adjusted_total, f.net_collections paid, f.adjusted_total-f.net_collections balance FROM v_invoice_financials f LEFT JOIN customers c ON c.id=f.customer_id WHERE f.status <> 'voided' AND f.adjusted_total > f.net_collections ORDER BY f.issued_date`).all(),
+    db.prepare(`SELECT f.invoice_number, COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') buyer, f.adjusted_total, f.net_collections paid, f.adjusted_total-f.net_collections balance FROM v_invoice_financials f JOIN invoices i ON i.id=f.invoice_id LEFT JOIN customers c ON c.id=f.customer_id WHERE f.status <> 'voided' AND f.adjusted_total > f.net_collections ORDER BY f.issued_date`).all(),
   ]);
   res.json({ from, to, sales, receipts, expenses, receivables });
 });

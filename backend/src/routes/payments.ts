@@ -14,7 +14,7 @@ router.get('/receipts', async (req: Request, res: Response) => {
   const to = typeof req.query.to === 'string' ? req.query.to : '';
   const conditions = ["i.status <> 'voided'"];
   const params: any[] = [];
-  if (search) { conditions.push('(i.invoice_number LIKE ? OR COALESCE(c.name, \'Walk-in\') LIKE ?)'); params.push(`%${search}%`, `%${search}%`); }
+  if (search) { conditions.push('(i.invoice_number LIKE ? OR COALESCE(NULLIF(i.credit_account_name, \'\'), c.name, \'Walk-in\') LIKE ?)'); params.push(`%${search}%`, `%${search}%`); }
   if (from) { conditions.push('date(p.payment_date) >= ?'); params.push(from); }
   if (to) { conditions.push('date(p.payment_date) <= ?'); params.push(to); }
   const where = conditions.join(' AND ');
@@ -22,12 +22,12 @@ router.get('/receipts', async (req: Request, res: Response) => {
   const data = await db.prepare(`SELECT i.id AS invoice_id, MIN(p.id) AS id, MAX(p.payment_date) AS payment_date,
     COALESCE(SUM(p.amount),0) - COALESCE((SELECT SUM(amount) FROM refunds WHERE invoice_id=i.id),0) AS amount,
     GROUP_CONCAT(DISTINCT p.method) AS method, NULL AS notes, i.invoice_number, i.status,
-    COALESCE(c.name,'Walk-in') customer_name,
+    COALESCE(NULLIF(i.credit_account_name, ''), c.name, 'Walk-in') customer_name,
     COALESCE(SUM(p.amount),0) - COALESCE((SELECT SUM(amount) FROM refunds WHERE invoice_id=i.id),0) AS refundable_amount,
     COALESCE((SELECT SUM(amount) FROM refunds WHERE invoice_id=i.id),0) AS refunded_amount,
     COALESCE((SELECT SUM(quantity) FROM invoice_returns WHERE invoice_id=i.id),0) AS returned_quantity
     FROM payments p JOIN invoices i ON i.id=p.invoice_id LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}
-    GROUP BY i.id, i.invoice_number, i.status, c.name
+    GROUP BY i.id, i.invoice_number, i.status, c.name, i.credit_account_name
     ORDER BY payment_date DESC LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize);
   res.json({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) });
 });
