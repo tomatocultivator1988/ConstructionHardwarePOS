@@ -101,17 +101,27 @@ router.get('/balance-sheet', async (req: Request, res: Response) => {
   const receivableTotal = Number(receivables.total || 0);
   const recordedCash = Number(cash?.closing_cash || 0);
   const retainedEarnings = Number(profit.net_sales || 0) - Number(profit.cogs || 0) - Number(profit.expenses || 0);
-  const manualAssets = (chartRows as any[]).filter(row => row.balance_source === 'manual' && row.base_type === 'asset').reduce((sum, row) => sum + Number(row.opening_balance || 0), 0);
-  const manualLiabilities = (chartRows as any[]).filter(row => row.balance_source === 'manual' && row.base_type === 'liability').reduce((sum, row) => sum + Number(row.opening_balance || 0), 0);
-  const ownerCapital = Number((chartRows as any[]).find(row => row.code === '3000')?.opening_balance ?? manual.owner_capital ?? 0), withdrawals = Number(manual.owner_withdrawals || 0);
-  const totalAssets = inventoryCost + receivableTotal + recordedCash + manualAssets;
+  const bankVal = Number(manual['1010'] ?? manual.bank ?? 0);
+  const gcashVal = Number(manual['1020'] ?? manual.gcash ?? 0);
+  const fixedAssetSum = ['land','equipment','building','other_fixed_assets','trademark','other_assets'].reduce((sum, k) => sum + Number(manual[k] || 0), 0);
+  const customChartAssets = (chartRows as any[]).filter(row => row.balance_source === 'manual' && row.base_type === 'asset' && !['1010','1020'].includes(String(row.code))).reduce((sum, row) => sum + Number(row.opening_balance || 0), 0);
+  const totalManualAssets = bankVal + gcashVal + fixedAssetSum + customChartAssets;
+  const totalAssets = inventoryCost + receivableTotal + recordedCash + totalManualAssets;
+
+  const manualLiabilitiesList = ['supplier_payables','accrued_liabilities','deferred_income','accrued_salaries','mortgage_payable','other_current_liabilities','long_term_debt','notes_payable','other_long_term_liabilities'];
+  const manualLiabilitySum = manualLiabilitiesList.reduce((sum, k) => sum + Number(manual[k] || 0), 0);
+  const customChartLiabilities = (chartRows as any[]).filter(row => row.balance_source === 'manual' && row.base_type === 'liability' && row.code !== '2000').reduce((sum, row) => sum + Number(row.opening_balance || 0), 0);
+  const totalLiabilities = manualLiabilitySum + customChartLiabilities;
+
+  const ownerCapital = Number((chartRows as any[]).find(row => row.code === '3000')?.opening_balance ?? manual.owner_capital ?? 0);
+  const withdrawals = Number(manual.owner_withdrawals || 0);
   const customEquity = (chartRows as any[]).filter(row => row.balance_source === 'manual' && row.base_type === 'equity' && row.code !== '3000').reduce((sum, row) => sum + Number(row.opening_balance || 0), 0);
   const totalEquity = ownerCapital + retainedEarnings + customEquity - withdrawals;
   res.json({
     as_of: asOf,
-    assets: { inventory_cost: inventoryCost, inventory_retail: Number(inventory.retail_total || 0), receivables: receivableTotal, recorded_cash: recordedCash, bank: manual['1010'] ?? manual.bank ?? null, gcash: manual['1020'] ?? manual.gcash ?? null, manual_total: manualAssets, known_total: totalAssets },
-    equity: { owner_capital: manual.owner_capital ?? null, retained_earnings: retainedEarnings, owner_withdrawals: manual.owner_withdrawals ?? null, known_total: totalEquity },
-    liabilities: { supplier_payables: manual.supplier_payables ?? null, accrued_liabilities: manual.accrued_liabilities ?? null, deferred_income: manual.deferred_income ?? null, accrued_salaries: manual.accrued_salaries ?? null, mortgage_payable: manual.mortgage_payable ?? null, other_current_liabilities: manual.other_current_liabilities ?? null, long_term_debt: manual.long_term_debt ?? null, notes_payable: manual.notes_payable ?? null, other_long_term_liabilities: manual.other_long_term_liabilities ?? null, known_total: manualLiabilities },
+    assets: { inventory_cost: inventoryCost, inventory_retail: Number(inventory.retail_total || 0), receivables: receivableTotal, recorded_cash: recordedCash, bank: manual['1010'] ?? manual.bank ?? null, gcash: manual['1020'] ?? manual.gcash ?? null, manual_total: totalManualAssets, known_total: totalAssets },
+    equity: { owner_capital: ownerCapital, retained_earnings: retainedEarnings, owner_withdrawals: withdrawals, known_total: totalEquity },
+    liabilities: { supplier_payables: manual.supplier_payables ?? null, accrued_liabilities: manual.accrued_liabilities ?? null, deferred_income: manual.deferred_income ?? null, accrued_salaries: manual.accrued_salaries ?? null, mortgage_payable: manual.mortgage_payable ?? null, other_current_liabilities: manual.other_current_liabilities ?? null, long_term_debt: manual.long_term_debt ?? null, notes_payable: manual.notes_payable ?? null, other_long_term_liabilities: manual.other_long_term_liabilities ?? null, known_total: totalLiabilities },
     manual_accounts: manual,
     chart_accounts: chartRows,
     untracked: [],

@@ -100,15 +100,16 @@ async function loadBalanceSheetReport() {
   const manual = data.manual_accounts || {};
   const manualMoney = (key: string) => manual[key] === undefined || manual[key] === null ? 'Not tracked' : fmtPeso(Number(manual[key]));
   const knownAssets = Number(data.assets.known_total || 0);
+  const knownLiabilities = Number(data.liabilities.known_total || 0);
   const knownEquity = Number(data.equity.known_total ?? data.equity.retained_earnings ?? 0);
-  const knownLiabilitiesAndEquity = Number(data.liabilities.known_total || 0) + knownEquity;
+  const knownLiabilitiesAndEquity = knownLiabilities + knownEquity;
   const unreconciled = knownAssets - knownLiabilitiesAndEquity;
   const customAccounts = (data.chart_accounts || []).filter((account: any) => account.balance_source === 'manual' && !['1010','1020','2000','3000'].includes(String(account.code)));
   const customRows = (type: string) => customAccounts.filter((account: any) => (account.base_type || account.type) === type).map((account: any) => `<tr><td>${esc(account.category || (type === 'asset' ? 'Assets' : type === 'liability' ? 'Liabilities' : 'Equity'))}</td><td>${esc(account.name)}</td><td>${fmtPeso(Number(account.opening_balance || 0))}</td><td>Manual opening balance${account.opening_balance_date ? ` as of ${fmtDate(account.opening_balance_date)}` : ''}</td></tr>`).join('');
   const sectionRow = (label: string) => `<tr style="background:var(--c-primary);color:#fff"><th colspan="4" style="color:#fff;letter-spacing:.08em">${label}</th></tr>`;
   const totalRow = (label: string, amount: string, note: string) => `<tr style="font-weight:800;border-top:2px solid var(--c-primary)"><td colspan="2">${label}</td><td>${amount}</td><td>${note}</td></tr>`;
-  return `<div class="report-section-heading"><div><h3>Balance Sheet</h3><span>POS-based financial position as of ${fmtDate(data.as_of)}</span></div><div style="display:flex;gap:var(--space-2)"><button class="btn btn-primary btn-sm" onclick="editBalanceSheetAccounts()">Edit Accounts</button><button class="btn btn-sm" onclick="printReport('balance-sheet','As of ${fmtDate(data.as_of)}')">PDF / Print</button><button class="btn btn-sm" onclick="exportBalanceSheet()">Excel</button></div></div>
-    <div class="notice-card" style="margin:var(--space-4) 0;padding:var(--space-4);border:1px solid var(--c-warning);border-radius:var(--radius-md);background:var(--c-warning-soft,#fff7e6)"><strong>Important:</strong> This report uses only recorded POS data. Bank, GCash, owner capital, supplier payables, loans, fixed assets, and withdrawals are not tracked here.</div>
+  return `<div class="report-section-heading"><div><h3>Balance Sheet</h3><span>Financial position as of ${fmtDate(data.as_of)}</span></div><div style="display:flex;gap:var(--space-2)"><button class="btn btn-primary btn-sm" onclick="editBalanceSheetAccounts()">Edit Accounts</button><button class="btn btn-sm" onclick="printReport('balance-sheet','As of ${fmtDate(data.as_of)}')">PDF / Print</button><button class="btn btn-sm" onclick="exportBalanceSheet()">Excel</button></div></div>
+    <div class="notice-card" style="margin:var(--space-4) 0;padding:var(--space-4);border:1px solid var(--c-primary);border-radius:var(--radius-md);background:var(--c-surface-elevated)"><strong>Balance Sheet Overview:</strong> Live POS items (Drawer cash, Inventory, Receivables, Retained earnings) calculate automatically from sales and stock. External accounts (Bank, GCash, Land, Equipment, Liabilities, Owner's capital) can be customized anytime using the <strong>"Edit Accounts"</strong> button.</div>
     <div class="dashboard-grid report-metrics report-metrics-3">
       <div class="dashboard-card card-info"><div class="card-label">Inventory at Cost</div><div class="card-value">${fmtPeso(data.assets.inventory_cost)}</div></div>
       <div class="dashboard-card card-warning"><div class="card-label">Accounts Receivable</div><div class="card-value">${fmtPeso(data.assets.receivables)}</div></div>
@@ -124,7 +125,6 @@ async function loadBalanceSheetReport() {
       <tr><td>Current Assets</td><td>Prepaid expenses</td><td>Not tracked</td><td>No prepaid-expense account exists in the POS</td></tr>
       <tr><td>Current Assets</td><td>Short-term investments</td><td>Not tracked</td><td>No investment account exists in the POS</td></tr>
       ${customRows('asset')}
-      ${totalRow('TOTAL KNOWN POS ASSETS', fmtPeso(knownAssets), 'Cash, receivables, and inventory only')}
       ${sectionRow('FIXED / LONG-TERM ASSETS')}
       <tr><td>Fixed Assets</td><td>Land</td><td>${manualMoney('land')}</td><td>Manual admin account</td></tr>
       <tr><td>Fixed Assets</td><td>Equipment</td><td>${manualMoney('equipment')}</td><td>Manual admin account</td></tr>
@@ -133,6 +133,7 @@ async function loadBalanceSheetReport() {
       ${sectionRow('OTHER ASSETS')}
       <tr><td>Other Assets</td><td>Trademark / intellectual property</td><td>${manualMoney('trademark')}</td><td>Manual admin account</td></tr>
       <tr><td>Other Assets</td><td>Other assets</td><td>${manualMoney('other_assets')}</td><td>Manual admin account</td></tr>
+      ${totalRow('TOTAL ASSETS', fmtPeso(knownAssets), 'Total current, fixed, and other recorded assets')}
       ${sectionRow('CURRENT LIABILITIES')}
       <tr><td>Current Liabilities</td><td>Accounts payable / supplier payables</td><td>${manualMoney('supplier_payables')}</td><td>Manual admin account</td></tr>
       <tr><td>Current Liabilities</td><td>Accrued liabilities</td><td>${manualMoney('accrued_liabilities')}</td><td>Manual admin account</td></tr>
@@ -140,19 +141,20 @@ async function loadBalanceSheetReport() {
       <tr><td>Current Liabilities</td><td>Accrued salaries and wages</td><td>${manualMoney('accrued_salaries')}</td><td>Manual admin account</td></tr>
       <tr><td>Current Liabilities</td><td>Mortgage payable</td><td>${manualMoney('mortgage_payable')}</td><td>Manual admin account</td></tr>
       <tr><td>Current Liabilities</td><td>Other current liabilities</td><td>${manualMoney('other_current_liabilities')}</td><td>Manual admin account</td></tr>
-      ${customRows('liability')}
       ${sectionRow('LONG-TERM LIABILITIES')}
       <tr><td>Long-Term Liabilities</td><td>Long-term debt</td><td>${manualMoney('long_term_debt')}</td><td>Manual admin account</td></tr>
       <tr><td>Long-Term Liabilities</td><td>Notes payable</td><td>${manualMoney('notes_payable')}</td><td>Manual admin account</td></tr>
       <tr><td>Long-Term Liabilities</td><td>Other long-term liabilities</td><td>${manualMoney('other_long_term_liabilities')}</td><td>Manual admin account</td></tr>
+      ${customRows('liability')}
+      ${totalRow('TOTAL LIABILITIES', fmtPeso(knownLiabilities), 'Total recorded liabilities and payables')}
       ${sectionRow("OWNER'S EQUITY")}
       <tr><td>Equity</td><td>Owner's capital</td><td>${manualMoney('owner_capital')}</td><td>Manual admin account</td></tr>
       <tr><td>Equity</td><td>Retained earnings</td><td>${fmtPeso(data.equity.retained_earnings)}</td><td>Cumulative recorded sales less COGS and expenses</td></tr>
       <tr><td>Equity</td><td>Owner withdrawals</td><td>${manualMoney('owner_withdrawals')}</td><td>Manual admin account</td></tr>
       ${customRows('equity')}
-      ${totalRow("TOTAL OWNER'S EQUITY (KNOWN)", fmtPeso(knownEquity), 'Retained earnings only')}
-      ${totalRow("TOTAL LIABILITIES + OWNER'S EQUITY (KNOWN)", fmtPeso(knownLiabilitiesAndEquity), 'Missing external accounts excluded')}
-      <tr style="font-weight:800;color:${unreconciled === 0 ? 'var(--c-success)' : 'var(--c-danger)'}"><td colspan="2">CHECK / UNRECONCILED DIFFERENCE</td><td>${fmtPeso(unreconciled)}</td><td>${unreconciled === 0 ? 'Balanced' : 'Missing capital, liabilities, cash accounts, or other assets'}</td></tr>
+      ${totalRow("TOTAL OWNER'S EQUITY", fmtPeso(knownEquity), 'Owner capital + retained earnings less withdrawals')}
+      ${totalRow("TOTAL LIABILITIES + OWNER'S EQUITY", fmtPeso(knownLiabilitiesAndEquity), 'Total obligations and equity')}
+      <tr style="font-weight:800;color:${unreconciled === 0 ? 'var(--c-success)' : 'var(--c-danger)'}"><td colspan="2">CHECK / UNRECONCILED DIFFERENCE</td><td>${fmtPeso(unreconciled)}</td><td>${unreconciled === 0 ? 'Balanced' : 'Difference between total assets and (liabilities + equity)'}</td></tr>
     </tbody></table></div>`;
 }
 
