@@ -1,8 +1,9 @@
 import { apiGet, apiPost, apiPut, apiDel } from '../lib/api';
-import { esc, val, setErr, clearErr, disableBtn, fmtDate, fmtPeso } from '../lib/helpers';
+import { esc, val, setErr, clearErr, disableBtn, fmtDate, fmtPeso, isAdmin } from '../lib/helpers';
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
 import { loadView } from '../lib/router';
 import { startBarcodeCameraScan } from './invoices';
+import { openCategoriesManager } from './settings';
 import type { Material, StockMovement, Supplier } from '../lib/types';
 
 let UNIT_OPTIONS = ['Each', 'Kilogram', 'Meter', 'Roll', 'Gallon', 'Pieces', 'Liter', 'Box', 'Set', 'Bag', 'Pair', 'Sack', 'Bottle', 'Pack'];
@@ -47,8 +48,8 @@ export async function saveProductCatalogOption(type: 'category' | 'unit') {
   } catch (e: any) { showToast(e.message || 'Unable to add option'); }
 }
 
-function catOptions(selected?: string) {
-  return MAT_CATEGORIES.map(c => `<option value="${esc(c)}"${c === selected ? ' selected' : ''}>${esc(c) || '- All Categories -'}</option>`).join('');
+function catOptions(selected?: string, blankLabel = '- All Categories -') {
+  return MAT_CATEGORIES.map(c => `<option value="${esc(c)}"${c === selected ? ' selected' : ''}>${esc(c) || blankLabel}</option>`).join('');
 }
 
 function renderMaterialRow(m: Material): string {
@@ -82,8 +83,8 @@ export async function renderMaterials(): Promise<string> {
     apiGet<Supplier[]>('/suppliers'),
     apiGet<Record<string, string[]>>('/catalog'),
   ]);
-  if (catalog.category?.length) MAT_CATEGORIES = ['', ...catalog.category];
-  if (catalog.unit?.length) UNIT_OPTIONS = catalog.unit;
+  if (Array.isArray(catalog.category)) MAT_CATEGORIES = ['', ...catalog.category];
+  if (Array.isArray(catalog.unit)) UNIT_OPTIONS = catalog.unit;
   (window as any).__materialSuppliers = suppliers;
   const materials = Array.isArray(response) ? response : response.data;
   const totalMaterials = Array.isArray(response) ? response.length : response.total;
@@ -91,11 +92,12 @@ export async function renderMaterials(): Promise<string> {
   return `
     <div class="page-header">
       <h2>Products</h2>
-      <div class="material-toolbar" style="display:flex;gap:var(--space-3);align-items:center">
+      <div class="material-toolbar" style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
         <input id="mat-search" type="search" placeholder="Search materials..." value="${esc(materialSearch)}" oninput="filterMaterials(true)" onkeydown="if(event.key==='Enter')filterMaterials(false)" style="min-height:36px;min-width:220px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
         <select id="mat-cat-filter" onchange="filterMaterials(false)" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)">
           ${catOptions(materialCategory)}
         </select>
+        ${isAdmin() ? `<button class="btn btn-sm" onclick="openCategoriesManager('category')" title="Manage categories in Settings">Manage Categories</button>` : ''}
         <button class="btn btn-primary" onclick="showMaterialModal()">+ Add Product</button>
       </div>
     </div>
@@ -126,12 +128,20 @@ export function showMaterialModal(data?: Material) {
     <div class="form-row">
       <div class="form-group"><label>Name *</label><input id="mf-name" maxlength="100" value="${esc(data?.name || '')}" /><div class="field-error" id="mf-name-err"></div></div>
       <div class="form-group"><label>Category</label>
-        <div class="catalog-field"><select id="mf-category">${catOptions(data?.category || '')}</select><button type="button" class="btn btn-sm" onclick="addProductCatalogOption('category')">+ Add</button></div>
+        <div class="catalog-field">
+          <select id="mf-category">${catOptions(data?.category || '', '- None / Select Category -')}</select>
+          <button type="button" class="btn btn-sm" onclick="addProductCatalogOption('category')">+ Add</button>
+          ${isAdmin() ? `<button type="button" class="btn btn-sm" onclick="closeModal();openCategoriesManager('category')" title="Manage categories in Settings">Manage</button>` : ''}
+        </div>
       </div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Unit *</label>
-        <div class="catalog-field"><select id="mf-unit" onchange="toggleCustomUnit()"><option value="">Select unit...</option>${unitOptions(data?.unit)}</select><button type="button" class="btn btn-sm" onclick="addProductCatalogOption('unit')">+ Add</button></div>
+        <div class="catalog-field">
+          <select id="mf-unit" onchange="toggleCustomUnit()"><option value="">Select unit...</option>${unitOptions(data?.unit)}</select>
+          <button type="button" class="btn btn-sm" onclick="addProductCatalogOption('unit')">+ Add</button>
+          ${isAdmin() ? `<button type="button" class="btn btn-sm" onclick="closeModal();openCategoriesManager('unit')" title="Manage units in Settings">Manage</button>` : ''}
+        </div>
         <input id="mf-custom-unit" maxlength="30" value="${data?.unit && !UNIT_OPTIONS.includes(data.unit) ? esc(data.unit) : ''}" placeholder="e.g. Bundle, Sheet, Truckload" style="margin-top:6px;display:${data?.unit && !UNIT_OPTIONS.includes(data.unit) ? '' : 'none'}" />
         <div class="field-error" id="mf-unit-err"></div>
       </div>

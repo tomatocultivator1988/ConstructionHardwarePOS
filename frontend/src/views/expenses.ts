@@ -1,7 +1,8 @@
 import { apiGet, apiPost, apiPut, apiDel } from '../lib/api';
-import { esc, val, setErr, clearErr, disableBtn, fmtDate, fmtPeso } from '../lib/helpers';
+import { esc, val, setErr, clearErr, disableBtn, fmtDate, fmtPeso, isAdmin } from '../lib/helpers';
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
 import { loadView } from '../lib/router';
+import { openCategoriesManager } from './settings';
 import type { Expense } from '../lib/types';
 import { showExportPeriodModal, exportTable, type ExportPeriod } from '../lib/export';
 
@@ -37,13 +38,17 @@ export async function renderExpenses(): Promise<string> {
     apiGet<{ category: string; total: number }[]>('/expenses/summary'),
     apiGet<Record<string, string[]>>('/catalog'),
   ]);
-  if (catalog.expense_category?.length) EXPENSE_CATEGORIES = catalog.expense_category;
+  if (Array.isArray(catalog.expense_category)) EXPENSE_CATEGORIES = catalog.expense_category;
   const totalExpenses = expenses.reduce((s, e) => s + e.amount, 0);
 
   return `
     <div class="page-header">
       <h2>Expenses</h2>
-      <div style="display:flex;gap:var(--space-2);flex-wrap:wrap"><button class="btn" onclick="exportExpenses()">Export</button><button class="btn btn-primary" onclick="showExpenseModal()">+ Add Expense</button></div>
+      <div style="display:flex;gap:var(--space-2);flex-wrap:wrap">
+        <button class="btn" onclick="exportExpenses()">Export</button>
+        ${isAdmin() ? `<button class="btn btn-sm" onclick="openCategoriesManager('expense_category')" title="Manage expense categories in Settings">Manage Categories</button>` : ''}
+        <button class="btn btn-primary" onclick="showExpenseModal()">+ Add Expense</button>
+      </div>
     </div>
     <div class="chart-grid" style="margin-bottom:var(--space-4)">
       <div class="dashboard-card card-info">
@@ -100,7 +105,11 @@ export function showExpenseModal(data?: Expense) {
     <div class="form-row">
       <div class="form-group">
         <label>Category *</label>
-        <div class="catalog-field"><select id="exf-category"><option value="">Select category...</option>${catOptions(data?.category)}</select><button type="button" class="btn btn-sm" onclick="addExpenseCategory()">+ Add</button></div>
+        <div class="catalog-field">
+          <select id="exf-category"><option value="">Select category...</option>${catOptions(data?.category)}</select>
+          <button type="button" class="btn btn-sm" onclick="addExpenseCategory()">+ Add</button>
+          ${isAdmin() ? `<button type="button" class="btn btn-sm" onclick="closeModal();openCategoriesManager('expense_category')" title="Manage categories in Settings">Manage</button>` : ''}
+        </div>
         <div class="field-error" id="exf-category-err"></div>
       </div>
       <div class="form-group">

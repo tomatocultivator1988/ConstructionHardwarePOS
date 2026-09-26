@@ -2,6 +2,7 @@ import { apiGet, apiPut, apiPost, apiDel, getCurrentUser } from '../lib/api';
 import { esc, val, setErr, clearErr, disableBtn, fmtDate, fmtPeso, isAdmin } from '../lib/helpers';
 import { showToast, showConfirmModal, showModal, closeModal } from '../lib/helpers';
 import { printShift } from './receipt';
+import { loadView } from '../lib/router';
 
 let settingsSubTab = 'general';
 let attendanceMonth = new Date().toISOString().slice(0, 7);
@@ -14,26 +15,36 @@ export async function renderSettings(): Promise<string> {
       <h2>Settings</h2>
       <button class="btn btn-danger btn-sm" onclick="logout()">Logout</button>
     </div>
-    <div style="display:flex;gap:2px;background:var(--c-bg);padding:3px;border-radius:var(--radius-md);margin-bottom:var(--space-5);width:fit-content">
+    <div style="display:flex;gap:2px;background:var(--c-bg);padding:3px;border-radius:var(--radius-md);margin-bottom:var(--space-5);width:fit-content;flex-wrap:wrap">
       <button class="nav-btn ${settingsSubTab === 'general' ? 'active' : ''}" onclick="switchSettingsTab('general')">General</button>
+      ${isAdm ? `<button class="nav-btn ${settingsSubTab === 'categories' ? 'active' : ''}" onclick="switchSettingsTab('categories')">Categories</button>` : ''}
       ${isAdm ? `<button class="nav-btn ${settingsSubTab === 'users' ? 'active' : ''}" onclick="switchSettingsTab('users')">Staff</button>` : ''}
       ${isAdm ? `<button class="nav-btn ${settingsSubTab === 'attendance' ? 'active' : ''}" onclick="switchSettingsTab('attendance')">Attendance</button>` : ''}
       ${isAdm ? `<button class="nav-btn ${settingsSubTab === 'audit' ? 'active' : ''}" onclick="switchSettingsTab('audit')">Audit Log</button>` : ''}
       <button class="nav-btn ${settingsSubTab === 'shift' ? 'active' : ''}" onclick="switchSettingsTab('shift')">Cashier Shift</button>
     </div>
-    <div id="settings-content">${await loadGeneralSettings()}</div>
+    <div id="settings-content">${await loadCurrentSettingsSubTab()}</div>
   `;
+}
+
+async function loadCurrentSettingsSubTab(): Promise<string> {
+  if (settingsSubTab === 'general') return loadGeneralSettings();
+  if (settingsSubTab === 'categories') return loadCategoriesTab();
+  if (settingsSubTab === 'users') return loadUsersTab();
+  if (settingsSubTab === 'attendance') return loadAttendanceTab();
+  if (settingsSubTab === 'audit') return loadAuditTab();
+  if (settingsSubTab === 'shift') return loadShiftTab();
+  return loadGeneralSettings();
 }
 
 export async function switchSettingsTab(tab: string) {
   settingsSubTab = tab;
   const el = document.getElementById('settings-content');
   if (!el) return;
-  if (tab === 'general') el.innerHTML = await loadGeneralSettings();
-  else if (tab === 'users') el.innerHTML = await loadUsersTab();
-  else if (tab === 'attendance') el.innerHTML = await loadAttendanceTab();
-  else if (tab === 'audit') el.innerHTML = await loadAuditTab();
-  else if (tab === 'shift') el.innerHTML = await loadShiftTab();
+  document.querySelectorAll('.page-header + div .nav-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('onclick')?.includes(`'${tab}'`) || false);
+  });
+  el.innerHTML = await loadCurrentSettingsSubTab();
 }
 
 function monthLabel(month: string) {
@@ -330,3 +341,318 @@ async function loadAuditTab() {
     </div>
   `;
 }
+
+// ─── Categories & Units Management ───
+export interface CatalogItem {
+  id: string;
+  type: 'category' | 'unit' | 'expense_category';
+  name: string;
+  usage_count: number;
+}
+
+let catalogActiveType: 'category' | 'unit' | 'expense_category' = 'category';
+let catalogSearchFilter = '';
+let cachedCatalogDetails: CatalogItem[] = [];
+
+export function setCatalogActiveTab(type: 'category' | 'unit' | 'expense_category') {
+  catalogActiveType = type;
+  settingsSubTab = 'categories';
+}
+
+export async function openCategoriesManager(type: 'category' | 'unit' | 'expense_category' = 'category') {
+  setCatalogActiveTab(type);
+  loadView('settings');
+}
+
+export async function switchCatalogType(type: 'category' | 'unit' | 'expense_category') {
+  catalogActiveType = type;
+  catalogSearchFilter = '';
+  const el = document.getElementById('settings-content');
+  if (el) el.innerHTML = await loadCategoriesTab();
+}
+
+export function filterCatalogList(term: string) {
+  catalogSearchFilter = term.trim().toLowerCase();
+  const filtered = cachedCatalogDetails.filter(i => {
+    if (i.type !== catalogActiveType) return false;
+    if (catalogSearchFilter) return i.name.toLowerCase().includes(catalogSearchFilter);
+    return true;
+  });
+  const tbody = document.getElementById('catalog-table-body');
+  if (tbody) tbody.innerHTML = renderCatalogTableRows(filtered);
+  const counter = document.getElementById('catalog-count-display');
+  if (counter) {
+    const total = cachedCatalogDetails.filter(i => i.type === catalogActiveType).length;
+    counter.textContent = `Showing ${filtered.length} of ${total}`;
+  }
+}
+
+async function loadCategoriesTab(): Promise<string> {
+  try {
+    cachedCatalogDetails = await apiGet<CatalogItem[]>('/catalog/details');
+  } catch (err: any) {
+    showToast(err.message || 'Unable to load categories');
+    cachedCatalogDetails = [];
+  }
+
+  const categoryItems = cachedCatalogDetails.filter(i => i.type === 'category');
+  const unitItems = cachedCatalogDetails.filter(i => i.type === 'unit');
+  const expenseItems = cachedCatalogDetails.filter(i => i.type === 'expense_category');
+
+  const currentItems = cachedCatalogDetails.filter(i => {
+    if (i.type !== catalogActiveType) return false;
+    if (catalogSearchFilter) {
+      return i.name.toLowerCase().includes(catalogSearchFilter);
+    }
+    return true;
+  });
+
+  const typeLabels = {
+    category: 'Product Categories',
+    unit: 'Units of Measure',
+    expense_category: 'Expense Categories',
+  };
+
+  const addLabels = {
+    category: '+ Add Product Category',
+    unit: '+ Add Unit',
+    expense_category: '+ Add Expense Category',
+  };
+
+  const currentLabel = typeLabels[catalogActiveType];
+  const currentAddLabel = addLabels[catalogActiveType];
+
+  return `
+    <div class="settings-card" style="max-width:100%">
+      <div class="page-header" style="margin-bottom:var(--space-4);flex-wrap:wrap;gap:var(--space-3)">
+        <div>
+          <h3>Categories & Units</h3>
+          <p class="card-sub">Manage dropdown options for products, inventory units, and business expenses.</p>
+        </div>
+        <button class="btn btn-primary" onclick="showAddCatalogModal('${catalogActiveType}')">${currentAddLabel}</button>
+      </div>
+
+      <div style="display:flex;gap:var(--space-2);margin-bottom:var(--space-4);flex-wrap:wrap">
+        <button class="nav-btn ${catalogActiveType === 'category' ? 'active' : ''}" onclick="switchCatalogType('category')">
+          Product Categories <span style="opacity:0.75;font-size:var(--fs-xs);margin-left:4px">(${categoryItems.length})</span>
+        </button>
+        <button class="nav-btn ${catalogActiveType === 'unit' ? 'active' : ''}" onclick="switchCatalogType('unit')">
+          Units of Measure <span style="opacity:0.75;font-size:var(--fs-xs);margin-left:4px">(${unitItems.length})</span>
+        </button>
+        <button class="nav-btn ${catalogActiveType === 'expense_category' ? 'active' : ''}" onclick="switchCatalogType('expense_category')">
+          Expense Categories <span style="opacity:0.75;font-size:var(--fs-xs);margin-left:4px">(${expenseItems.length})</span>
+        </button>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--space-3);gap:var(--space-3);flex-wrap:wrap">
+        <input 
+          id="catalog-search" 
+          type="search" 
+          placeholder="Filter ${currentLabel.toLowerCase()}..." 
+          value="${esc(catalogSearchFilter)}" 
+          oninput="filterCatalogList(this.value)" 
+          style="min-height:36px;min-width:240px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" 
+        />
+        <div id="catalog-count-display" style="font-size:var(--fs-xs);color:var(--c-text-muted)">
+          Showing ${currentItems.length} of ${cachedCatalogDetails.filter(i => i.type === catalogActiveType).length}
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:45%">Name</th>
+              <th style="width:30%">Currently in Use</th>
+              <th class="actions" style="width:25%;text-align:right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="catalog-table-body">
+            ${renderCatalogTableRows(currentItems)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderCatalogTableRows(items: CatalogItem[]): string {
+  if (!items.length) {
+    return `<tr><td colspan="3" style="text-align:center;color:var(--c-text-muted);padding:2.5rem 1rem">No ${catalogActiveType.replace('_', ' ')} options found.</td></tr>`;
+  }
+  return items.map(item => {
+    const isExpense = item.type === 'expense_category';
+    const isUnit = item.type === 'unit';
+    const itemNoun = isExpense ? 'expense record' : isUnit ? 'product' : 'product';
+    const itemNounPlural = isExpense ? 'expense records' : isUnit ? 'products' : 'products';
+    const usageText = item.usage_count === 1
+      ? `1 ${itemNoun}`
+      : item.usage_count > 1
+        ? `${item.usage_count} ${itemNounPlural}`
+        : 'Unused';
+    const badgeStyle = item.usage_count > 0
+      ? 'background:rgba(59,130,246,0.12);color:var(--c-primary);font-weight:600'
+      : 'background:rgba(150,150,150,0.12);color:var(--c-text-muted)';
+    return `
+      <tr>
+        <td style="font-weight:600;color:var(--c-text)">${esc(item.name)}</td>
+        <td>
+          <span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:var(--fs-xs);${badgeStyle}">
+            ${usageText}
+          </span>
+        </td>
+        <td class="actions" style="text-align:right">
+          <button class="btn btn-sm" onclick="showEditCatalogModal('${esc(item.id)}', '${esc(item.type)}', '${esc(encodeURIComponent(item.name))}')">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteCatalogOption('${esc(item.id)}', '${esc(encodeURIComponent(item.name))}', '${esc(item.type)}', ${item.usage_count})">Delete</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+export function showAddCatalogModal(type: 'category' | 'unit' | 'expense_category') {
+  const typeLabels = {
+    category: 'Product Category',
+    unit: 'Unit of Measure',
+    expense_category: 'Expense Category'
+  };
+  const label = typeLabels[type] || 'Option';
+  showModal(`
+    <h3>Add ${label}</h3>
+    <p class="modal-help" style="color:var(--c-text-secondary);margin-bottom:var(--space-3);font-size:var(--fs-sm)">
+      This will immediately be available in all ${type === 'expense_category' ? 'expense' : 'product'} dropdowns across the system.
+    </p>
+    <div class="form-group">
+      <label for="new-cat-name">${label} Name *</label>
+      <input id="new-cat-name" maxlength="60" placeholder="e.g. Electrical, Sack, Transportation" autofocus />
+      <div class="field-error" id="new-cat-name-err"></div>
+    </div>
+    <div class="modal-actions" style="margin-top:var(--space-4)">
+      <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" id="save-cat-btn" onclick="saveNewCatalogOption('${type}')">Save</button>
+    </div>
+  `, 'add-catalog-modal');
+
+  setTimeout(() => {
+    const input = document.getElementById('new-cat-name') as HTMLInputElement;
+    input?.focus();
+    input?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveNewCatalogOption(type);
+      }
+    });
+  }, 50);
+}
+
+export async function saveNewCatalogOption(type: 'category' | 'unit' | 'expense_category') {
+  clearErr('new-cat-name-err');
+  const name = val('new-cat-name').trim();
+  if (!name) {
+    setErr('new-cat-name-err', 'Name is required');
+    return;
+  }
+  disableBtn('save-cat-btn', true);
+  try {
+    await apiPost('/catalog', { type, name });
+    closeModal();
+    showToast(`Added "${name}" successfully`, 'success');
+    const el = document.getElementById('settings-content');
+    if (el) el.innerHTML = await loadCategoriesTab();
+  } catch (err: any) {
+    setErr('new-cat-name-err', err.message || 'Unable to save option');
+  } finally {
+    disableBtn('save-cat-btn', false);
+  }
+}
+
+export function showEditCatalogModal(id: string, type: 'category' | 'unit' | 'expense_category', encodedName: string) {
+  const name = decodeURIComponent(encodedName);
+  const typeLabels = {
+    category: 'Product Category',
+    unit: 'Unit of Measure',
+    expense_category: 'Expense Category'
+  };
+  const label = typeLabels[type] || 'Option';
+  showModal(`
+    <h3>Edit ${label}</h3>
+    <p class="modal-help" style="color:var(--c-text-secondary);margin-bottom:var(--space-3);font-size:var(--fs-sm)">
+      Renaming this will automatically update all existing ${type === 'expense_category' ? 'expense records' : 'products'} assigned to it.
+    </p>
+    <div class="form-group">
+      <label for="edit-cat-name">${label} Name *</label>
+      <input id="edit-cat-name" maxlength="60" value="${esc(name)}" autofocus />
+      <div class="field-error" id="edit-cat-name-err"></div>
+    </div>
+    <div class="modal-actions" style="margin-top:var(--space-4)">
+      <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+      <button type="button" class="btn btn-primary" id="edit-cat-btn" onclick="saveEditCatalogOption('${id}', '${type}')">Update</button>
+    </div>
+  `, 'edit-catalog-modal');
+
+  setTimeout(() => {
+    const input = document.getElementById('edit-cat-name') as HTMLInputElement;
+    input?.focus();
+    input?.select();
+    input?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        saveEditCatalogOption(id, type);
+      }
+    });
+  }, 50);
+}
+
+export async function saveEditCatalogOption(id: string, type: string) {
+  clearErr('edit-cat-name-err');
+  const name = val('edit-cat-name').trim();
+  if (!name) {
+    setErr('edit-cat-name-err', 'Name is required');
+    return;
+  }
+  disableBtn('edit-cat-btn', true);
+  try {
+    await apiPut(`/catalog/${id}`, { name });
+    closeModal();
+    showToast(`Updated to "${name}"`, 'success');
+    const el = document.getElementById('settings-content');
+    if (el) el.innerHTML = await loadCategoriesTab();
+  } catch (err: any) {
+    setErr('edit-cat-name-err', err.message || 'Unable to update');
+  } finally {
+    disableBtn('edit-cat-btn', false);
+  }
+}
+
+export async function deleteCatalogOption(id: string, encodedName: string, type: string, usageCount: number) {
+  const name = decodeURIComponent(encodedName);
+  const typeLabel = type === 'expense_category' ? 'expense category' : type === 'unit' ? 'unit' : 'category';
+  const itemNoun = type === 'expense_category' ? 'expense records' : 'products';
+
+  const warningHtml = usageCount > 0
+    ? `<div style="background:var(--c-danger-bg, rgba(239,68,68,0.1));border:1px solid rgba(239,68,68,0.25);border-radius:var(--radius-md);padding:var(--space-3);margin:var(--space-3) 0">
+        <strong style="color:var(--c-danger)">Warning: Currently in use</strong>
+        <p style="margin:4px 0 0;font-size:var(--fs-sm);color:var(--c-text-secondary)">
+          <strong>${usageCount} ${itemNoun}</strong> are currently assigned to "<strong>${esc(name)}</strong>".
+          ${type === 'category' ? 'If deleted, those products will have their category cleared.' : 'If deleted, it will be removed from future dropdowns.'}
+        </p>
+      </div>`
+    : `<p style="color:var(--c-text-secondary);margin:var(--space-2) 0 var(--space-4)">Delete "<strong>${esc(name)}</strong>"? It will no longer appear in future dropdowns.</p>`;
+
+  const ok = await showConfirmModal(`
+    <h3>Delete ${typeLabel}</h3>
+    ${warningHtml}
+  `);
+
+  if (!ok) return;
+
+  try {
+    await apiDel(`/catalog/${id}`);
+    showToast(`Deleted "${name}"`, 'success');
+    const el = document.getElementById('settings-content');
+    if (el) el.innerHTML = await loadCategoriesTab();
+  } catch (err: any) {
+    showToast(err.message || 'Unable to delete');
+  }
+}
+
