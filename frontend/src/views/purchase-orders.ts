@@ -110,7 +110,7 @@ function renderLineItem(n: number, matOpts: string, data?: any) {
         <input id="po-desc-${n}" placeholder="Description" value="${esc(data?.description || '')}" style="width:100%;min-height:36px;font-size:var(--fs-sm)" />
       </div>
       <div style="flex:1">
-        <input id="po-qty-${n}" type="number" min="1" placeholder="Qty" value="${data?.quantity || ''}" style="width:100%;min-height:36px;font-size:var(--fs-sm)" />
+        <input id="po-qty-${n}" type="number" min="0.01" step="any" placeholder="Qty" value="${data?.quantity || ''}" style="width:100%;min-height:36px;font-size:var(--fs-sm)" />
       </div>
       <div style="flex:1">
         <label class="po-line-label">Unit Cost</label><input id="po-cost-${n}" type="number" step="0.01" min="0" placeholder="Cost" value="${data?.unit_cost || ''}" oninput="updatePOMargin(${n})" style="width:100%;min-height:36px;font-size:var(--fs-sm)" />

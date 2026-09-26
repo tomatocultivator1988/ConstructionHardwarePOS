@@ -135,7 +135,7 @@ export function showMaterialModal(data?: Material) {
         <input id="mf-custom-unit" maxlength="30" value="${data?.unit && !UNIT_OPTIONS.includes(data.unit) ? esc(data.unit) : ''}" placeholder="e.g. Bundle, Sheet, Truckload" style="margin-top:6px;display:${data?.unit && !UNIT_OPTIONS.includes(data.unit) ? '' : 'none'}" />
         <div class="field-error" id="mf-unit-err"></div>
       </div>
-      <div class="form-group"><label>Stock</label><input id="mf-stock" type="number" min="0" value="${data?.stock ?? 0}" /><div class="field-error" id="mf-stock-err"></div></div>
+      <div class="form-group"><label>Stock</label><input id="mf-stock" type="number" step="any" min="0" value="${data?.stock ?? 0}" /><div class="field-error" id="mf-stock-err"></div></div>
     </div>
     <div class="form-group"><label>Supplier (optional)</label><select id="mf-supplier"><option value="">No supplier selected</option>${suppliers.map(s => `<option value="${s.id}"${s.id === (data as any)?.supplier_id ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
     <div class="form-row">
@@ -144,7 +144,7 @@ export function showMaterialModal(data?: Material) {
     </div>
     <div class="form-row">
       <div class="form-group"><label>Wholesale Price</label><input id="mf-wprice" type="number" step="0.01" min="0" value="${data?.wholesale_price ? data.wholesale_price.toString() : ''}" placeholder="0.00 = same as retail" /><div class="helper" style="font-size:var(--fs-xs);color:var(--c-text-muted);margin-top:var(--space-1)">Leave 0 to use retail price</div></div>
-      <div class="form-group"><label>Minimum Stock / Reorder Level</label><input id="mf-reorder" type="number" min="0" value="${data?.reorder_point ?? 10}" /><div class="field-error" id="mf-reorder-err"></div></div>
+      <div class="form-group"><label>Minimum Stock / Reorder Level</label><input id="mf-reorder" type="number" step="any" min="0" value="${data?.reorder_point ?? 10}" /><div class="field-error" id="mf-reorder-err"></div></div>
     </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
@@ -166,13 +166,13 @@ export async function createMaterial() {
   const price = parseFloat(val('mf-price')); const cost = parseFloat(val('mf-cost'));
   const wpriceRaw = parseFloat(val('mf-wprice')); const wprice = isNaN(wpriceRaw) ? 0 : wpriceRaw;
   const stockRaw = val('mf-stock'); const reorderRaw = val('mf-reorder');
-  const stock = parseInt(stockRaw) || 0; const reorder = parseInt(reorderRaw) || 0;
+  const stock = parseFloat(stockRaw) || 0; const reorder = parseFloat(reorderRaw) || 0;
   const category = val('mf-category'); const supplier_id = val('mf-supplier') || null; const barcode = val('mf-barcode').trim();
   if (!name) { setErr('mf-name-err', 'Name is required'); return; }
   if (name.length < 2) { setErr('mf-name-err', 'Must be at least 2 characters'); return; }
   if (!unit) { setErr('mf-unit-err', 'Unit is required'); return; }
-  if (stockRaw && (isNaN(parseInt(stockRaw)) || parseInt(stockRaw) < 0 || String(parseInt(stockRaw)) !== stockRaw)) { setErr('mf-stock-err', 'Must be a whole number ≥ 0'); return; }
-  if (reorderRaw && (isNaN(parseInt(reorderRaw)) || parseInt(reorderRaw) < 0 || String(parseInt(reorderRaw)) !== reorderRaw)) { setErr('mf-reorder-err', 'Must be a whole number ≥ 0'); return; }
+  if (stockRaw && (isNaN(parseFloat(stockRaw)) || parseFloat(stockRaw) < 0)) { setErr('mf-stock-err', 'Must be a number ≥ 0'); return; }
+  if (reorderRaw && (isNaN(parseFloat(reorderRaw)) || parseFloat(reorderRaw) < 0)) { setErr('mf-reorder-err', 'Must be a number ≥ 0'); return; }
   if (isNaN(cost) || cost < 0) { setErr('mf-cost-err', 'Must be 0 or more'); return; }
   if (isNaN(price) || price <= 0) { setErr('mf-price-err', 'Must be > 0'); return; }
   disableBtn('mf-save-btn', true);
@@ -189,13 +189,13 @@ export async function updateMaterial(id: string) {
   const price = parseFloat(val('mf-price')); const cost = parseFloat(val('mf-cost'));
   const wpriceRaw = parseFloat(val('mf-wprice')); const wprice = isNaN(wpriceRaw) ? 0 : wpriceRaw;
   const stockRaw = val('mf-stock'); const reorderRaw = val('mf-reorder');
-  const stock = parseInt(stockRaw) || 0; const reorder = parseInt(reorderRaw) || 0;
+  const stock = parseFloat(stockRaw) || 0; const reorder = parseFloat(reorderRaw) || 0;
   const category = val('mf-category'); const supplier_id = val('mf-supplier') || null; const barcode = val('mf-barcode').trim();
   if (!name) { setErr('mf-name-err', 'Name is required'); return; }
   if (name.length < 2) { setErr('mf-name-err', 'Must be at least 2 characters'); return; }
   if (!unit) { setErr('mf-unit-err', 'Unit is required'); return; }
-  if (stockRaw && (isNaN(parseInt(stockRaw)) || parseInt(stockRaw) < 0 || String(parseInt(stockRaw)) !== stockRaw)) { setErr('mf-stock-err', 'Must be a whole number ≥ 0'); return; }
-  if (reorderRaw && (isNaN(parseInt(reorderRaw)) || parseInt(reorderRaw) < 0 || String(parseInt(reorderRaw)) !== reorderRaw)) { setErr('mf-reorder-err', 'Must be a whole number ≥ 0'); return; }
+  if (stockRaw && (isNaN(parseFloat(stockRaw)) || parseFloat(stockRaw) < 0)) { setErr('mf-stock-err', 'Must be a number ≥ 0'); return; }
+  if (reorderRaw && (isNaN(parseFloat(reorderRaw)) || parseFloat(reorderRaw) < 0)) { setErr('mf-reorder-err', 'Must be a number ≥ 0'); return; }
   if (isNaN(cost) || cost < 0) { setErr('mf-cost-err', 'Must be 0 or more'); return; }
   if (isNaN(price) || price <= 0) { setErr('mf-price-err', 'Must be > 0'); return; }
   disableBtn('mf-save-btn', true);
