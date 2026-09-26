@@ -248,8 +248,8 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   const db = getDb();
   const existing = await db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(req.params.id) as any;
   if (!existing) { res.status(404).json({ error: 'Purchase order not found' }); return; }
-  if (existing.status !== 'pending') {
-    res.status(400).json({ error: 'Only pending purchase orders can be deleted' }); return;
+  if (existing.status !== 'cancelled') {
+    res.status(400).json({ error: 'Only cancelled purchase orders can be deleted' }); return;
   }
   const txn = db.transaction(async () => {
     await db.prepare('DELETE FROM po_items WHERE po_id = ?').run(req.params.id);

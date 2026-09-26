@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDel } from '../lib/api';
-import { esc, val, fmtDate, fmtPeso, disableBtn } from '../lib/helpers';
+import { esc, val, fmtDate, fmtPeso, disableBtn, isAdmin } from '../lib/helpers';
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
 import { loadView } from '../lib/router';
 import type { PurchaseOrder, Supplier, Material } from '../lib/types';
@@ -32,6 +32,7 @@ export async function renderPurchaseOrders(): Promise<string> {
               <td data-label="" class="actions">
                 <button class="btn btn-primary btn-sm" onclick="showPODetail('${po.id}')">View</button>
                 ${po.status === 'pending' ? `<button class="btn btn-success btn-sm" onclick="receivePO('${po.id}')">Receive</button><button class="btn btn-danger btn-sm" onclick="cancelPO('${po.id}')">Cancel</button>` : ''}
+                ${po.status === 'cancelled' && isAdmin() ? `<button class="btn btn-danger btn-sm" onclick="delPO('${po.id}')">Delete</button>` : ''}
               </td>
             </tr>
           `).join('')}`).join('');
@@ -247,6 +248,7 @@ export async function showPODetail(id: string) {
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Close</button>
       ${po.status !== 'cancelled' ? `<button class="btn btn-primary" onclick="closeModal();showPOModal('${po.id}')">Edit PO</button>` : ''}
+      ${po.status === 'cancelled' && isAdmin() ? `<button class="btn btn-danger" onclick="closeModal();delPO('${po.id}')">Delete PO</button>` : ''}
     </div>
   `, 'po-detail-modal');
 }
@@ -271,8 +273,12 @@ export async function cancelPO(id: string) {
 }
 
 export async function delPO(id: string) {
-  const ok = await showConfirmModal(`<h3>Delete PO</h3><p style="color:var(--c-text-secondary)">Delete this pending purchase order?</p>`);
+  const ok = await showConfirmModal(`<h3>Delete PO</h3><p style="color:var(--c-text-secondary)">Permanently delete this cancelled purchase order? This cannot be undone.</p>`);
   if (!ok) return;
-  try { await apiDel(`/purchase-orders/${id}`); loadView('purchase-orders'); }
+  try {
+    await apiDel(`/purchase-orders/${id}`);
+    showToast('Purchase order deleted', 'success');
+    loadView('purchase-orders');
+  }
   catch (e: any) { showToast(e.message); }
 }
