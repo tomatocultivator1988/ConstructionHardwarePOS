@@ -175,30 +175,175 @@ router.get('/cash-flow', async (req: Request, res: Response) => {
   const db = getDb();
   const from = (req.query.from as string) || businessDate();
   const to = (req.query.to as string) || from;
-  const [receipts, refunds, expenses, drawer, shifts, shiftBreakdown] = await Promise.all([
-    db.prepare("SELECT COALESCE(SUM(p.amount),0) total FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE p.method='cash' AND i.status <> 'voided' AND date(p.payment_date, '+8 hours') BETWEEN ? AND ?").get(from,to),
-    db.prepare("SELECT COALESCE(SUM(r.amount),0) total FROM refunds r JOIN invoices i ON i.id=r.invoice_id WHERE r.method='cash' AND i.status <> 'voided' AND date(r.created_at, '+8 hours') BETWEEN ? AND ?").get(from,to),
-    db.prepare("SELECT COALESCE(SUM(amount),0) total FROM expenses WHERE payment_method='cash' AND date(expense_date, '+8 hours') BETWEEN ? AND ?").get(from,to),
-    db.prepare("SELECT COALESCE(SUM(CASE WHEN type='cash_in' THEN amount ELSE 0 END),0) cash_in, COALESCE(SUM(CASE WHEN type='cash_out' THEN amount ELSE 0 END),0) cash_out FROM cash_drawer_events WHERE date(created_at, '+8 hours') BETWEEN ? AND ?").get(from,to),
-    db.prepare("SELECT COALESCE(SUM(opening_cash),0) opening_cash, COALESCE(SUM(expected_cash),0) expected_cash, COALESCE(SUM(closing_cash),0) closing_cash, COALESCE(SUM(variance),0) variance, COUNT(*) shift_count FROM cashier_shifts WHERE status='closed' AND date(COALESCE(closed_at, opened_at), '+8 hours') BETWEEN ? AND ?").get(from,to),
+  if (from > to) return res.status(400).json({ error: 'from must be before or equal to to' });
+  const dateBetween = (col: string) => `date(${col}, '+8 hours') BETWEEN ? AND ?`;
+
+  const [
+    paymentsByMethod,
+    refundsByMethod,
+    poPaymentsRow,
+    upfrontPoRow,
+    expensesByCategory,
+    drawerEvents,
+    shifts,
+    shiftBreakdown,
+    manualRow,
+    adjustmentsRow,
+    priorShift,
+    firstShift
+  ] = await Promise.all([
+    db.prepare(`SELECT p.method, COALESCE(SUM(p.amount),0) total, COUNT(*) count
+      FROM payments p JOIN invoices i ON i.id=p.invoice_id
+      WHERE i.status <> 'voided' AND p.method <> 'credit' AND ${dateBetween('p.payment_date')}
+      GROUP BY p.method`).all(from, to) as Promise<any[]>,
+    db.prepare(`SELECT r.method, COALESCE(SUM(r.amount),0) total, COUNT(*) count
+      FROM refunds r JOIN invoices i ON i.id=r.invoice_id
+      WHERE i.status <> 'voided' AND ${dateBetween('r.created_at')}
+      GROUP BY r.method`).all(from, to) as Promise<any[]>,
+    db.prepare(`SELECT COALESCE(SUM(amount),0) total FROM po_payments WHERE ${dateBetween('payment_date')}`).get(from, to) as Promise<any>,
+    db.prepare(`SELECT COALESCE(SUM(total),0) total FROM purchase_orders
+      WHERE status = 'received' AND lower(trim(mode_of_payment)) <> 'credit' AND ${dateBetween('order_date')}`).get(from, to) as Promise<any>,
+    db.prepare(`SELECT category, payment_method, COALESCE(SUM(amount),0) total
+      FROM expenses WHERE ${dateBetween('expense_date')}
+      GROUP BY category, payment_method ORDER BY total DESC`).all(from, to) as Promise<any[]>,
+    db.prepare(`SELECT COALESCE(SUM(CASE WHEN type='cash_in' THEN amount ELSE 0 END),0) cash_in,
+      COALESCE(SUM(CASE WHEN type='cash_out' THEN amount ELSE 0 END),0) cash_out
+      FROM cash_drawer_events WHERE ${dateBetween('created_at')}`).get(from, to) as Promise<any>,
+    db.prepare(`SELECT COALESCE(SUM(opening_cash),0) opening_cash, COALESCE(SUM(expected_cash),0) expected_cash,
+      COALESCE(SUM(closing_cash),0) closing_cash, COALESCE(SUM(variance),0) variance, COUNT(*) shift_count
+      FROM cashier_shifts WHERE status='closed' AND date(COALESCE(closed_at, opened_at), '+8 hours') BETWEEN ? AND ?`).get(from, to) as Promise<any>,
     db.prepare(`SELECT cs.id, u.username cashier, cs.opened_at, cs.closed_at, cs.opening_cash, cs.expected_cash, cs.closing_cash, cs.variance,
       COALESCE((SELECT SUM(p.amount) FROM payments p JOIN invoices i ON i.id=p.invoice_id WHERE p.shift_id=cs.id AND p.method='cash' AND i.status <> 'voided'),0) cash_sales,
       COALESCE((SELECT SUM(r.amount) FROM refunds r JOIN invoices i ON i.id=r.invoice_id WHERE r.shift_id=cs.id AND r.method='cash' AND i.status <> 'voided'),0) cash_refunds,
       COALESCE((SELECT SUM(CASE WHEN e.type='cash_in' THEN e.amount ELSE 0 END) FROM cash_drawer_events e WHERE e.shift_id=cs.id),0) cash_in,
       COALESCE((SELECT SUM(CASE WHEN e.type='cash_out' THEN e.amount ELSE 0 END) FROM cash_drawer_events e WHERE e.shift_id=cs.id),0) cash_out
       FROM cashier_shifts cs JOIN users u ON u.id=cs.user_id
-      WHERE cs.status='closed' AND date(COALESCE(cs.closed_at, cs.opened_at), '+8 hours') BETWEEN ? AND ? ORDER BY cs.closed_at DESC`).all(from,to),
+      WHERE cs.status='closed' AND date(COALESCE(cs.closed_at, cs.opened_at), '+8 hours') BETWEEN ? AND ? ORDER BY cs.closed_at DESC`).all(from, to) as Promise<any[]>,
+    db.prepare("SELECT value FROM settings WHERE key='balance_sheet_manual_accounts'").get() as Promise<any>,
+    db.prepare("SELECT value FROM settings WHERE key='cash_flow_adjustments'").get() as Promise<any>,
+    db.prepare("SELECT closing_cash FROM cashier_shifts WHERE status='closed' AND date(closed_at, '+8 hours') < ? ORDER BY closed_at DESC LIMIT 1").get(from) as Promise<any>,
+    db.prepare("SELECT opening_cash FROM cashier_shifts WHERE status='closed' AND date(opened_at, '+8 hours') >= ? ORDER BY opened_at ASC LIMIT 1").get(from) as Promise<any>,
   ]);
-  const cashReceipts = Number((receipts as any).total || 0);
-  const cashRefunds = Number((refunds as any).total || 0);
-  const cashExpenses = Number((expenses as any).total || 0);
-  const cashIn = Number((drawer as any).cash_in || 0);
-  const cashOut = Number((drawer as any).cash_out || 0);
-  const openingCash = Number((shifts as any).opening_cash || 0);
-  const expectedCash = Number((shifts as any).expected_cash || 0);
-  const closingCash = Number((shifts as any).closing_cash || 0);
-  const variance = Number((shifts as any).variance || 0);
-  res.json({ from, to, cash_receipts: cashReceipts, cash_refunds: cashRefunds, cash_expenses: cashExpenses, cash_in: cashIn, cash_out: cashOut, opening_cash: openingCash, expected_cash: expectedCash, closing_cash: closingCash, variance, shift_count: Number((shifts as any).shift_count || 0), shift_breakdown: shiftBreakdown, net_cash_change: cashReceipts - cashRefunds - cashExpenses + cashIn - cashOut });
+
+  let manual: Record<string, any> = {};
+  try { manual = JSON.parse((manualRow as any)?.value || '{}'); } catch { manual = {}; }
+  let adj: Record<string, any> = {};
+  try { adj = JSON.parse((adjustmentsRow as any)?.value || '{}'); } catch { adj = {}; }
+
+  const paymentsList = (paymentsByMethod as any[]) || [];
+  const refundsList = (refundsByMethod as any[]) || [];
+  const totalCustomerCollections = paymentsList.reduce((sum, r) => sum + Number(r.total || 0), 0);
+  const totalRefunds = refundsList.reduce((sum, r) => sum + Number(r.total || 0), 0);
+  const netCustomerReceipts = totalCustomerCollections - totalRefunds;
+
+  const cashReceipts = Number(paymentsList.find(r => String(r.method).toLowerCase() === 'cash')?.total || 0);
+  const cashRefunds = Number(refundsList.find(r => String(r.method).toLowerCase() === 'cash')?.total || 0);
+
+  const supplierPaymentsCredit = Number((poPaymentsRow as any)?.total || 0);
+  const supplierPaymentsUpfront = Number((upfrontPoRow as any)?.total || 0);
+  const totalSupplierPayments = supplierPaymentsCredit + supplierPaymentsUpfront;
+
+  const expensesList = (expensesByCategory as any[]) || [];
+  const totalExpenses = expensesList.reduce((sum, r) => sum + Number(r.total || 0), 0);
+  const cashExpenses = expensesList.filter(r => String(r.payment_method).toLowerCase() === 'cash').reduce((sum, r) => sum + Number(r.total || 0), 0);
+
+  const cashIn = Number((drawerEvents as any)?.cash_in || 0);
+  const cashOut = Number((drawerEvents as any)?.cash_out || 0);
+  const drawerAdjustments = cashIn - cashOut;
+
+  const netOperating = netCustomerReceipts - totalSupplierPayments - totalExpenses + drawerAdjustments;
+
+  const categoryMap: Record<string, number> = {};
+  for (const exp of expensesList) {
+    const cat = exp.category || 'Other';
+    categoryMap[cat] = (categoryMap[cat] || 0) + Number(exp.total || 0);
+  }
+  const expensesBreakdown = Object.entries(categoryMap).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
+
+  const saleOfAssets = Number(adj.sale_of_assets ?? 0);
+  const equipmentPurchases = Number(adj.purchase_of_equipment ?? manual.equipment ?? 0);
+  const propertyPurchases = Number(adj.purchase_of_property ?? 0);
+  const otherInvesting = Number(adj.other_investing ?? 0);
+  const netInvesting = saleOfAssets - equipmentPurchases - propertyPurchases - otherInvesting;
+
+  const ownerContributions = Number(adj.owner_contributions ?? manual.owner_capital ?? 0);
+  const ownerDrawings = Number(adj.owner_drawings ?? manual.owner_withdrawals ?? 0);
+  const loansReceived = Number(adj.loans_received ?? 0);
+  const loanRepayments = Number(adj.loan_repayments ?? 0);
+  const dividendsPaid = Number(adj.dividends_paid ?? 0);
+  const netFinancing = (ownerContributions + loansReceived) - (ownerDrawings + loanRepayments + dividendsPaid);
+
+  const startDrawerCash = Number((priorShift as any)?.closing_cash ?? (firstShift as any)?.opening_cash ?? 0);
+  const startBank = Number(adj.beginning_bank ?? manual.bank ?? 0);
+  const startGcash = Number(adj.beginning_gcash ?? manual.gcash ?? 0);
+  const beginningCash = startDrawerCash + startBank + startGcash;
+
+  const netCashMovement = netOperating + netInvesting + netFinancing;
+  const endingCash = beginningCash + netCashMovement;
+
+  const openingCash = Number((shifts as any)?.opening_cash || 0);
+  const expectedCash = Number((shifts as any)?.expected_cash || 0);
+  const closingCash = Number((shifts as any)?.closing_cash || 0);
+  const variance = Number((shifts as any)?.variance || 0);
+
+  res.json({
+    from,
+    to,
+    cash_receipts: cashReceipts,
+    cash_refunds: cashRefunds,
+    cash_expenses: cashExpenses || totalExpenses,
+    cash_in: cashIn,
+    cash_out: cashOut,
+    opening_cash: openingCash,
+    expected_cash: expectedCash,
+    closing_cash: closingCash,
+    variance,
+    shift_count: Number((shifts as any)?.shift_count || 0),
+    shift_breakdown: shiftBreakdown,
+    net_cash_change: cashReceipts - cashRefunds - (cashExpenses || totalExpenses) + cashIn - cashOut,
+
+    operations: {
+      cash_sales_and_collections: totalCustomerCollections,
+      collections_by_method: paymentsList.map(r => ({ method: r.method, amount: Number(r.total || 0), count: r.count })),
+      refunds: totalRefunds,
+      refunds_by_method: refundsList.map(r => ({ method: r.method, amount: Number(r.total || 0), count: r.count })),
+      net_customer_receipts: netCustomerReceipts,
+      supplier_payments: totalSupplierPayments,
+      supplier_payments_credit: supplierPaymentsCredit,
+      supplier_payments_upfront: supplierPaymentsUpfront,
+      operating_expenses: totalExpenses,
+      expenses_breakdown: expensesBreakdown,
+      drawer_adjustments: drawerAdjustments,
+      drawer_cash_in: cashIn,
+      drawer_cash_out: cashOut,
+      net_operating: netOperating,
+    },
+    investing: {
+      sale_of_assets: saleOfAssets,
+      equipment_purchases: equipmentPurchases,
+      property_purchases: propertyPurchases,
+      other_investing: otherInvesting,
+      net_investing: netInvesting,
+    },
+    financing: {
+      owner_contributions: ownerContributions,
+      owner_drawings: ownerDrawings,
+      loans_received: loansReceived,
+      loan_repayments: loanRepayments,
+      dividends_paid: dividendsPaid,
+      net_financing: netFinancing,
+    },
+    summary: {
+      beginning_cash: beginningCash,
+      beginning_drawer: startDrawerCash,
+      beginning_bank: startBank,
+      beginning_gcash: startGcash,
+      net_cash_movement: netCashMovement,
+      ending_cash: endingCash,
+    },
+    adjustments: adj,
+    manual_accounts: manual,
+  });
 });
 
 // Single accounting summary used for reconciliation and accountant review.

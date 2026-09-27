@@ -145,6 +145,8 @@ Object.assign(window, {
   saveChartAccount: reports.saveChartAccount,
   toggleChartAccount: reports.toggleChartAccount,
   reloadCashFlow: reports.reloadCashFlow,
+  editCashFlowAdjustments: reports.editCashFlowAdjustments,
+  saveCashFlowAdjustments: reports.saveCashFlowAdjustments,
   reloadBooks: reports.reloadBooks,
   reloadFinancialSummary: reports.reloadFinancialSummary,
   switchSettingsTab: settings.switchSettingsTab,

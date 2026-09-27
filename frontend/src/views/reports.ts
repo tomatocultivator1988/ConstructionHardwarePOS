@@ -349,8 +349,38 @@ export function exportReports() {
     }
     if (currentSubTab === 'cash-flow') {
       const data = await apiGet<any>(`/reports/cash-flow?${query}`);
-      const rows = [['Cash sales and collections', fmtPeso(data.cash_receipts)], ['Cash refunds', fmtPeso(data.cash_refunds)], ['Cash expenses', fmtPeso(data.cash_expenses)], ['Cash-in drawer adjustments', fmtPeso(data.cash_in)], ['Cash-out drawer adjustments', fmtPeso(data.cash_out)], ['Net cash from operating activities', fmtPeso(data.net_cash_change)], ['Opening cash total', fmtPeso(data.opening_cash)], ['Expected cash total', fmtPeso(data.expected_cash)], ['Counted closing cash total', fmtPeso(data.closing_cash)], ['Drawer variance', fmtPeso(data.variance)]];
-      exportTable('Statement of Cash Flows', period, ['Account / Activity', 'Amount'], rows, format, `POS cash drawer activity · ${period.label}`);
+      const ops = data.operations || {};
+      const inv = data.investing || {};
+      const fin = data.financing || {};
+      const summary = data.summary || {};
+      const rows = [
+        ['1. CASH FLOW FROM OPERATIONS', ''],
+        ['Cash from sales and collections', fmtPeso(ops.cash_sales_and_collections ?? data.cash_receipts)],
+        ['Customer refunds & credit returns', `-${fmtPeso(ops.refunds ?? data.cash_refunds)}`],
+        ['Cash spent on inventory & suppliers', `-${fmtPeso(ops.supplier_payments ?? 0)}`],
+        ['Cash spent on operating expenses & wages', `-${fmtPeso(ops.operating_expenses ?? data.cash_expenses)}`],
+        ['Cash drawer adjustments', fmtPeso(ops.drawer_adjustments ?? (data.cash_in - data.cash_out))],
+        ['NET CASH FROM OPERATIONS', fmtPeso(ops.net_operating ?? data.net_cash_change)],
+        ['', ''],
+        ['2. CASH FLOW FROM INVESTMENTS', ''],
+        ['Sale of equipment, vehicles, or assets', fmtPeso(inv.sale_of_assets ?? 0)],
+        ['Purchase of equipment, vehicles, or tools', `-${fmtPeso(inv.equipment_purchases ?? 0)}`],
+        ['Purchase of property, land, or building', `-${fmtPeso(inv.property_purchases ?? 0)}`],
+        ['NET CASH FROM INVESTMENTS', fmtPeso(inv.net_investing ?? 0)],
+        ['', ''],
+        ['3. CASH FLOW FROM FINANCING', ''],
+        ['Owner\'s capital contribution', fmtPeso(fin.owner_contributions ?? 0)],
+        ['Owner\'s drawings / withdrawals', `-${fmtPeso(fin.owner_drawings ?? 0)}`],
+        ['Cash received from loans / borrowings', fmtPeso(fin.loans_received ?? 0)],
+        ['Repayment of loans (principal)', `-${fmtPeso(fin.loan_repayments ?? 0)}`],
+        ['NET CASH FROM FINANCING', fmtPeso(fin.net_financing ?? 0)],
+        ['', ''],
+        ['SUMMARY & CASH RECONCILIATION', ''],
+        ['Cash at beginning of period', fmtPeso(summary.beginning_cash ?? data.opening_cash)],
+        ['Net cash movement', fmtPeso(summary.net_cash_movement ?? data.net_cash_change)],
+        ['Cash at end of period (Closing Balance)', fmtPeso(summary.ending_cash ?? data.closing_cash)],
+      ];
+      exportTable('Statement of Cash Flows', period, ['Account / Activity', 'Amount'], rows, format, `Statement of Cash Flows · ${period.label}`);
       return;
     }
     if (currentSubTab === 'balance-sheet') {
@@ -476,7 +506,38 @@ async function exportDetailedWorkbook(period: ExportPeriod) {
   const receivableRows = (comprehensive.receivables_aging || []).map((r: any) => [r.invoice_number, r.buyer, r.issued_date, money(r.total), money(r.paid), money(r.balance), r.days_outstanding, r.aging_bucket]);
   addSheet('Receivables', 'Receivables Aging', ['Invoice', 'Buyer', 'Issued', 'Total', 'Paid', 'Balance', 'Days Outstanding', 'Aging Bucket'], receivableRows, [['Open Invoice Count', receivableRows.length], ['Open Balance', receivableRows.reduce((sum, row) => sum + money(row[5]), 0)]]);
 
-  addSheet('Cash Flow', 'Cash Flow Summary', ['Metric', 'Amount'], [['Cash Receipts', money(cash.cash_receipts)], ['Cash Refunds', money(cash.cash_refunds)], ['Cash Expenses', money(cash.cash_expenses)], ['Net Cash Change', money(cash.net_cash_change)]], [['Period', period.label]]);
+  const ops = cash.operations || {};
+  const inv = cash.investing || {};
+  const fin = cash.financing || {};
+  const summary = cash.summary || {};
+  const cfRows = [
+    ['1. CASH FLOW FROM OPERATIONS', null],
+    ['Cash from sales and collections', money(ops.cash_sales_and_collections ?? cash.cash_receipts)],
+    ['Customer refunds & credit returns', -money(ops.refunds ?? cash.cash_refunds)],
+    ['Cash spent on inventory & suppliers', -money(ops.supplier_payments ?? 0)],
+    ['Cash spent on operating expenses', -money(ops.operating_expenses ?? cash.cash_expenses)],
+    ['Cash drawer adjustments', money(ops.drawer_adjustments ?? (cash.cash_in - cash.cash_out))],
+    ['Net Cash from Operating Activities', money(ops.net_operating ?? cash.net_cash_change)],
+    ['', null],
+    ['2. CASH FLOW FROM INVESTMENTS', null],
+    ['Sale of equipment, vehicles, or assets', money(inv.sale_of_assets ?? 0)],
+    ['Purchase of equipment, vehicles, or tools', -money(inv.equipment_purchases ?? 0)],
+    ['Purchase of property, land, or building', -money(inv.property_purchases ?? 0)],
+    ['Net Cash from Investing Activities', money(inv.net_investing ?? 0)],
+    ['', null],
+    ['3. CASH FLOW FROM FINANCING', null],
+    ['Owner\'s capital contribution', money(fin.owner_contributions ?? 0)],
+    ['Owner\'s drawings / withdrawals', -money(fin.owner_drawings ?? 0)],
+    ['Cash received from loans', money(fin.loans_received ?? 0)],
+    ['Repayment of loans (principal)', -money(fin.loan_repayments ?? 0)],
+    ['Net Cash from Financing Activities', money(fin.net_financing ?? 0)],
+    ['', null],
+    ['SUMMARY & CASH RECONCILIATION', null],
+    ['Cash at beginning of period', money(summary.beginning_cash ?? cash.opening_cash)],
+    ['Net cash movement', money(summary.net_cash_movement ?? cash.net_cash_change)],
+    ['Cash at end of period (Closing Balance)', money(summary.ending_cash ?? cash.closing_cash)],
+  ];
+  addSheet('Cash Flow', 'Statement of Cash Flows', ['Activity / Account', 'Amount'], cfRows, [['Period', period.label]]);
 
   const inventoryRows = (comprehensive.inventory || []).map((r: any) => [r.name, r.category, r.unit, money(r.stock), money(r.reorder_point), money(r.cost_price), money(r.price_per_unit), money(r.stock_value), money(r.quantity_sold)]);
   addSheet('Inventory', 'Inventory Status', ['Product', 'Category', 'Unit', 'Stock', 'Reorder Point', 'Cost', 'Selling Price', 'Stock Value', 'Qty Sold'], inventoryRows, [['Current Stock Value', inventoryRows.reduce((sum, row) => sum + money(row[7]), 0)]]);
@@ -650,13 +711,308 @@ async function loadBooksReport(from?: string, to?: string) {
 }
 
 async function loadCashFlowReport(from?: string, to?: string) {
-  const period = reportPeriodRange(); const start = from || period.from; const end = to || period.to;
+  const period = reportPeriodRange();
+  const start = from || period.from;
+  const end = to || period.to;
   const cash = await apiGet<any>(`/reports/cash-flow?from=${start}&to=${end}`);
-  const shiftRows = (cash.shift_breakdown || []).map((row: any) => `<tr><td>${esc(fmtDate(row.closed_at || row.opened_at))}</td><td>${esc(row.cashier || '—')}</td><td>${fmtPeso(row.opening_cash)}</td><td>${fmtPeso(row.cash_sales)}</td><td>${fmtPeso(row.cash_refunds)}</td><td>${fmtPeso(row.cash_in)}</td><td>${fmtPeso(row.cash_out)}</td><td>${fmtPeso(row.expected_cash)}</td><td>${fmtPeso(row.closing_cash)}</td><td class="${Number(row.variance) === 0 ? 'positive' : 'negative'}">${fmtPeso(row.variance)}</td></tr>`).join('');
-  return `<div class="report-section-heading"><div><h3>Statement of Cash Flows</h3><span>${fmtDate(start)} – ${fmtDate(end)} · POS-based cash flow only</span></div><button class="btn btn-primary btn-sm" onclick="printReport('cash-flow','${fmtDate(start)} to ${fmtDate(end)}')">PDF / Print</button></div><div class="report-filters"><label>From</label><input id="rpt-cash-from" type="date" value="${start}" /><label>To</label><input id="rpt-cash-to" type="date" value="${end}" /><button class="btn btn-primary btn-sm" onclick="reloadCashFlow()">Load</button></div><div class="chart-card" style="margin-top:var(--space-4);background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-lg);padding:var(--space-5)"><div class="chart-title">Cash flows from operating activities</div><div class="summary-line"><span>Cash sales and collections</span><b>${fmtPeso(cash.cash_receipts)}</b></div><div class="summary-line"><span>Cash refunds</span><b>−${fmtPeso(cash.cash_refunds)}</b></div><div class="summary-line"><span>Cash expenses</span><b>−${fmtPeso(cash.cash_expenses)}</b></div><div class="summary-line"><span>Cash-in drawer adjustments</span><b>${fmtPeso(cash.cash_in)}</b></div><div class="summary-line"><span>Cash-out drawer adjustments</span><b>−${fmtPeso(cash.cash_out)}</b></div><div class="summary-line total"><span>Net cash from operating activities</span><b>${fmtPeso(cash.net_cash_change)}</b></div></div><div class="dashboard-grid report-metrics report-metrics-4" style="margin-top:var(--space-4)"><div class="dashboard-card"><div class="card-label">Opening cash total</div><div class="card-value">${fmtPeso(cash.opening_cash)}</div></div><div class="dashboard-card"><div class="card-label">Expected cash total</div><div class="card-value">${fmtPeso(cash.expected_cash)}</div></div><div class="dashboard-card"><div class="card-label">Counted closing cash total</div><div class="card-value">${fmtPeso(cash.closing_cash)}</div></div><div class="dashboard-card"><div class="card-label">Closed shifts</div><div class="card-value">${cash.shift_count || 0}</div></div></div><div class="chart-card" style="margin-top:var(--space-4);background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-lg);padding:var(--space-5)"><div class="chart-title">Cash and cash equivalents reconciliation</div><div class="summary-line"><span>Drawer variance</span><b class="${Number(cash.variance) === 0 ? 'positive' : 'negative'}">${fmtPeso(cash.variance)}</b></div><p class="field-help">This POS statement excludes bank, loans, owner capital, investments, and fixed assets.</p></div><div class="table-wrap" style="margin-top:var(--space-4)"><h3 style="padding:var(--space-4) var(--space-4) 0">Shift Breakdown</h3><table><thead><tr><th>Closed</th><th>Cashier</th><th>Opening</th><th>Sales</th><th>Refunds</th><th>Cash In</th><th>Cash Out</th><th>Expected</th><th>Counted</th><th>Variance</th></tr></thead><tbody>${shiftRows || '<tr><td colspan="10">No closed shifts in this period.</td></tr>'}</tbody></table></div>`;
+
+  const ops = cash.operations || {};
+  const inv = cash.investing || {};
+  const fin = cash.financing || {};
+  const summary = cash.summary || {};
+
+  const netOps = Number(ops.net_operating ?? cash.net_cash_change ?? 0);
+  const netInv = Number(inv.net_investing ?? 0);
+  const netFin = Number(fin.net_financing ?? 0);
+  const netMovement = Number(summary.net_cash_movement ?? (netOps + netInv + netFin));
+
+  const opsColor = netOps >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
+  const invColor = netInv >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
+  const finColor = netFin >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
+  const movementColor = netMovement >= 0 ? 'var(--c-success)' : 'var(--c-danger)';
+
+  const methodsList = (ops.collections_by_method || []).filter((m: any) => Number(m.amount) > 0);
+  const methodsSummary = methodsList.length
+    ? methodsList.map((m: any) => `${esc(m.method.toUpperCase())}: ${fmtPeso(m.amount)}`).join(' | ')
+    : 'No customer payments';
+
+  const expensesList = (ops.expenses_breakdown || []).filter((e: any) => Number(e.amount) > 0);
+  const expenseCategoriesSummary = expensesList.length
+    ? expensesList.slice(0, 3).map((e: any) => `${esc(e.category)}: ${fmtPeso(e.amount)}`).join(', ') + (expensesList.length > 3 ? `, +${expensesList.length - 3} more` : '')
+    : 'No operating expenses';
+
+  const shiftRows = (cash.shift_breakdown || []).map((row: any) =>
+    `<tr><td>${esc(fmtDate(row.closed_at || row.opened_at))}</td><td>${esc(row.cashier || '—')}</td><td>${fmtPeso(row.opening_cash)}</td><td>${fmtPeso(row.cash_sales)}</td><td>${fmtPeso(row.cash_refunds)}</td><td>${fmtPeso(row.cash_in)}</td><td>${fmtPeso(row.cash_out)}</td><td>${fmtPeso(row.expected_cash)}</td><td>${fmtPeso(row.closing_cash)}</td><td class="${Number(row.variance) === 0 ? 'positive' : 'negative'}">${fmtPeso(row.variance)}</td></tr>`
+  ).join('');
+
+  return `
+    <div class="report-section-heading">
+      <div>
+        <h3>Statement of Cash Flows</h3>
+        <span>${fmtDate(start)} – ${fmtDate(end)} · Cash Flow from Operations, Investments, and Financing</span>
+      </div>
+      <div style="display:flex;gap:var(--space-2)">
+        <button class="btn btn-primary btn-sm" onclick="editCashFlowAdjustments()">Edit Adjustments</button>
+        <button class="btn btn-sm" onclick="printReport('cash-flow','${fmtDate(start)} to ${fmtDate(end)}')">PDF / Print</button>
+        <button class="btn btn-sm" onclick="exportReports()">Excel</button>
+      </div>
+    </div>
+    <div class="report-filters">
+      <label>From</label><input id="rpt-cash-from" type="date" value="${start}" />
+      <label>To</label><input id="rpt-cash-to" type="date" value="${end}" />
+      <button class="btn btn-primary btn-sm" onclick="reloadCashFlow()">Load</button>
+    </div>
+
+    <div class="dashboard-grid report-metrics report-metrics-4" style="margin-top:var(--space-4)">
+      <div class="dashboard-card card-info">
+        <div class="card-label">Operating Cash Flow</div>
+        <div class="card-value" style="color:${opsColor}">${fmtPeso(netOps)}</div>
+        <div class="card-sub">Sales, POs & expenses</div>
+      </div>
+      <div class="dashboard-card card-warning">
+        <div class="card-label">Investing Cash Flow</div>
+        <div class="card-value" style="color:${invColor}">${fmtPeso(netInv)}</div>
+        <div class="card-sub">Fixed assets & equipment</div>
+      </div>
+      <div class="dashboard-card card-primary">
+        <div class="card-label">Financing Cash Flow</div>
+        <div class="card-value" style="color:${finColor}">${fmtPeso(netFin)}</div>
+        <div class="card-sub">Capital, drawings & loans</div>
+      </div>
+      <div class="dashboard-card ${netMovement >= 0 ? 'card-success' : 'card-danger'}">
+        <div class="card-label">Net Cash Movement</div>
+        <div class="card-value" style="color:${movementColor}">${fmtPeso(netMovement)}</div>
+        <div class="card-sub">Net change for period</div>
+      </div>
+    </div>
+
+    <div class="table-wrap" style="margin-top:var(--space-4)">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:52%">Activity / Account Description</th>
+            <th style="text-align:right;width:24%">Amount</th>
+            <th style="width:24%">Source / Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="background:var(--c-primary);color:#fff"><th colspan="3" style="color:#fff;letter-spacing:.08em">1. CASH FLOW FROM OPERATIONS</th></tr>
+          <tr>
+            <td>Cash received from customers (sales & collections)</td>
+            <td style="text-align:right;font-weight:600;font-family:var(--ff-mono)">${fmtPeso(ops.cash_sales_and_collections)}</td>
+            <td>${methodsSummary}</td>
+          </tr>
+          <tr>
+            <td style="padding-left:var(--space-5);color:var(--c-text-muted)">Customer refunds & credit returns</td>
+            <td style="text-align:right;font-family:var(--ff-mono);color:var(--c-danger)">−${fmtPeso(ops.refunds)}</td>
+            <td>Processed customer refunds</td>
+          </tr>
+          <tr>
+            <td>Cash spent on inventory & suppliers</td>
+            <td style="text-align:right;font-family:var(--ff-mono);color:var(--c-danger);font-weight:600">−${fmtPeso(ops.supplier_payments)}</td>
+            <td>Credit PO payments + cash purchases</td>
+          </tr>
+          <tr>
+            <td>Cash spent on operating expenses & wages</td>
+            <td style="text-align:right;font-family:var(--ff-mono);color:var(--c-danger);font-weight:600">−${fmtPeso(ops.operating_expenses)}</td>
+            <td>${expenseCategoriesSummary}</td>
+          </tr>
+          <tr>
+            <td style="padding-left:var(--space-5);color:var(--c-text-muted)">Cash drawer adjustments (cash-in / cash-out)</td>
+            <td style="text-align:right;font-family:var(--ff-mono)">${Number(ops.drawer_adjustments) >= 0 ? '+' : '−'}${fmtPeso(Math.abs(Number(ops.drawer_adjustments || 0)))}</td>
+            <td>In: ${fmtPeso(ops.drawer_cash_in)} | Out: ${fmtPeso(ops.drawer_cash_out)}</td>
+          </tr>
+          <tr style="font-weight:800;background:var(--c-surface-elevated);border-top:1px solid var(--c-border);border-bottom:2px solid var(--c-primary)">
+            <td>NET CASH FLOW FROM OPERATIONS</td>
+            <td style="text-align:right;font-family:var(--ff-mono);color:${opsColor}">${fmtPeso(netOps)}</td>
+            <td>Operating cash surplus / (deficit)</td>
+          </tr>
+
+          <tr style="background:var(--c-primary);color:#fff"><th colspan="3" style="color:#fff;letter-spacing:.08em">2. CASH FLOW FROM INVESTMENTS</th></tr>
+          <tr>
+            <td>Sale of vehicles, equipment, or assets</td>
+            <td style="text-align:right;font-family:var(--ff-mono)">${fmtPeso(inv.sale_of_assets)}</td>
+            <td>Fixed asset disposal proceeds</td>
+          </tr>
+          <tr>
+            <td>Purchase of vehicles, equipment, or tools</td>
+            <td style="text-align:right;font-family:var(--ff-mono);color:var(--c-danger)">−${fmtPeso(inv.equipment_purchases)}</td>
+            <td>CapEx / Tools & equipment additions</td>
+          </tr>
+          <tr>
+            <td>Purchase of property, land, or building</td>
+            <td style="text-align:right;font-family:var(--ff-mono);color:var(--c-danger)">−${fmtPeso(inv.property_purchases)}</td>
+            <td>Property / Facilities investment</td>
+          </tr>
+          ${Number(inv.other_investing || 0) > 0 ? `<tr><td>Other investing activities</td><td style="text-align:right;font-family:var(--ff-mono);color:var(--c-danger)">−${fmtPeso(inv.other_investing)}</td><td>Other capital investments</td></tr>` : ''}
+          <tr style="font-weight:800;background:var(--c-surface-elevated);border-top:1px solid var(--c-border);border-bottom:2px solid var(--c-primary)">
+            <td>NET CASH FLOW FROM INVESTMENTS</td>
+            <td style="text-align:right;font-family:var(--ff-mono);color:${invColor}">${fmtPeso(netInv)}</td>
+            <td>Net investing activities</td>
+          </tr>
+
+          <tr style="background:var(--c-primary);color:#fff"><th colspan="3" style="color:#fff;letter-spacing:.08em">3. CASH FLOW FROM FINANCING</th></tr>
+          <tr>
+            <td>Owner's capital contribution</td>
+            <td style="text-align:right;font-family:var(--ff-mono)">${fmtPeso(fin.owner_contributions)}</td>
+            <td>Owner equity capital injections</td>
+          </tr>
+          <tr>
+            <td>Owner's drawings / withdrawals</td>
+            <td style="text-align:right;font-family:var(--ff-mono);color:var(--c-danger)">−${fmtPeso(fin.owner_drawings)}</td>
+            <td>Capital withdrawn by owner</td>
+          </tr>
+          <tr>
+            <td>Cash received from loans / borrowings</td>
+            <td style="text-align:right;font-family:var(--ff-mono)">${fmtPeso(fin.loans_received)}</td>
+            <td>Loans or notes payable proceeds</td>
+          </tr>
+          <tr>
+            <td>Repayment of loans (principal)</td>
+            <td style="text-align:right;font-family:var(--ff-mono);color:var(--c-danger)">−${fmtPeso(fin.loan_repayments)}</td>
+            <td>Principal debt payments</td>
+          </tr>
+          ${Number(fin.dividends_paid || 0) > 0 ? `<tr><td>Payment of dividends</td><td style="text-align:right;font-family:var(--ff-mono);color:var(--c-danger)">−${fmtPeso(fin.dividends_paid)}</td><td>Dividends distributed</td></tr>` : ''}
+          <tr style="font-weight:800;background:var(--c-surface-elevated);border-top:1px solid var(--c-border);border-bottom:2px solid var(--c-primary)">
+            <td>NET CASH FLOW FROM FINANCING</td>
+            <td style="text-align:right;font-family:var(--ff-mono);color:${finColor}">${fmtPeso(netFin)}</td>
+            <td>Net financing activities</td>
+          </tr>
+
+          <tr style="background:var(--c-primary);color:#fff"><th colspan="3" style="color:#fff;letter-spacing:.08em">SUMMARY & CASH RECONCILIATION</th></tr>
+          <tr style="font-weight:600">
+            <td>Cash & cash equivalents at beginning of period</td>
+            <td style="text-align:right;font-family:var(--ff-mono)">${fmtPeso(summary.beginning_cash)}</td>
+            <td>Drawer: ${fmtPeso(summary.beginning_drawer)} | Bank: ${fmtPeso(summary.beginning_bank)} | GCash: ${fmtPeso(summary.beginning_gcash)}</td>
+          </tr>
+          <tr style="font-weight:700">
+            <td>Net cash movement</td>
+            <td style="text-align:right;font-family:var(--ff-mono);color:${movementColor}">${netMovement >= 0 ? '+' : '−'}${fmtPeso(Math.abs(netMovement))}</td>
+            <td>Operations (${fmtPeso(netOps)}) + Investments (${fmtPeso(netInv)}) + Financing (${fmtPeso(netFin)})</td>
+          </tr>
+          <tr style="font-size:var(--fs-base);font-weight:800;background:var(--c-surface-elevated);border-top:2px solid var(--c-primary);border-bottom:3px double var(--c-primary)">
+            <td>Closing Cash Balance (End of period)</td>
+            <td style="text-align:right;font-family:var(--ff-mono);color:var(--c-primary)">${fmtPeso(summary.ending_cash)}</td>
+            <td>Cash & cash equivalents as of ${fmtDate(end)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="notice-card" style="margin-top:var(--space-4);padding:var(--space-4);border:1px solid var(--c-primary);border-radius:var(--radius-md);background:var(--c-surface-elevated)">
+      <strong>Cash Flow Reconciliation:</strong>
+      Opening Cash (${fmtPeso(summary.beginning_cash)}) + Net Movement (${fmtPeso(netMovement)}) = <strong>Closing Cash (${fmtPeso(summary.ending_cash)})</strong>.
+      Live POS items (customer sales collections, supplier PO payments, and expenses) are calculated automatically. Non-POS Investing & Financing entries can be adjusted anytime via <strong>"Edit Adjustments"</strong>.
+    </div>
+
+    <div class="chart-card" style="margin-top:var(--space-4);background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-lg);padding:var(--space-5)">
+      <div class="chart-title">Cashier Drawer Shift Reconciliation (${cash.shift_count || 0} closed shifts)</div>
+      <div class="summary-line"><span>Total opening cash</span><b>${fmtPeso(cash.opening_cash)}</b></div>
+      <div class="summary-line"><span>Total expected cash</span><b>${fmtPeso(cash.expected_cash)}</b></div>
+      <div class="summary-line"><span>Total counted closing cash</span><b>${fmtPeso(cash.closing_cash)}</b></div>
+      <div class="summary-line total"><span>Drawer variance</span><b class="${Number(cash.variance) === 0 ? 'positive' : 'negative'}">${fmtPeso(cash.variance)}</b></div>
+    </div>
+
+    <div class="table-wrap" style="margin-top:var(--space-4)">
+      <h4 style="padding:var(--space-3) var(--space-4) 0">Shift Breakdown</h4>
+      <table>
+        <thead><tr><th>Closed</th><th>Cashier</th><th>Opening</th><th>Sales</th><th>Refunds</th><th>Cash In</th><th>Cash Out</th><th>Expected</th><th>Counted</th><th>Variance</th></tr></thead>
+        <tbody>${shiftRows || '<tr><td colspan="10">No closed shifts in this period.</td></tr>'}</tbody>
+      </table>
+    </div>
+  `;
 }
 
-export async function reloadCashFlow() { const from = (document.getElementById('rpt-cash-from') as HTMLInputElement)?.value; const to = (document.getElementById('rpt-cash-to') as HTMLInputElement)?.value; const el = document.getElementById('report-content'); if (el) el.innerHTML = await loadCashFlowReport(from, to); }
+export async function reloadCashFlow() {
+  const from = (document.getElementById('rpt-cash-from') as HTMLInputElement)?.value;
+  const to = (document.getElementById('rpt-cash-to') as HTMLInputElement)?.value;
+  const el = document.getElementById('report-content');
+  if (el) el.innerHTML = await loadCashFlowReport(from, to);
+}
+
+export async function editCashFlowAdjustments() {
+  const [cfRes, bsRes] = await Promise.all([
+    apiGet<any>('/settings/cash_flow_adjustments').catch(() => ({ value: '{}' })),
+    apiGet<any>('/settings/balance_sheet_manual_accounts').catch(() => ({ value: '{}' }))
+  ]);
+  let adj: any = {};
+  try { adj = JSON.parse(cfRes?.value || '{}'); } catch { adj = {}; }
+  let bs: any = {};
+  try { bs = JSON.parse(bsRes?.value || '{}'); } catch { bs = {}; }
+
+  showModal(`
+    <h3>Edit Cash Flow Adjustments</h3>
+    <p class="modal-help">Customize Investing and Financing activities. Operating cash flows (sales, collections, PO supplier payments, and expenses) are calculated automatically from POS transactions.</p>
+    
+    <div style="font-weight:700;margin:var(--space-3) 0 var(--space-2);color:var(--c-primary)">1. INVESTING ACTIVITIES</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="cf-sale-assets">Sale of equipment / assets (₱)</label>
+        <input id="cf-sale-assets" type="number" min="0" step="0.01" value="${adj.sale_of_assets ?? 0}" />
+      </div>
+      <div class="form-group">
+        <label for="cf-buy-equipment">Purchase of equipment / tools (₱)</label>
+        <input id="cf-buy-equipment" type="number" min="0" step="0.01" value="${adj.purchase_of_equipment ?? bs.equipment ?? 0}" />
+      </div>
+      <div class="form-group">
+        <label for="cf-buy-property">Purchase of property / building (₱)</label>
+        <input id="cf-buy-property" type="number" min="0" step="0.01" value="${adj.purchase_of_property ?? bs.building ?? 0}" />
+      </div>
+      <div class="form-group">
+        <label for="cf-other-investing">Other capital investments (₱)</label>
+        <input id="cf-other-investing" type="number" min="0" step="0.01" value="${adj.other_investing ?? 0}" />
+      </div>
+    </div>
+
+    <div style="font-weight:700;margin:var(--space-4) 0 var(--space-2);color:var(--c-primary)">2. FINANCING ACTIVITIES</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="cf-owner-capital">Owner's capital contribution (₱)</label>
+        <input id="cf-owner-capital" type="number" min="0" step="0.01" value="${adj.owner_contributions ?? bs.owner_capital ?? 0}" />
+      </div>
+      <div class="form-group">
+        <label for="cf-owner-drawings">Owner's drawings / withdrawals (₱)</label>
+        <input id="cf-owner-drawings" type="number" min="0" step="0.01" value="${adj.owner_drawings ?? bs.owner_withdrawals ?? 0}" />
+      </div>
+      <div class="form-group">
+        <label for="cf-loans-received">Cash received from loans (₱)</label>
+        <input id="cf-loans-received" type="number" min="0" step="0.01" value="${adj.loans_received ?? 0}" />
+      </div>
+      <div class="form-group">
+        <label for="cf-loan-repayments">Repayment of loans (principal) (₱)</label>
+        <input id="cf-loan-repayments" type="number" min="0" step="0.01" value="${adj.loan_repayments ?? 0}" />
+      </div>
+      <div class="form-group">
+        <label for="cf-dividends-paid">Payment of dividends (₱)</label>
+        <input id="cf-dividends-paid" type="number" min="0" step="0.01" value="${adj.dividends_paid ?? 0}" />
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCashFlowAdjustments()">Save Adjustments</button>
+    </div>
+  `, 'cash-flow-adjustments-modal');
+}
+
+export async function saveCashFlowAdjustments() {
+  const num = (id: string) => Number((document.getElementById(id) as HTMLInputElement)?.value || 0);
+  const payload = {
+    sale_of_assets: num('cf-sale-assets'),
+    purchase_of_equipment: num('cf-buy-equipment'),
+    purchase_of_property: num('cf-buy-property'),
+    other_investing: num('cf-other-investing'),
+    owner_contributions: num('cf-owner-capital'),
+    owner_drawings: num('cf-owner-drawings'),
+    loans_received: num('cf-loans-received'),
+    loan_repayments: num('cf-loan-repayments'),
+    dividends_paid: num('cf-dividends-paid'),
+  };
+  await apiPut('/settings/cash_flow_adjustments', { value: JSON.stringify(payload) });
+  closeModal();
+  showToast('Cash Flow adjustments saved', 'success');
+  await reloadCashFlow();
+}
 
 export async function reloadBooks() {
   const from = (document.getElementById('rpt-books-from') as HTMLInputElement)?.value;
