@@ -135,7 +135,7 @@ async function loadBalanceSheetReport() {
       <tr><td>Other Assets</td><td>Other assets</td><td>${manualMoney('other_assets')}</td><td>Manual admin account</td></tr>
       ${totalRow('TOTAL ASSETS', fmtPeso(knownAssets), 'Total current, fixed, and other recorded assets')}
       ${sectionRow('CURRENT LIABILITIES')}
-      <tr><td>Current Liabilities</td><td>Accounts payable / supplier payables</td><td>${manualMoney('supplier_payables')}</td><td>Manual admin account</td></tr>
+      <tr><td>Current Liabilities</td><td>Accounts payable / supplier payables</td><td>${fmtPeso(data.liabilities.supplier_payables)}</td><td>Unpaid supplier credit balances as of date</td></tr>
       <tr><td>Current Liabilities</td><td>Accrued liabilities</td><td>${manualMoney('accrued_liabilities')}</td><td>Manual admin account</td></tr>
       <tr><td>Current Liabilities</td><td>Deferred income</td><td>${manualMoney('deferred_income')}</td><td>Manual admin account</td></tr>
       <tr><td>Current Liabilities</td><td>Accrued salaries and wages</td><td>${manualMoney('accrued_salaries')}</td><td>Manual admin account</td></tr>
@@ -191,7 +191,7 @@ export async function exportBalanceSheet() {
     line('Other assets', manualVal('other_assets'), 'Manual admin account');
     total('TOTAL ASSETS', knownAssets, 'Total current, fixed, and other recorded assets');
     section('LIABILITIES'); section('CURRENT LIABILITIES');
-    line('Accounts payable / supplier payables', manualVal('supplier_payables'), 'Manual admin account');
+    line('Accounts payable / supplier payables', liabilities.supplier_payables, 'Unpaid supplier credit balances as of date');
     line('Accrued liabilities', manualVal('accrued_liabilities'), 'Manual admin account');
     line('Deferred income', manualVal('deferred_income'), 'Manual admin account');
     line('Accrued salaries and wages', manualVal('accrued_salaries'), 'Manual admin account');
@@ -225,13 +225,13 @@ export async function editBalanceSheetAccounts() {
   const values = data.manual_accounts || {};
   const fields: Array<[string, string]> = [
     ['bank', 'Bank balance'], ['gcash', 'GCash balance'], ['owner_capital', "Owner's capital"],
-    ['supplier_payables', 'Supplier payables'], ['accrued_liabilities', 'Accrued liabilities'], ['deferred_income', 'Deferred income'],
+    ['accrued_liabilities', 'Accrued liabilities'], ['deferred_income', 'Deferred income'],
     ['accrued_salaries', 'Accrued salaries and wages'], ['mortgage_payable', 'Mortgage payable'], ['other_current_liabilities', 'Other current liabilities'],
     ['long_term_debt', 'Long-term debt'], ['notes_payable', 'Notes payable'], ['other_long_term_liabilities', 'Other long-term liabilities'],
     ['land', 'Land'], ['equipment', 'Equipment'], ['building', 'Building'], ['other_fixed_assets', 'Other fixed assets'],
     ['trademark', 'Trademark / intellectual property'], ['other_assets', 'Other assets'], ['owner_withdrawals', 'Owner withdrawals'],
   ];
-  showModal(`<h3>Manage Balance Sheet Accounts</h3><p class="modal-help">Only external accounts are editable here. Cash drawer, inventory, and receivables come automatically from POS records.</p><div class="form-grid">${fields.map(([key,label]) => `<div class="form-group"><label for="bs-${key}">${label}</label><input id="bs-${key}" type="number" min="0" step="0.01" value="${values[key] ?? ''}" placeholder="0.00" /></div>`).join('')}</div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveBalanceSheetAccounts()">Save Accounts</button></div>`, 'balance-sheet-accounts-modal');
+  showModal(`<h3>Manage Balance Sheet Accounts</h3><p class="modal-help">Only external accounts are editable here. Cash drawer, inventory, receivables, and supplier payables come automatically from POS records.</p><div class="form-grid">${fields.map(([key,label]) => `<div class="form-group"><label for="bs-${key}">${label}</label><input id="bs-${key}" type="number" min="0" step="0.01" value="${values[key] ?? ''}" placeholder="0.00" /></div>`).join('')}</div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveBalanceSheetAccounts()">Save Accounts</button></div>`, 'balance-sheet-accounts-modal');
 }
 
 async function loadChartAccounts() {
@@ -544,7 +544,7 @@ async function exportDetailedWorkbook(period: ExportPeriod) {
     total('TOTAL ASSETS', knownAssets, 'Total current, fixed, and other recorded assets');
     section('LIABILITIES');
     section('CURRENT LIABILITIES');
-    line('Accounts payable / supplier payables', manualVal('supplier_payables'), 'Manual admin account');
+    line('Accounts payable / supplier payables', liabilities.supplier_payables, 'Unpaid supplier credit balances as of date');
     line('Accrued liabilities', manualVal('accrued_liabilities'), 'Manual admin account');
     line('Deferred income', manualVal('deferred_income'), 'Manual admin account');
     line('Accrued salaries and wages', manualVal('accrued_salaries'), 'Manual admin account');

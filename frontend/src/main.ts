@@ -118,6 +118,8 @@ Object.assign(window, {
   removePOLineItem: purchaseOrders.removePOLineItem,
   createPO: purchaseOrders.createPO,
   showPODetail: purchaseOrders.showPODetail,
+  showPOPaymentModal: purchaseOrders.showPOPaymentModal,
+  submitPOPayment: purchaseOrders.submitPOPayment,
   receivePO: purchaseOrders.receivePO,
   cancelPO: purchaseOrders.cancelPO,
   delPO: purchaseOrders.delPO,

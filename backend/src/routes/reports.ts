@@ -80,7 +80,7 @@ router.get('/comprehensive', async (req: Request, res: Response) => {
 router.get('/balance-sheet', async (req: Request, res: Response) => {
   const db = getDb();
   const asOf = (req.query.asOf as string) || businessDate();
-  const [inventory, receivables, cash, profit, manualRow, chartRows] = await Promise.all([
+  const [inventory, receivables, payables, cash, profit, manualRow, chartRows] = await Promise.all([
     db.prepare(`SELECT COALESCE(SUM(stock * cost_price),0) total, COALESCE(SUM(stock * price_per_unit),0) retail_total FROM materials`).get() as Promise<any>,
     db.prepare(`SELECT COALESCE(SUM(balance),0) total FROM (
       SELECT i.total - COALESCE((SELECT SUM(cm.amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued' AND date(cm.created_at,'+8 hours') <= ?),0)
@@ -89,6 +89,11 @@ router.get('/balance-sheet', async (req: Request, res: Response) => {
         + COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id=i.id AND date(r.created_at,'+8 hours') <= ?),0) balance
       FROM invoices i WHERE i.status <> 'voided' AND date(i.issued_date,'+8 hours') <= ?
     ) open_balances WHERE balance > 0`).get(asOf,asOf,asOf,asOf,asOf) as Promise<any>,
+    db.prepare(`SELECT COALESCE(SUM(balance),0) total FROM (
+      SELECT po.total - COALESCE((SELECT SUM(pop.amount) FROM po_payments pop WHERE pop.po_id=po.id AND date(pop.payment_date,'+8 hours') <= ?),0) balance
+      FROM purchase_orders po
+      WHERE po.status = 'received' AND lower(trim(po.mode_of_payment)) = 'credit' AND date(po.order_date,'+8 hours') <= ?
+    ) open_payables WHERE balance > 0`).get(asOf, asOf) as Promise<any>,
     db.prepare(`SELECT closing_cash, closed_at, opened_at FROM cashier_shifts WHERE status='closed' AND date(closed_at,'+8 hours') <= ? ORDER BY closed_at DESC LIMIT 1`).get(asOf) as Promise<any>,
     db.prepare(`SELECT COALESCE(SUM(net_sales),0) net_sales, COALESCE((SELECT SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price,m.cost_price,0)) FROM invoice_items ii JOIN invoices i2 ON i2.id=ii.invoice_id LEFT JOIN materials m ON m.id=ii.material_id WHERE i2.status <> 'voided' AND date(i2.issued_date,'+8 hours') <= ?),0) cogs, COALESCE((SELECT SUM(amount) FROM expenses WHERE date(expense_date,'+8 hours') <= ?),0) expenses FROM v_invoice_financials WHERE status <> 'voided' AND date(issued_date,'+8 hours') <= ?`).get(asOf,asOf,asOf) as Promise<any>,
     db.prepare(`SELECT value FROM settings WHERE key='balance_sheet_manual_accounts'`).get() as Promise<any>,
@@ -108,10 +113,11 @@ router.get('/balance-sheet', async (req: Request, res: Response) => {
   const totalManualAssets = bankVal + gcashVal + fixedAssetSum + customChartAssets;
   const totalAssets = inventoryCost + receivableTotal + recordedCash + totalManualAssets;
 
-  const manualLiabilitiesList = ['supplier_payables','accrued_liabilities','deferred_income','accrued_salaries','mortgage_payable','other_current_liabilities','long_term_debt','notes_payable','other_long_term_liabilities'];
+  const supplierPayablesTotal = Number(payables?.total || 0) + Number((chartRows as any[]).find(row => row.code === '2000')?.opening_balance || 0);
+  const manualLiabilitiesList = ['accrued_liabilities','deferred_income','accrued_salaries','mortgage_payable','other_current_liabilities','long_term_debt','notes_payable','other_long_term_liabilities'];
   const manualLiabilitySum = manualLiabilitiesList.reduce((sum, k) => sum + Number(manual[k] || 0), 0);
   const customChartLiabilities = (chartRows as any[]).filter(row => row.balance_source === 'manual' && row.base_type === 'liability' && row.code !== '2000').reduce((sum, row) => sum + Number(row.opening_balance || 0), 0);
-  const totalLiabilities = manualLiabilitySum + customChartLiabilities;
+  const totalLiabilities = supplierPayablesTotal + manualLiabilitySum + customChartLiabilities;
 
   const ownerCapital = Number((chartRows as any[]).find(row => row.code === '3000')?.opening_balance ?? manual.owner_capital ?? 0);
   const withdrawals = Number(manual.owner_withdrawals || 0);
@@ -119,13 +125,13 @@ router.get('/balance-sheet', async (req: Request, res: Response) => {
   const totalEquity = ownerCapital + retainedEarnings + customEquity - withdrawals;
   manual.bank = bankVal;
   manual.gcash = gcashVal;
-  manual.supplier_payables = Number(manual['2000'] ?? manual.supplier_payables ?? 0);
+  manual.supplier_payables = supplierPayablesTotal;
   manual.owner_capital = ownerCapital;
   res.json({
     as_of: asOf,
     assets: { inventory_cost: inventoryCost, inventory_retail: Number(inventory.retail_total || 0), receivables: receivableTotal, recorded_cash: recordedCash, bank: manual['1010'] ?? manual.bank ?? null, gcash: manual['1020'] ?? manual.gcash ?? null, manual_total: totalManualAssets, known_total: totalAssets },
     equity: { owner_capital: ownerCapital, retained_earnings: retainedEarnings, owner_withdrawals: withdrawals, known_total: totalEquity },
-    liabilities: { supplier_payables: manual.supplier_payables ?? null, accrued_liabilities: manual.accrued_liabilities ?? null, deferred_income: manual.deferred_income ?? null, accrued_salaries: manual.accrued_salaries ?? null, mortgage_payable: manual.mortgage_payable ?? null, other_current_liabilities: manual.other_current_liabilities ?? null, long_term_debt: manual.long_term_debt ?? null, notes_payable: manual.notes_payable ?? null, other_long_term_liabilities: manual.other_long_term_liabilities ?? null, known_total: totalLiabilities },
+    liabilities: { supplier_payables: supplierPayablesTotal, accrued_liabilities: manual.accrued_liabilities ?? null, deferred_income: manual.deferred_income ?? null, accrued_salaries: manual.accrued_salaries ?? null, mortgage_payable: manual.mortgage_payable ?? null, other_current_liabilities: manual.other_current_liabilities ?? null, long_term_debt: manual.long_term_debt ?? null, notes_payable: manual.notes_payable ?? null, other_long_term_liabilities: manual.other_long_term_liabilities ?? null, known_total: totalLiabilities },
     manual_accounts: manual,
     chart_accounts: chartRows,
     untracked: [],

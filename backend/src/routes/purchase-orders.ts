@@ -23,7 +23,21 @@ function validateItems(items: any[]): string | null {
 router.get('/', async (_req: Request, res: Response) => {
   const db = getDb();
   const pos = await db.prepare(`
-    SELECT po.*, s.name AS supplier_name
+    SELECT po.*, s.name AS supplier_name,
+      CASE 
+        WHEN lower(trim(COALESCE(po.mode_of_payment, ''))) = 'credit' THEN COALESCE((SELECT SUM(amount) FROM po_payments WHERE po_id = po.id), 0)
+        ELSE po.total
+      END AS paid_amount,
+      CASE 
+        WHEN lower(trim(COALESCE(po.mode_of_payment, ''))) = 'credit' THEN MAX(0, po.total - COALESCE((SELECT SUM(amount) FROM po_payments WHERE po_id = po.id), 0))
+        ELSE 0
+      END AS balance,
+      CASE 
+        WHEN lower(trim(COALESCE(po.mode_of_payment, ''))) != 'credit' THEN 'paid'
+        WHEN (po.total - COALESCE((SELECT SUM(amount) FROM po_payments WHERE po_id = po.id), 0)) <= 0.005 THEN 'paid'
+        WHEN COALESCE((SELECT SUM(amount) FROM po_payments WHERE po_id = po.id), 0) > 0.005 THEN 'partial'
+        ELSE 'unpaid'
+      END AS payment_status
     FROM purchase_orders po
     JOIN suppliers s ON s.id = po.supplier_id
     ORDER BY po.created_at DESC
@@ -34,7 +48,21 @@ router.get('/', async (_req: Request, res: Response) => {
 router.get('/:id', async (req: Request, res: Response) => {
   const db = getDb();
   const po = await db.prepare(`
-    SELECT po.*, s.name AS supplier_name
+    SELECT po.*, s.name AS supplier_name,
+      CASE 
+        WHEN lower(trim(COALESCE(po.mode_of_payment, ''))) = 'credit' THEN COALESCE((SELECT SUM(amount) FROM po_payments WHERE po_id = po.id), 0)
+        ELSE po.total
+      END AS paid_amount,
+      CASE 
+        WHEN lower(trim(COALESCE(po.mode_of_payment, ''))) = 'credit' THEN MAX(0, po.total - COALESCE((SELECT SUM(amount) FROM po_payments WHERE po_id = po.id), 0))
+        ELSE 0
+      END AS balance,
+      CASE 
+        WHEN lower(trim(COALESCE(po.mode_of_payment, ''))) != 'credit' THEN 'paid'
+        WHEN (po.total - COALESCE((SELECT SUM(amount) FROM po_payments WHERE po_id = po.id), 0)) <= 0.005 THEN 'paid'
+        WHEN COALESCE((SELECT SUM(amount) FROM po_payments WHERE po_id = po.id), 0) > 0.005 THEN 'partial'
+        ELSE 'unpaid'
+      END AS payment_status
     FROM purchase_orders po
     JOIN suppliers s ON s.id = po.supplier_id
     WHERE po.id = ?
@@ -46,7 +74,14 @@ router.get('/:id', async (req: Request, res: Response) => {
     LEFT JOIN materials m ON m.id = pi.material_id
     WHERE pi.po_id = ?
   `).all(req.params.id);
-  res.json({ ...po as any, items });
+  const payments = await db.prepare(`
+    SELECT pop.*, u.username AS created_by_name
+    FROM po_payments pop
+    LEFT JOIN users u ON u.id = pop.created_by
+    WHERE pop.po_id = ?
+    ORDER BY pop.payment_date DESC, pop.created_at DESC
+  `).all(req.params.id);
+  res.json({ ...po as any, items, payments });
 });
 
 router.post('/', async (req: Request, res: Response) => {
@@ -258,6 +293,65 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   await txn();
   await logAudit((req as any).user?.id || null, 'delete', 'purchase_order', req.params.id as string, existing.po_number, existing, null);
   res.status(204).send();
+});
+
+router.post('/:id/payments', requireAdmin, async (req: Request, res: Response) => {
+  const db = getDb();
+  const po = await db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(req.params.id) as any;
+  if (!po) { res.status(404).json({ error: 'Purchase order not found' }); return; }
+  if (po.status === 'cancelled') { res.status(400).json({ error: 'Cannot pay a cancelled purchase order' }); return; }
+
+  const amount = Number(req.body.amount);
+  const payment_method = String(req.body.payment_method || 'cash').trim().toLowerCase();
+  const payment_date = req.body.payment_date ? String(req.body.payment_date).trim() : new Date().toISOString().slice(0, 10);
+  const notes = req.body.notes !== undefined ? (String(req.body.notes).trim() || null) : null;
+  const reference_number = req.body.reference_number !== undefined ? (String(req.body.reference_number).trim() || null) : null;
+
+  if (isNaN(amount) || amount <= 0) {
+    res.status(400).json({ error: 'Payment amount must be greater than 0' });
+    return;
+  }
+
+  const currentPaid = await db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM po_payments WHERE po_id = ?').get(req.params.id) as any;
+  const balance = Math.max(0, po.total - Number(currentPaid?.total || 0));
+
+  if (amount > balance + 0.005) {
+    res.status(400).json({ error: `Payment amount (${amount}) exceeds remaining balance (${balance.toFixed(2)})` });
+    return;
+  }
+
+  const paymentId = uuidv4();
+  const userId = (req as any).user?.id || null;
+
+  await db.prepare(`
+    INSERT INTO po_payments (id, po_id, amount, payment_method, payment_date, reference_number, notes, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(paymentId, req.params.id, amount, payment_method, payment_date, reference_number, notes, userId);
+
+  await logAudit(userId, 'create', 'po_payment', paymentId, `Payment of ₱${amount} for PO ${po.po_number}`, null, { amount, payment_method, payment_date, po_number: po.po_number });
+
+  const updatedPaid = Number(currentPaid?.total || 0) + amount;
+  const updatedBalance = Math.max(0, po.total - updatedPaid);
+  const payment_status = updatedBalance <= 0.005 ? 'paid' : 'partial';
+
+  res.status(201).json({
+    ok: true,
+    payment: { id: paymentId, po_id: req.params.id, amount, payment_method, payment_date, reference_number, notes },
+    paid_amount: updatedPaid,
+    balance: updatedBalance,
+    payment_status
+  });
+});
+
+router.delete('/:id/payments/:paymentId', requireAdmin, async (req: Request, res: Response) => {
+  const db = getDb();
+  const payment = await db.prepare('SELECT * FROM po_payments WHERE id = ? AND po_id = ?').get(req.params.paymentId, req.params.id) as any;
+  if (!payment) { res.status(404).json({ error: 'Payment not found' }); return; }
+
+  await db.prepare('DELETE FROM po_payments WHERE id = ?').run(req.params.paymentId);
+  await logAudit((req as any).user?.id || null, 'delete', 'po_payment', String(req.params.paymentId), `Voided payment of ₱${payment.amount} for PO ${req.params.id}`, payment, null);
+
+  res.json({ ok: true });
 });
 
 export default router;

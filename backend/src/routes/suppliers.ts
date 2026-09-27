@@ -35,15 +35,38 @@ function validateSupplier(body: any, existing?: any) {
 router.get('/', async (req: Request, res: Response) => {
   const db = getDb();
   const conditions: string[] = []; const params: any[] = [];
-  if (typeof req.query.from === 'string' && req.query.from) { conditions.push('date(created_at) >= ?'); params.push(req.query.from); }
-  if (typeof req.query.to === 'string' && req.query.to) { conditions.push('date(created_at) <= ?'); params.push(req.query.to); }
-  const suppliers = await db.prepare(`SELECT * FROM suppliers${conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''} ORDER BY name ASC`).all(...params);
+  if (typeof req.query.from === 'string' && req.query.from) { conditions.push('date(s.created_at) >= ?'); params.push(req.query.from); }
+  if (typeof req.query.to === 'string' && req.query.to) { conditions.push('date(s.created_at) <= ?'); params.push(req.query.to); }
+  const suppliers = await db.prepare(`
+    SELECT s.*,
+      COALESCE((
+        SELECT SUM(po.total - COALESCE((SELECT SUM(amount) FROM po_payments pop WHERE pop.po_id = po.id), 0))
+        FROM purchase_orders po
+        WHERE po.supplier_id = s.id
+          AND po.status = 'received'
+          AND lower(trim(po.mode_of_payment)) = 'credit'
+      ), 0) AS outstanding_balance
+    FROM suppliers s
+    ${conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''}
+    ORDER BY s.name ASC
+  `).all(...params);
   res.json(suppliers);
 });
 
 router.get('/:id', async (req: Request, res: Response) => {
   const db = getDb();
-  const supplier = await db.prepare('SELECT * FROM suppliers WHERE id = ?').get(req.params.id);
+  const supplier = await db.prepare(`
+    SELECT s.*,
+      COALESCE((
+        SELECT SUM(po.total - COALESCE((SELECT SUM(amount) FROM po_payments pop WHERE pop.po_id = po.id), 0))
+        FROM purchase_orders po
+        WHERE po.supplier_id = s.id
+          AND po.status = 'received'
+          AND lower(trim(po.mode_of_payment)) = 'credit'
+      ), 0) AS outstanding_balance
+    FROM suppliers s
+    WHERE s.id = ?
+  `).get(req.params.id);
   if (!supplier) { res.status(404).json({ error: 'Supplier not found' }); return; }
   res.json(supplier);
 });

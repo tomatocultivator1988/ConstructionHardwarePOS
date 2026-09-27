@@ -25,13 +25,21 @@ export async function renderPurchaseOrders(): Promise<string> {
               <td data-label="PO #" style="font-weight:600">${esc(po.po_number)}</td>
               <td data-label="Supplier">${esc(po.supplier_name)}</td>
               <td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(po.total)}</td>
-              <td data-label="Mode of Payment">${esc(po.mode_of_payment || '-')}</td>
+              <td data-label="Mode of Payment">
+                ${esc(po.mode_of_payment || '-')}
+                ${po.mode_of_payment?.toLowerCase() === 'credit' ? `
+                  <span class="status-badge ${po.payment_status === 'paid' ? 'status-paid' : po.payment_status === 'partial' ? 'status-partial' : 'status-pending'}" style="margin-left:4px;font-size:0.75rem">
+                    ${po.payment_status === 'paid' ? 'Paid' : po.payment_status === 'partial' ? `Bal: ${fmtPeso(po.balance || 0)}` : 'Unpaid'}
+                  </span>
+                ` : ''}
+              </td>
               <td data-label="Status"><span class="status-badge ${po.status}">${po.status}</span></td>
               <td data-label="Order Date">${fmtDate(po.order_date)}</td>
               <td data-label="Received">${po.received_date ? fmtDate(po.received_date) : '-'}</td>
               <td data-label="" class="actions">
                 <button class="btn btn-primary btn-sm" onclick="showPODetail('${po.id}')">View</button>
                 ${po.status === 'pending' ? `<button class="btn btn-success btn-sm" onclick="receivePO('${po.id}')">Receive</button><button class="btn btn-danger btn-sm" onclick="cancelPO('${po.id}')">Cancel</button>` : ''}
+                ${po.status === 'received' && po.mode_of_payment?.toLowerCase() === 'credit' && (po.balance || 0) > 0.005 ? `<button class="btn btn-success btn-sm" onclick="showPOPaymentModal('${po.id}')">Pay</button>` : ''}
                 ${po.status === 'cancelled' && isAdmin() ? `<button class="btn btn-danger btn-sm" onclick="delPO('${po.id}')">Delete</button>` : ''}
               </td>
             </tr>
@@ -225,6 +233,11 @@ export async function showPODetail(id: string) {
     <div class="summary-line"><span>Order Date</span><span>${fmtDate(po.order_date)}</span></div>
     ${po.received_date ? `<div class="summary-line"><span>Received</span><span>${fmtDate(po.received_date)}</span></div>` : ''}
     ${po.mode_of_payment ? `<div class="summary-line"><span>Mode of Payment</span><span>${esc(po.mode_of_payment)}</span></div>` : ''}
+    ${po.mode_of_payment?.toLowerCase() === 'credit' ? `
+      <div class="summary-line"><span>Payment Status</span><span class="status-badge ${po.payment_status === 'paid' ? 'status-paid' : po.payment_status === 'partial' ? 'status-partial' : 'status-pending'}">${po.payment_status?.toUpperCase() || 'UNPAID'}</span></div>
+      <div class="summary-line"><span>Paid to Supplier</span><span>${fmtPeso(po.paid_amount || 0)}</span></div>
+      <div class="summary-line"><span>Remaining Payable Balance</span><strong style="color:${(po.balance || 0) > 0.005 ? 'var(--c-danger)' : 'var(--c-success)'}">${fmtPeso(po.balance || 0)}</strong></div>
+    ` : ''}
     ${po.notes ? `<div class="summary-line"><span>Notes</span><span style="white-space:pre-wrap;text-align:right">${esc(po.notes)}</span></div>` : ''}
     <h4 style="margin-top:var(--space-4)">Items</h4>
     <table style="margin-top:var(--space-2)">
@@ -245,12 +258,105 @@ export async function showPODetail(id: string) {
       </tbody>
     </table>
     <div class="summary-line total"><span>Total</span><span>${fmtPeso(po.total)}</span></div>
+    ${po.payments && po.payments.length ? `
+      <h4 style="margin-top:var(--space-4)">Supplier Payments</h4>
+      <table style="margin-top:var(--space-2)">
+        <thead><tr><th>Date</th><th>Amount</th><th>Method</th><th>Ref #</th><th>Notes</th><th>Recorded By</th></tr></thead>
+        <tbody>
+          ${po.payments.map((p: any) => `
+            <tr>
+              <td data-label="Date">${fmtDate(p.payment_date)}</td>
+              <td data-label="Amount" style="font-family:var(--ff-mono);font-weight:700">${fmtPeso(p.amount)}</td>
+              <td data-label="Method">${esc(p.payment_method)}</td>
+              <td data-label="Ref #">${esc(p.reference_number || '—')}</td>
+              <td data-label="Notes">${esc(p.notes || '—')}</td>
+              <td data-label="Recorded By">${esc(p.created_by_name || 'Admin')}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    ` : ''}
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Close</button>
+      ${po.status === 'received' && po.mode_of_payment?.toLowerCase() === 'credit' && (po.balance || 0) > 0.005 ? `<button class="btn btn-success" onclick="closeModal();showPOPaymentModal('${po.id}')">Pay Supplier</button>` : ''}
       ${po.status !== 'cancelled' ? `<button class="btn btn-primary" onclick="closeModal();showPOModal('${po.id}')">Edit PO</button>` : ''}
       ${po.status === 'cancelled' && isAdmin() ? `<button class="btn btn-danger" onclick="closeModal();delPO('${po.id}')">Delete PO</button>` : ''}
     </div>
   `, 'po-detail-modal');
+}
+
+export async function showPOPaymentModal(id: string) {
+  const po = await apiGet<PurchaseOrder>(`/purchase-orders/${id}`);
+  const balance = po.balance !== undefined ? po.balance : Math.max(0, po.total - (po.paid_amount || 0));
+  showModal(`
+    <h3>Pay Supplier — ${esc(po.po_number)}</h3>
+    <div class="summary-line"><span>Supplier</span><strong>${esc(po.supplier_name)}</strong></div>
+    <div class="summary-line"><span>PO Total</span><span>${fmtPeso(po.total)}</span></div>
+    <div class="summary-line"><span>Remaining Payable Balance</span><strong style="color:var(--c-danger)">${fmtPeso(balance)}</strong></div>
+    <hr style="margin:var(--space-3) 0" />
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="pop-amount">Amount to Pay (₱)</label>
+        <input id="pop-amount" type="number" min="0.01" max="${balance}" step="0.01" value="${balance.toFixed(2)}" />
+      </div>
+      <div class="form-group">
+        <label for="pop-method">Payment Method</label>
+        <select id="pop-method">
+          <option value="cash">Cash</option>
+          <option value="bank">Bank Transfer</option>
+          <option value="gcash">GCash</option>
+          <option value="check">Check</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="pop-date">Payment Date</label>
+        <input id="pop-date" type="date" value="${new Date().toISOString().slice(0, 10)}" />
+      </div>
+      <div class="form-group">
+        <label for="pop-ref">Reference / Check # (optional)</label>
+        <input id="pop-ref" maxlength="50" placeholder="e.g. Check #1234 or Ref #" />
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label for="pop-notes">Notes (optional)</label>
+        <input id="pop-notes" maxlength="150" placeholder="e.g. Paid in full / partial" />
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="pop-submit-btn" onclick="submitPOPayment('${po.id}')">Confirm Payment</button>
+    </div>
+  `, 'po-payment-modal');
+}
+
+export async function submitPOPayment(id: string) {
+  const amountInput = document.getElementById('pop-amount') as HTMLInputElement;
+  const amount = Number(amountInput?.value);
+  const payment_method = (document.getElementById('pop-method') as HTMLSelectElement)?.value || 'cash';
+  const payment_date = (document.getElementById('pop-date') as HTMLInputElement)?.value;
+  const reference_number = (document.getElementById('pop-ref') as HTMLInputElement)?.value || '';
+  const notes = (document.getElementById('pop-notes') as HTMLInputElement)?.value || '';
+
+  if (!amount || amount <= 0) {
+    showToast('Please enter a valid amount');
+    return;
+  }
+  disableBtn('pop-submit-btn', true);
+  try {
+    await apiPost(`/purchase-orders/${id}/payments`, {
+      amount,
+      payment_method,
+      payment_date,
+      reference_number,
+      notes
+    });
+    closeModal();
+    showToast('Supplier payment recorded successfully', 'success');
+    loadView('purchase-orders');
+  } catch (err: any) {
+    showToast(err.message || 'Payment failed');
+  } finally {
+    disableBtn('pop-submit-btn', false);
+  }
 }
 
 export async function receivePO(id: string) {

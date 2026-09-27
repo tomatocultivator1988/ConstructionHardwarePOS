@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDel } from '../lib/api';
-import { esc, val, setErr, clearErr, disableBtn } from '../lib/helpers';
+import { esc, val, setErr, clearErr, disableBtn, fmtPeso } from '../lib/helpers';
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
 import { loadView } from '../lib/router';
 import { renderPurchaseOrders } from './purchase-orders';
@@ -33,7 +33,7 @@ export async function renderSuppliers(): Promise<string> {
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Name</th><th>Contact Person</th><th>Phone</th><th>Address</th><th>Email</th><th>TIN</th><th class="actions">Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th>Contact Person</th><th>Phone</th><th>Address</th><th>Payable Balance</th><th class="actions">Actions</th></tr></thead>
         <tbody>
           ${suppliers.length ? suppliers.map((s: Supplier) => `
             <tr>
@@ -41,14 +41,13 @@ export async function renderSuppliers(): Promise<string> {
               <td data-label="Contact Person">${esc(s.contact_person || '-')}</td>
               <td data-label="Phone">${esc(s.phone || '-')}</td>
               <td data-label="Address">${esc(s.address || '-')}</td>
-              <td data-label="Email">${esc(s.email || '-')}</td>
-              <td data-label="TIN">${esc(s.tin || '-')}</td>
+              <td data-label="Payable Balance" style="font-family:var(--ff-mono);font-weight:600;color:${(s.outstanding_balance || 0) > 0.005 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${fmtPeso(s.outstanding_balance || 0)}</td>
               <td data-label="" class="actions">
                 <button class="btn btn-primary btn-sm" onclick="editSupplier('${s.id}')">Edit</button>
                 <button class="btn btn-danger btn-sm" onclick="delSupplier('${s.id}')">Delete</button>
               </td>
             </tr>
-          `).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--c-text-muted);padding:2rem">No suppliers yet</td></tr>'}
+          `).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--c-text-muted);padding:2rem">No suppliers yet</td></tr>'}
         </tbody>
       </table>
     </div>

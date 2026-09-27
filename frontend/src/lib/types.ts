@@ -112,6 +112,20 @@ export interface Supplier {
   tin: string | null;
   notes: string | null;
   created_at: string;
+  outstanding_balance?: number;
+}
+
+export interface PoPayment {
+  id: string;
+  po_id: string;
+  amount: number;
+  payment_method: string;
+  payment_date: string;
+  reference_number?: string | null;
+  notes?: string | null;
+  created_by?: string | null;
+  created_by_name?: string | null;
+  created_at?: string;
 }
 
 export interface PurchaseOrder {
@@ -123,9 +137,14 @@ export interface PurchaseOrder {
   total: number;
   order_date: string;
   notes: string | null;
+  mode_of_payment?: string | null;
   received_date: string | null;
   created_at: string;
   items: PoItem[];
+  paid_amount?: number;
+  balance?: number;
+  payment_status?: 'paid' | 'partial' | 'unpaid';
+  payments?: PoPayment[];
 }
 
 export interface PoItem {

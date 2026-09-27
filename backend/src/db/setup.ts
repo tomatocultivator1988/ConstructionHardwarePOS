@@ -6,7 +6,7 @@ let db: Database;
 let dbInitPromise: Promise<void> | null = null;
 const businessDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date());
 
-const CURRENT_SCHEMA_VERSION = '2026.09.26';
+const CURRENT_SCHEMA_VERSION = '2026.09.27';
 
 export async function initDb(): Promise<void> {
   if (dbInitPromise) return dbInitPromise;
@@ -108,7 +108,7 @@ async function seedChartAccountsIfMissing() {
   const accounts = [
     ['1000','Cash on Hand','asset','POS drawer cash','pos'], ['1010','Bank','asset','Manual bank balance','manual'], ['1020','GCash','asset','Manual GCash balance','manual'],
     ['1100','Accounts Receivable','asset','Unpaid credit balances','pos'], ['1200','Inventory','asset','Inventory at recorded cost','pos'],
-    ['2000','Supplier Payables','liability','Manual supplier balances','manual'], ['3000',"Owner's Capital",'equity','Opening owner capital','manual'], ['3100','Retained Earnings','equity','Cumulative POS profit','pos'],
+    ['2000','Supplier Payables','liability','Unpaid supplier credit balances','pos'], ['3000',"Owner's Capital",'equity','Opening owner capital','manual'], ['3100','Retained Earnings','equity','Cumulative POS profit','pos'],
     ['4000','Sales','revenue','POS sales','pos'], ['4100','Sales Returns','revenue','Returned sales','pos'], ['5000','Cost of Goods Sold','expense','Cost of inventory sold','pos'], ['6000','Operating Expenses','expense','Recorded business expenses','pos'],
   ];
   if (Number(count?.count || 0) === 0) {
@@ -154,9 +154,9 @@ async function seedChartAccountsIfMissing() {
   await db.prepare("UPDATE chart_accounts SET is_active=0, updated_at=datetime('now') WHERE code IN ('1001','114','2001','3001','3002','4001','5001','5002','7001','7002')").run();
   const manualRow = await db.prepare("SELECT value FROM settings WHERE key='balance_sheet_manual_accounts'").get() as any;
   let manual: Record<string, number> = {}; try { manual = JSON.parse(manualRow?.value || '{}'); } catch { manual = {}; }
-  const map: Record<string, string> = { bank:'1010', gcash:'1020', owner_capital:'3000', supplier_payables:'2000' };
+  const map: Record<string, string> = { bank:'1010', gcash:'1020', owner_capital:'3000' };
   for (const [key, code] of Object.entries(map)) if (manual[key] !== undefined) await db.prepare('UPDATE chart_accounts SET opening_balance=?, opening_balance_date=?, balance_source=\'manual\' WHERE code=?').run(Number(manual[key]), businessDate(), code);
-  for (const code of ['1000','1100','1200','3100','4000','4100','5000','6000']) await db.prepare("UPDATE chart_accounts SET balance_source='pos' WHERE code=?").run(code);
+  for (const code of ['1000','1100','1200','2000','3100','4000','4100','5000','6000']) await db.prepare("UPDATE chart_accounts SET balance_source='pos' WHERE code=?").run(code);
 }
 
 export function getDb(): Database {
@@ -352,6 +352,19 @@ async function initTables() {
     CREATE TABLE IF NOT EXISTS po_sequence (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       next_number INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS po_payments (
+      id TEXT PRIMARY KEY,
+      po_id TEXT NOT NULL,
+      amount REAL NOT NULL CHECK (amount > 0),
+      payment_method TEXT NOT NULL DEFAULT 'cash',
+      payment_date TEXT DEFAULT (datetime('now')),
+      reference_number TEXT,
+      notes TEXT,
+      created_by TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (po_id) REFERENCES purchase_orders(id)
     );
 
     CREATE TABLE IF NOT EXISTS stock_movements (
@@ -613,6 +626,8 @@ async function migrateSchema() {
   if (!indexNames.includes('idx_po_items_po')) {
     await db.exec("CREATE INDEX idx_po_items_po ON po_items(po_id)");
   }
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_po_payments_po ON po_payments(po_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_po_payments_date ON po_payments(payment_date)');
   if (!indexNames.includes('idx_stock_mov_material')) {
     await db.exec("CREATE INDEX idx_stock_mov_material ON stock_movements(material_id)");
   }

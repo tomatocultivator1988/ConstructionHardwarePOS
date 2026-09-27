@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 const baseTypes = new Set(['asset','liability','equity','revenue','expense']);
-const manualSettingByCode: Record<string, string> = { '1010': 'bank', '1020': 'gcash', '2000': 'supplier_payables', '3000': 'owner_capital' };
+const manualSettingByCode: Record<string, string> = { '1010': 'bank', '1020': 'gcash', '3000': 'owner_capital' };
 router.use(requireAdmin);
 
 async function validType(type: string) {
@@ -41,7 +41,7 @@ router.get('/', async (req: Request, res: Response) => {
   const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
   const params = type ? (includeInactive ? [type] : [type]) : [];
   const rows = await db.prepare(`SELECT ca.id, ca.code, ca.name, ca.type, at.base_type, ca.category, ca.description, ca.opening_balance, ca.opening_balance_date, ca.balance_source, ca.is_active, ca.created_at, ca.updated_at FROM chart_accounts ca JOIN account_types at ON at.name=ca.type ${where} ORDER BY ca.code`).all(...params) as any[];
-  const [sales, returns, cogs, expenses, payments, refunds, inventory, receivables, manualRow] = await Promise.all([
+  const [sales, returns, cogs, expenses, payments, refunds, inventory, receivables, payables, manualRow] = await Promise.all([
     db.prepare("SELECT COALESCE(SUM(net_sales),0) value FROM v_invoice_financials WHERE status <> 'voided'").get(),
     db.prepare("SELECT COALESCE(SUM(total_credit),0) value FROM invoice_returns").get(),
     db.prepare("SELECT COALESCE(SUM((ii.quantity - COALESCE((SELECT SUM(ir.quantity) FROM invoice_returns ir WHERE ir.invoice_item_id=ii.id),0)) * COALESCE(ii.cost_price,m.cost_price,0)),0) value FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id LEFT JOIN materials m ON m.id=ii.material_id WHERE i.status <> 'voided'").get(),
@@ -50,6 +50,7 @@ router.get('/', async (req: Request, res: Response) => {
     db.prepare("SELECT method, COALESCE(SUM(amount),0) value FROM refunds r JOIN invoices i ON i.id=r.invoice_id WHERE i.status <> 'voided' GROUP BY method").all(),
     db.prepare("SELECT COALESCE(SUM(stock * cost_price),0) value FROM materials").get(),
     db.prepare("SELECT COALESCE(SUM(adjusted_total - net_collections),0) value FROM v_invoice_financials WHERE status <> 'voided' AND adjusted_total > net_collections").get(),
+    db.prepare("SELECT COALESCE(SUM(balance),0) value FROM (SELECT po.total - COALESCE((SELECT SUM(amount) FROM po_payments pop WHERE pop.po_id=po.id),0) balance FROM purchase_orders po WHERE po.status = 'received' AND lower(trim(po.mode_of_payment)) = 'credit') open_payables WHERE balance > 0").get(),
     db.prepare("SELECT value FROM settings WHERE key='balance_sheet_manual_accounts'").get(),
   ]);
   const amount = (result: any) => Number(result?.value || 0);
@@ -59,7 +60,7 @@ router.get('/', async (req: Request, res: Response) => {
     '1000': byMethod(payments as any[], 'cash') - byMethod(refunds as any[], 'cash'),
     '1010': Number(rows.find(row => row.code === '1010')?.opening_balance || 0) + byMethod(payments as any[], 'bank') - byMethod(refunds as any[], 'bank'),
     '1020': Number(rows.find(row => row.code === '1020')?.opening_balance || 0) + byMethod(payments as any[], 'gcash') - byMethod(refunds as any[], 'gcash'),
-    '1100': amount(receivables), '1200': amount(inventory), '2000': Number(rows.find(row => row.code === '2000')?.opening_balance ?? manual.supplier_payables ?? 0),
+    '1100': amount(receivables), '1200': amount(inventory), '2000': Number(rows.find(row => row.code === '2000')?.opening_balance || 0) + amount(payables),
     '3000': Number(rows.find(row => row.code === '3000')?.opening_balance ?? manual.owner_capital ?? 0), '3100': amount(sales) - amount(cogs) - amount(expenses),
     '4000': amount(sales), '4100': amount(returns), '5000': amount(cogs), '6000': amount(expenses),
   };

@@ -1,8 +1,12 @@
+import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'path';
 import { createClient, Client } from '@libsql/client';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-const TURSO_URL = process.env.TURSO_URL!;
-const TURSO_TOKEN = process.env.TURSO_TOKEN!;
+// Ensure .env is loaded from backend or project root
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env') });
 
 let client: Client;
 const transactionStore = new AsyncLocalStorage<any>();
@@ -13,7 +17,12 @@ function executor() {
 }
 
 export async function initDatabase(): Promise<void> {
-  client = createClient({ url: TURSO_URL, authToken: TURSO_TOKEN });
+  const url = process.env.TURSO_URL;
+  const token = process.env.TURSO_TOKEN;
+  if (!url) {
+    throw new Error('TURSO_URL environment variable is missing or empty');
+  }
+  client = createClient({ url, authToken: token });
 }
 
 class StatementWrapper {
