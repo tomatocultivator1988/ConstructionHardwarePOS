@@ -261,13 +261,13 @@ router.get('/cash-flow', async (req: Request, res: Response) => {
   const expensesBreakdown = Object.entries(categoryMap).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
 
   const saleOfAssets = Number(adj.sale_of_assets ?? 0);
-  const equipmentPurchases = Number(adj.purchase_of_equipment ?? manual.equipment ?? 0);
+  const equipmentPurchases = Number(adj.purchase_of_equipment ?? 0);
   const propertyPurchases = Number(adj.purchase_of_property ?? 0);
   const otherInvesting = Number(adj.other_investing ?? 0);
   const netInvesting = saleOfAssets - equipmentPurchases - propertyPurchases - otherInvesting;
 
-  const ownerContributions = Number(adj.owner_contributions ?? manual.owner_capital ?? 0);
-  const ownerDrawings = Number(adj.owner_drawings ?? manual.owner_withdrawals ?? 0);
+  const ownerContributions = Number(adj.owner_contributions ?? 0);
+  const ownerDrawings = Number(adj.owner_drawings ?? 0);
   const loansReceived = Number(adj.loans_received ?? 0);
   const loanRepayments = Number(adj.loan_repayments ?? 0);
   const dividendsPaid = Number(adj.dividends_paid ?? 0);

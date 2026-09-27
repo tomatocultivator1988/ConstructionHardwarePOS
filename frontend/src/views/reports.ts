@@ -952,11 +952,11 @@ export async function editCashFlowAdjustments() {
       </div>
       <div class="form-group">
         <label for="cf-buy-equipment">Purchase of equipment / tools (₱)</label>
-        <input id="cf-buy-equipment" type="number" min="0" step="0.01" value="${adj.purchase_of_equipment ?? bs.equipment ?? 0}" />
+        <input id="cf-buy-equipment" type="number" min="0" step="0.01" value="${adj.purchase_of_equipment ?? 0}" />
       </div>
       <div class="form-group">
         <label for="cf-buy-property">Purchase of property / building (₱)</label>
-        <input id="cf-buy-property" type="number" min="0" step="0.01" value="${adj.purchase_of_property ?? bs.building ?? 0}" />
+        <input id="cf-buy-property" type="number" min="0" step="0.01" value="${adj.purchase_of_property ?? 0}" />
       </div>
       <div class="form-group">
         <label for="cf-other-investing">Other capital investments (₱)</label>
@@ -968,11 +968,11 @@ export async function editCashFlowAdjustments() {
     <div class="form-grid">
       <div class="form-group">
         <label for="cf-owner-capital">Owner's capital contribution (₱)</label>
-        <input id="cf-owner-capital" type="number" min="0" step="0.01" value="${adj.owner_contributions ?? bs.owner_capital ?? 0}" />
+        <input id="cf-owner-capital" type="number" min="0" step="0.01" value="${adj.owner_contributions ?? 0}" />
       </div>
       <div class="form-group">
         <label for="cf-owner-drawings">Owner's drawings / withdrawals (₱)</label>
-        <input id="cf-owner-drawings" type="number" min="0" step="0.01" value="${adj.owner_drawings ?? bs.owner_withdrawals ?? 0}" />
+        <input id="cf-owner-drawings" type="number" min="0" step="0.01" value="${adj.owner_drawings ?? 0}" />
       </div>
       <div class="form-group">
         <label for="cf-loans-received">Cash received from loans (₱)</label>
