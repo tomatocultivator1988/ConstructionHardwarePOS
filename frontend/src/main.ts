@@ -92,6 +92,8 @@ Object.assign(window, {
   filterSales: receipts.filterSales,
   clearSalesFilter: receipts.clearSalesFilter,
   setSalesStatus: receipts.setSalesStatus,
+  setSalesMop: receipts.setSalesMop,
+  loadSalesWithMop: receipts.loadSalesWithMop,
   loadSalesWithFilter: receipts.loadSalesWithFilter,
   changeSalesPage: receipts.changeSalesPage,
   renderSales: receipts.renderSales,
