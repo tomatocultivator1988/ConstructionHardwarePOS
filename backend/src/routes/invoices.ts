@@ -32,8 +32,22 @@ async function refreshInvoiceStatus(db: ReturnType<typeof getDb>, invoiceId: str
 router.get('/', async (req: Request, res: Response) => {
   const db = getDb();
   const conditions: string[] = []; const params: any[] = [];
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+  const status = typeof req.query.status === 'string' ? req.query.status.trim() : '';
   if (typeof req.query.from === 'string' && req.query.from) { conditions.push('date(i.issued_date) >= ?'); params.push(req.query.from); }
   if (typeof req.query.to === 'string' && req.query.to) { conditions.push('date(i.issued_date) <= ?'); params.push(req.query.to); }
+  if (search) {
+    conditions.push("(i.invoice_number LIKE ? OR COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`);
+  }
+  if (status && status !== 'all') {
+    if (status === 'unpaid') {
+      conditions.push("i.status IN ('pending', 'partial')");
+    } else {
+      conditions.push('i.status = ?');
+      params.push(status);
+    }
+  }
   const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
   const baseQuery = `
     SELECT i.*, COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') AS customer_name, c.address AS customer_address, c.tin AS customer_tin,
@@ -48,7 +62,7 @@ router.get('/', async (req: Request, res: Response) => {
     const page = Math.max(1, Number(req.query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 15));
     const [totalRow, data] = await Promise.all([
-      db.prepare(`SELECT COUNT(*) total FROM invoices i${where}`).get(...params) as Promise<any>,
+      db.prepare(`SELECT COUNT(*) total FROM invoices i LEFT JOIN customers c ON c.id = i.customer_id${where}`).get(...params) as Promise<any>,
       req.query.export === '1'
         ? (db.prepare(baseQuery).all(...params) as Promise<any[]>)
         : (db.prepare(`${baseQuery} LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize) as Promise<any[]>)
@@ -134,25 +148,48 @@ router.get('/deliveries', requireAdmin, async (req: Request, res: Response) => {
   const conditions = ["i.status <> 'voided'"];
   const params: any[] = [];
   if (status === 'assigned') conditions.push("i.delivery_status = 'assigned'");
-  if (status === 'unassigned') conditions.push("(i.delivery_person IS NULL OR trim(i.delivery_person) = '')");
+  if (status === 'unassigned') conditions.push("(i.delivery_status = 'unassigned' OR i.delivery_person IS NULL OR trim(i.delivery_person) = '')");
+  if (status === 'out_for_delivery') conditions.push("i.delivery_status = 'out_for_delivery'");
   if (status === 'delivered') conditions.push("i.delivery_status = 'delivered'");
+  if (status === 'failed') conditions.push("i.delivery_status = 'failed'");
   if (search) { conditions.push("(i.invoice_number LIKE ? OR COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') LIKE ?)"); params.push(`%${search}%`, `%${search}%`); }
   const where = conditions.join(' AND ');
   const total = Number((await db.prepare(`SELECT COUNT(*) AS total FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}`).get(...params) as any).total || 0);
   const summary = await db.prepare(`SELECT
     SUM(CASE WHEN i.delivery_status = 'assigned' THEN 1 ELSE 0 END) AS assigned,
+    SUM(CASE WHEN i.delivery_status = 'out_for_delivery' THEN 1 ELSE 0 END) AS out_for_delivery,
     SUM(CASE WHEN i.delivery_status = 'delivered' THEN 1 ELSE 0 END) AS delivered,
-    SUM(CASE WHEN i.delivery_person IS NULL OR trim(i.delivery_person) = '' THEN 1 ELSE 0 END) AS unassigned
+    SUM(CASE WHEN i.delivery_status = 'failed' THEN 1 ELSE 0 END) AS failed,
+    SUM(CASE WHEN (i.delivery_status = 'unassigned' OR i.delivery_person IS NULL OR trim(i.delivery_person) = '') AND i.delivery_status NOT IN ('delivered', 'failed', 'out_for_delivery', 'assigned') THEN 1 ELSE 0 END) AS unassigned
     FROM invoices i WHERE i.status <> 'voided'`).get() as any;
-  const data = await db.prepare(`SELECT i.id, i.invoice_number, i.issued_date, i.total, i.status, i.delivery_person, i.delivery_person_id, i.delivery_status, i.delivered_at,
+  const data = await db.prepare(`SELECT i.id, i.invoice_number, i.issued_date, i.total, i.status, i.delivery_person, i.delivery_person_id, i.delivery_status, i.delivered_at, i.delivery_notes, i.buyer_address,
     MAX(0, i.total
       - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0)
       - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0)) AS adjusted_total,
     COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') AS customer_name
     FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id WHERE ${where}
-    ORDER BY CASE WHEN i.delivery_status = 'unassigned' THEN 0 WHEN i.delivery_status = 'assigned' THEN 1 ELSE 2 END, i.issued_date DESC
+    ORDER BY CASE
+      WHEN i.delivery_status = 'failed' THEN 0
+      WHEN i.delivery_status = 'out_for_delivery' THEN 1
+      WHEN i.delivery_status = 'assigned' THEN 2
+      WHEN i.delivery_status = 'unassigned' THEN 3
+      ELSE 4
+    END, i.issued_date DESC
     LIMIT ? OFFSET ?`).all(...params, pageSize, (page - 1) * pageSize);
-  res.json({ data, total, page, pageSize, totalPages: Math.ceil(total / pageSize), summary: { assigned: Number(summary.assigned || 0), delivered: Number(summary.delivered || 0), unassigned: Number(summary.unassigned || 0) } });
+  res.json({
+    data,
+    total,
+    page,
+    pageSize,
+    totalPages: Math.ceil(total / pageSize),
+    summary: {
+      assigned: Number(summary.assigned || 0),
+      out_for_delivery: Number(summary.out_for_delivery || 0),
+      delivered: Number(summary.delivered || 0),
+      failed: Number(summary.failed || 0),
+      unassigned: Number(summary.unassigned || 0)
+    }
+  });
 });
 
 router.get('/:id', async (req: Request, res: Response) => {
@@ -419,13 +456,16 @@ router.post('/', async (req: Request, res: Response) => {
 router.put('/:id/delivery', requireAdmin, async (req: Request, res: Response) => {
   const db = getDb();
   const deliveryPersonId = req.body?.delivery_person_id;
+  const requestedStatus = req.body?.delivery_status;
+  const deliveryNotes = typeof req.body?.delivery_notes === 'string' ? req.body.delivery_notes.trim() : null;
+
   if (deliveryPersonId !== null && deliveryPersonId !== undefined && typeof deliveryPersonId !== 'string') {
     res.status(400).json({ error: 'A valid registered delivery person is required' }); return;
   }
-  const invoice = await db.prepare('SELECT id, invoice_number, delivery_person, delivery_person_id, delivery_status, delivered_at, delivered_by, status FROM invoices WHERE id=?').get(req.params.id) as any;
+  const invoice = await db.prepare('SELECT id, invoice_number, delivery_person, delivery_person_id, delivery_status, delivered_at, delivered_by, delivery_notes, status FROM invoices WHERE id=?').get(req.params.id) as any;
   if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
   if (invoice.status === 'voided' || invoice.status === 'returned') { res.status(409).json({ error: 'Cannot assign delivery for a voided or fully returned invoice' }); return; }
-  const nextId = typeof deliveryPersonId === 'string' ? deliveryPersonId.trim() : '';
+  const nextId = typeof deliveryPersonId === 'string' ? deliveryPersonId.trim() : (deliveryPersonId === null ? '' : (invoice.delivery_person_id || ''));
   let nextName = '';
   if (nextId) {
     const person = await db.prepare('SELECT id, name, active FROM delivery_personnel WHERE id=?').get(nextId) as any;
@@ -433,14 +473,50 @@ router.put('/:id/delivery', requireAdmin, async (req: Request, res: Response) =>
     if (!person.active) { res.status(409).json({ error: 'This delivery person is inactive and cannot be assigned' }); return; }
     nextName = person.name;
   }
+
+  const validStatuses = ['unassigned', 'assigned', 'out_for_delivery', 'delivered', 'failed'];
+  let nextStatus = invoice.delivery_status || 'unassigned';
+  if (typeof requestedStatus === 'string' && validStatuses.includes(requestedStatus)) {
+    nextStatus = requestedStatus;
+    if (['assigned', 'out_for_delivery'].includes(nextStatus) && !nextId) {
+      res.status(400).json({ error: 'Assign a registered delivery person for this status' });
+      return;
+    }
+    if (nextStatus === 'unassigned') {
+      nextName = '';
+    }
+  } else if (nextId) {
+    const samePerson = Boolean(nextId && nextId === invoice.delivery_person_id);
+    nextStatus = samePerson ? (invoice.delivery_status || 'assigned') : 'assigned';
+  } else {
+    nextStatus = 'unassigned';
+  }
+
   const invoiceId = String(req.params.id);
-  const samePerson = Boolean(nextId && nextId === invoice.delivery_person_id);
-  const nextStatus = nextId ? (samePerson ? (invoice.delivery_status || 'assigned') : 'assigned') : 'unassigned';
-  const nextDeliveredAt = nextStatus === 'delivered' ? invoice.delivered_at : null;
-  const nextDeliveredBy = nextStatus === 'delivered' ? invoice.delivered_by : null;
-  await db.prepare('UPDATE invoices SET delivery_person=?, delivery_person_id=?, delivery_status=?, delivered_at=?, delivered_by=? WHERE id=?').run(nextName || null, nextId || null, nextStatus, nextDeliveredAt, nextDeliveredBy, invoiceId);
-  await logAudit((req as any).user?.id || null, 'update', 'invoice', invoiceId, `Delivery person updated for ${invoice.invoice_number}`, { delivery_person: invoice.delivery_person || null, delivery_person_id: invoice.delivery_person_id || null, delivery_status: invoice.delivery_status || 'unassigned', delivered_at: invoice.delivered_at || null, delivered_by: invoice.delivered_by || null }, { delivery_person: nextName || null, delivery_person_id: nextId || null, delivery_status: nextStatus, delivered_at: nextDeliveredAt, delivered_by: nextDeliveredBy });
-  res.json({ ok: true, delivery_person: nextName || null, delivery_person_id: nextId || null, delivery_status: nextStatus, delivered_at: nextDeliveredAt });
+  const deliveredAt = nextStatus === 'delivered' ? (invoice.delivered_at || new Date().toISOString()) : null;
+  const deliveredBy = nextStatus === 'delivered' ? (invoice.delivered_by || (req as any).user?.id || null) : null;
+  const finalNotes = deliveryNotes !== null ? deliveryNotes : (invoice.delivery_notes || null);
+
+  await db.prepare('UPDATE invoices SET delivery_person=?, delivery_person_id=?, delivery_status=?, delivered_at=?, delivered_by=?, delivery_notes=? WHERE id=?')
+    .run(nextName || null, nextId || null, nextStatus, deliveredAt, deliveredBy, finalNotes || null, invoiceId);
+  await logAudit((req as any).user?.id || null, 'update', 'invoice', invoiceId, `Delivery updated for ${invoice.invoice_number} (status: ${nextStatus})`,
+    { ...invoice },
+    { delivery_person: nextName || null, delivery_person_id: nextId || null, delivery_status: nextStatus, delivered_at: deliveredAt, delivered_by: deliveredBy, delivery_notes: finalNotes });
+  clearCache('analytics:');
+  res.json({ ok: true, delivery_person: nextName || null, delivery_person_id: nextId || null, delivery_status: nextStatus, delivered_at: deliveredAt, delivery_notes: finalNotes });
+});
+
+router.post('/:id/delivery/dispatch', requireAdmin, async (req: Request, res: Response) => {
+  const db = getDb();
+  const invoiceId = String(req.params.id);
+  const invoice = await db.prepare('SELECT id, invoice_number, delivery_person, delivery_person_id, delivery_status, status FROM invoices WHERE id=?').get(invoiceId) as any;
+  if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+  if (invoice.status === 'voided' || invoice.status === 'returned') { res.status(409).json({ error: 'Cannot dispatch a voided or fully returned invoice' }); return; }
+  if (!invoice.delivery_person_id || !invoice.delivery_person) { res.status(409).json({ error: 'Assign a delivery person before dispatching for delivery' }); return; }
+  await db.prepare("UPDATE invoices SET delivery_status='out_for_delivery' WHERE id=?").run(invoiceId);
+  await logAudit((req as any).user?.id || null, 'update', 'invoice', invoiceId, `Dispatched ${invoice.invoice_number} out for delivery with ${invoice.delivery_person}`);
+  clearCache('analytics:');
+  res.json({ ok: true, delivery_status: 'out_for_delivery' });
 });
 
 router.post('/:id/delivery/complete', requireAdmin, async (req: Request, res: Response) => {
@@ -456,9 +532,37 @@ router.post('/:id/delivery/complete', requireAdmin, async (req: Request, res: Re
   }
   const deliveredAt = new Date().toISOString();
   const deliveredBy = (req as any).user?.id || null;
-  await db.prepare("UPDATE invoices SET delivery_status='delivered', delivered_at=?, delivered_by=? WHERE id=? AND delivery_person_id IS NOT NULL AND delivery_status <> 'delivered'").run(deliveredAt, deliveredBy, invoiceId);
-  await logAudit(deliveredBy, 'update', 'invoice', invoiceId, `Marked ${invoice.invoice_number} as delivered`, { delivery_person: invoice.delivery_person, delivery_person_id: invoice.delivery_person_id, delivery_status: invoice.delivery_status || 'assigned', delivered_at: invoice.delivered_at || null, delivered_by: invoice.delivered_by || null }, { delivery_person: invoice.delivery_person, delivery_person_id: invoice.delivery_person_id, delivery_status: 'delivered', delivered_at: deliveredAt, delivered_by: deliveredBy });
+  await db.prepare("UPDATE invoices SET delivery_status='delivered', delivered_at=?, delivered_by=? WHERE id=? AND delivery_status <> 'delivered'").run(deliveredAt, deliveredBy, invoiceId);
+  await logAudit(deliveredBy, 'update', 'invoice', invoiceId, `Marked ${invoice.invoice_number} as delivered`, { ...invoice }, { delivery_status: 'delivered', delivered_at: deliveredAt, delivered_by: deliveredBy });
+  clearCache('analytics:');
   res.json({ ok: true, delivery_status: 'delivered', delivered_at: deliveredAt });
+});
+
+router.post('/:id/delivery/fail', requireAdmin, async (req: Request, res: Response) => {
+  const db = getDb();
+  const invoiceId = String(req.params.id);
+  const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+  const invoice = await db.prepare('SELECT id, invoice_number, delivery_person, delivery_person_id, delivery_status, delivery_notes, status FROM invoices WHERE id=?').get(invoiceId) as any;
+  if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+  if (invoice.status === 'voided' || invoice.status === 'returned') { res.status(409).json({ error: 'Cannot update delivery for a voided or fully returned invoice' }); return; }
+  const finalNotes = reason || invoice.delivery_notes || 'Delivery failed / undelivered';
+  await db.prepare("UPDATE invoices SET delivery_status='failed', delivery_notes=? WHERE id=?").run(finalNotes, invoiceId);
+  await logAudit((req as any).user?.id || null, 'update', 'invoice', invoiceId, `Delivery marked as failed for ${invoice.invoice_number}: ${finalNotes}`);
+  clearCache('analytics:');
+  res.json({ ok: true, delivery_status: 'failed', delivery_notes: finalNotes });
+});
+
+router.post('/:id/delivery/retry', requireAdmin, async (req: Request, res: Response) => {
+  const db = getDb();
+  const invoiceId = String(req.params.id);
+  const invoice = await db.prepare('SELECT id, invoice_number, delivery_person, delivery_person_id, delivery_status, status FROM invoices WHERE id=?').get(invoiceId) as any;
+  if (!invoice) { res.status(404).json({ error: 'Invoice not found' }); return; }
+  if (invoice.status === 'voided' || invoice.status === 'returned') { res.status(409).json({ error: 'Cannot update delivery for a voided or fully returned invoice' }); return; }
+  const nextStatus = invoice.delivery_person_id ? 'assigned' : 'unassigned';
+  await db.prepare("UPDATE invoices SET delivery_status=? WHERE id=?").run(nextStatus, invoiceId);
+  await logAudit((req as any).user?.id || null, 'update', 'invoice', invoiceId, `Delivery reset to ${nextStatus} for retry on ${invoice.invoice_number}`);
+  clearCache('analytics:');
+  res.json({ ok: true, delivery_status: nextStatus });
 });
 
 router.put('/:id/credit-account', async (req: Request, res: Response) => {

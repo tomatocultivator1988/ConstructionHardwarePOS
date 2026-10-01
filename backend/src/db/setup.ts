@@ -6,7 +6,7 @@ let db: Database;
 let dbInitPromise: Promise<void> | null = null;
 const businessDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date());
 
-const CURRENT_SCHEMA_VERSION = '2026.09.27';
+const CURRENT_SCHEMA_VERSION = '2026.10.01';
 
 export async function initDb(): Promise<void> {
   if (dbInitPromise) return dbInitPromise;
@@ -212,7 +212,8 @@ async function initTables() {
       notes TEXT,
       idempotency_key TEXT,
       delivery_person_id TEXT,
-      delivery_status TEXT NOT NULL DEFAULT 'unassigned' CHECK (delivery_status IN ('unassigned','assigned','delivered')),
+      delivery_status TEXT NOT NULL DEFAULT 'unassigned' CHECK (delivery_status IN ('unassigned','assigned','out_for_delivery','delivered','failed')),
+      delivery_notes TEXT,
       delivered_at TEXT,
       delivered_by TEXT,
       paid_date TEXT,
@@ -545,6 +546,7 @@ async function migrateSchema() {
   if (!invoiceCols.includes('delivery_status')) await db.exec("ALTER TABLE invoices ADD COLUMN delivery_status TEXT NOT NULL DEFAULT 'unassigned'");
   if (!invoiceCols.includes('delivered_at')) await db.exec("ALTER TABLE invoices ADD COLUMN delivered_at TEXT");
   if (!invoiceCols.includes('delivered_by')) await db.exec("ALTER TABLE invoices ADD COLUMN delivered_by TEXT");
+  if (!invoiceCols.includes('delivery_notes')) await db.exec("ALTER TABLE invoices ADD COLUMN delivery_notes TEXT");
   const poInfo = (await db.prepare("PRAGMA table_info('purchase_orders')").all()) as any[];
   if (!poInfo.some((r: any) => r.name === 'notes')) await db.exec("ALTER TABLE purchase_orders ADD COLUMN notes TEXT");
   if (!poInfo.some((r: any) => r.name === 'mode_of_payment')) await db.exec("ALTER TABLE purchase_orders ADD COLUMN mode_of_payment TEXT");

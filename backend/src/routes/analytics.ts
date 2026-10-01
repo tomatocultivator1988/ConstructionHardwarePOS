@@ -27,7 +27,7 @@ router.get('/product-mix', async (req: Request, res: Response) => {
         SELECT invoice_item_id, SUM(quantity) AS returned_qty, SUM(total_credit) AS returned_credit
         FROM invoice_returns GROUP BY invoice_item_id
       ), sales_lines AS (
-        SELECT ii.material_id,
+        SELECT ii.material_id, ii.description,
           MAX(ii.quantity - COALESCE(r.returned_qty, 0), 0) AS quantity_sold,
           MAX(ii.total - COALESCE(r.returned_credit, 0), 0) AS revenue,
           MAX(ii.quantity - COALESCE(r.returned_qty, 0), 0) * COALESCE(ii.cost_price, 0) AS cogs
@@ -37,13 +37,23 @@ router.get('/product-mix', async (req: Request, res: Response) => {
         WHERE i.status <> 'voided'${periodClause}
       )
       SELECT m.id, m.name, m.unit, m.stock, m.reorder_point,
+        0 AS is_custom,
         COALESCE(SUM(sl.quantity_sold), 0) AS quantity_sold,
         COALESCE(SUM(sl.revenue), 0) AS revenue,
         COALESCE(SUM(sl.cogs), 0) AS cogs
       FROM materials m
       LEFT JOIN sales_lines sl ON sl.material_id = m.id
       GROUP BY m.id
-      ORDER BY revenue DESC, m.name ASC
+      UNION ALL
+      SELECT 'custom_' || sl.description AS id, sl.description AS name, 'item' AS unit, 0 AS stock, 0 AS reorder_point,
+        1 AS is_custom,
+        SUM(sl.quantity_sold) AS quantity_sold,
+        SUM(sl.revenue) AS revenue,
+        SUM(sl.cogs) AS cogs
+      FROM sales_lines sl
+      WHERE sl.material_id IS NULL AND sl.quantity_sold > 0
+      GROUP BY sl.description
+      ORDER BY revenue DESC, name ASC
     `).all(...periodParams);
 
     const mapped = rows.map(row => {
@@ -53,6 +63,7 @@ router.get('/product-mix', async (req: Request, res: Response) => {
       return {
         id: row.id, name: row.name, unit: row.unit, stock: Number(row.stock || 0),
         reorder_point: Number(row.reorder_point || 0), quantity_sold: Number(row.quantity_sold || 0),
+        is_custom: Boolean(row.is_custom),
         revenue, cogs, gross_profit,
         margin_pct: revenue > 0 ? Math.round((gross_profit / revenue) * 1000) / 10 : 0,
       };
@@ -159,9 +170,14 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
         WHERE date(expense_date) = date('now', '+8 hours')
       `).get() as Promise<any>,
       db.prepare(`
-        SELECT COUNT(*) AS assigned
+        SELECT
+          SUM(CASE WHEN (delivery_status = 'unassigned' OR delivery_person IS NULL OR trim(delivery_person) = '') AND delivery_status NOT IN ('delivered', 'failed', 'out_for_delivery', 'assigned') THEN 1 ELSE 0 END) AS needs_assignment,
+          SUM(CASE WHEN delivery_status = 'assigned' THEN 1 ELSE 0 END) AS assigned,
+          SUM(CASE WHEN delivery_status = 'out_for_delivery' THEN 1 ELSE 0 END) AS out_for_delivery,
+          SUM(CASE WHEN delivery_status = 'delivered' THEN 1 ELSE 0 END) AS delivered,
+          SUM(CASE WHEN delivery_status = 'failed' THEN 1 ELSE 0 END) AS failed
         FROM invoices
-        WHERE status <> 'voided' AND delivery_person IS NOT NULL AND trim(delivery_person) <> ''
+        WHERE status <> 'voided'
       `).get() as Promise<any>,
       db.prepare(`
         SELECT COALESCE(SUM(amount), 0) AS total
@@ -263,7 +279,13 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
       todaySales: Math.round(Number(todaySales.sales || 0) * 100) / 100,
       todayProfit: Math.round(todayProfit.profit * 100) / 100,
       todayExpenses: Math.round(Number(todayExpenses.expenses || 0) * 100) / 100,
-      deliverySummary: { assigned: Number(deliverySummary.assigned || 0) },
+      deliverySummary: {
+        needs_assignment: Number(deliverySummary?.needs_assignment || 0),
+        assigned: Number(deliverySummary?.assigned || 0),
+        out_for_delivery: Number(deliverySummary?.out_for_delivery || 0),
+        delivered: Number(deliverySummary?.delivered || 0),
+        failed: Number(deliverySummary?.failed || 0),
+      },
       weekRevenue: Math.round(weekRevenue.total * 100) / 100,
       monthRevenue: {
         revenue: Math.round(monthRevenue.revenue * 100) / 100,
@@ -308,7 +330,7 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
     res.status(503).json({
       topMaterials: [], profitTrend: [],
       stockValue: { total_cost: 0, total_retail: 0, material_count: 0 },
-      materialMargins: [], todaySales: 0, todayProfit: 0, todayExpenses: 0, deliverySummary: { assigned: 0 }, weekRevenue: 0,
+      materialMargins: [], todaySales: 0, todayProfit: 0, todayExpenses: 0, deliverySummary: { needs_assignment: 0, assigned: 0, out_for_delivery: 0, delivered: 0, failed: 0 }, weekRevenue: 0,
       monthRevenue: { revenue: 0, profit: 0 },
       lastMonthRevenue: { revenue: 0, profit: 0 },
       yearRevenue: { revenue: 0, profit: 0 },

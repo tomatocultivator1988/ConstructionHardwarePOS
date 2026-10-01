@@ -59,13 +59,22 @@ const GUIDE: Record<string, { title: string; intro: string; sections: HelpSectio
       { title: 'Collect payment', body: 'Use Search or the status filter to find unpaid or partially paid sales. Tap <strong>Record Payment</strong>, enter the payment amount and method, then confirm. The balance updates from the invoice payment history.' },
     ],
   },
-  receipts: {
-    title: 'Receipts',
-    intro: 'Find payment receipts from completed or partially paid sales.',
+  sales: {
+    title: 'Sales & Receipts',
+    intro: 'Browse transaction history, filter by payment status, print thermal receipts, or process returns.',
     sections: [
-      { title: 'Find a receipt', body: 'Search by receipt/invoice number or customer. Results show 15 records per page; use Previous and Next for more.' },
-      { title: 'View or print', body: 'Click <strong>View</strong> to open the related sale details. Click <strong>Print</strong> to open the receipt print layout. If printing does not open, allow pop-ups for this site and confirm the browser has access to the selected printer.' },
-      { title: 'Receipt versus invoice', body: 'An invoice is the sale and balance record. A receipt is proof of a payment recorded against that sale. An unpaid invoice should not be treated as a paid receipt.' },
+      { title: 'Search and filter', body: 'Filter sales by search term (invoice # or buyer name), date range, and status (All, Paid, Credit/Unpaid, Partial, Returned, Voided).' },
+      { title: 'View or print', body: 'Click <strong>View</strong> to open the full sale breakdown. Click <strong>Receipt</strong> for a full-page preview, or <strong>Print 🖨️</strong> to send directly to your receipt printer.' },
+      { title: 'Deliveries and returns', body: 'Assign delivery staff directly from the sales table. Admins can process returns or voids safely.' },
+    ],
+  },
+  receipts: {
+    title: 'Sales & Receipts',
+    intro: 'Browse transaction history, filter by payment status, print thermal receipts, or process returns.',
+    sections: [
+      { title: 'Search and filter', body: 'Filter sales by search term (invoice # or buyer name), date range, and status (All, Paid, Credit/Unpaid, Partial, Returned, Voided).' },
+      { title: 'View or print', body: 'Click <strong>View</strong> to open the full sale breakdown. Click <strong>Receipt</strong> for a full-page preview, or <strong>Print 🖨️</strong> to send directly to your receipt printer.' },
+      { title: 'Deliveries and returns', body: 'Assign delivery staff directly from the sales table. Admins can process returns or voids safely.' },
     ],
   },
   expenses: {

@@ -21,7 +21,7 @@ export async function renderDashboard(): Promise<string> {
   }
   const analytics = analyticsResult.status === 'fulfilled' ? analyticsResult.value : {
     topMaterials: [], profitTrend: [], stockValue: { total_cost: 0, total_retail: 0, material_count: 0 },
-    materialMargins: [], todaySales: 0, todayProfit: 0, todayExpenses: 0, deliverySummary: { assigned: 0 }, weekRevenue: 0,
+    materialMargins: [], todaySales: 0, todayProfit: 0, todayExpenses: 0, deliverySummary: { assigned: 0, needs_assignment: 0, out_for_delivery: 0, delivered: 0, failed: 0 }, weekRevenue: 0,
     monthRevenue: { revenue: 0, profit: 0 }, lastMonthRevenue: { revenue: 0, profit: 0 }, yearRevenue: { revenue: 0, profit: 0 },
     overallRevenue: { revenue: 0, profit: 0 }, monthlyTrend: [], topCustomers: [], expenseByCategory: [], pnlTrend: [], paymentMethodTotals: [],
     invoiceSummary: { total: 0, paid: 0, partial: 0, pending: 0, outstanding: 0 }, lowStockItems: [], averageMargin: 0,
@@ -66,6 +66,7 @@ export async function renderDashboard(): Promise<string> {
   const partialCount = Number(invoiceSummary.partial || 0);
   const paidCount = Number(invoiceSummary.paid || 0);
   const unpaidCount = pendingCount + partialCount;
+  const needsAssignmentDeliveries = Number(analytics.deliverySummary?.needs_assignment ?? 0);
   const assignedDeliveries = Number(analytics.deliverySummary?.assigned || 0);
 
   const recentInvoices = invoices.slice(0, 5);
@@ -238,12 +239,12 @@ export async function renderDashboard(): Promise<string> {
         <div class="card-value">${fmtPeso(analytics.todayExpenses || 0)}</div>
         <div class="card-sub">Recorded today</div>
       </div>
-      <div class="dashboard-card card-info clickable" onclick="document.querySelector('[data-view=deliveries]')?.click() || loadView('deliveries')">
-        <div class="card-label">Delivery Status</div>
-        <div class="card-value">${assignedDeliveries}</div>
-        <div class="card-sub">Assigned for delivery</div>
+      <div class="dashboard-card card-warning clickable" onclick="openDeliveriesWithStatus('unassigned')">
+        <div class="card-label">Deliveries to Dispatch</div>
+        <div class="card-value">${needsAssignmentDeliveries}</div>
+        <div class="card-sub">Needs assignment · For next delivery</div>
       </div>
-      <div class="dashboard-card card-danger clickable" onclick="document.querySelector('[data-view=invoices]')?.click()">
+      <div class="dashboard-card card-danger clickable" onclick="loadSalesWithFilter('unpaid')">
         <div class="card-label">Unpaid Invoices</div>
         <div class="card-value">${fmtPeso(outstanding)}</div>
         <div class="card-sub">${unpaidCount} unpaid</div>

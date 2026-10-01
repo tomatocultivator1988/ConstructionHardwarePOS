@@ -22,6 +22,7 @@ const VIEWS: Record<string, () => Promise<string>> = {
   receivables: renderReceivables,
   invoices: renderInvoices,
   receipts: renderReceipts,
+  sales: renderReceipts,
   deliveries: renderDeliveries,
   expenses: renderExpenses,
   suppliers: async () => { setSupplierTab('suppliers'); return renderSupplierHub(); },
@@ -40,9 +41,9 @@ let loadSequence = 0;
 export function getCurrentView() { return currentView; }
 
 function syncActiveNavigation(view: string) {
-  const activeNav = view === 'purchase-orders' ? 'suppliers' : view;
+  const activeNav = view === 'purchase-orders' ? 'suppliers' : (view === 'receipts' ? 'sales' : view);
   document.querySelectorAll<HTMLElement>('#desktop-nav .nav-btn, #bottom-nav .nav-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.view === activeNav);
+    btn.classList.toggle('active', btn.dataset.view === activeNav || (activeNav === 'sales' && (btn.dataset.view === 'sales' || btn.dataset.view === 'receipts')));
   });
 }
 
@@ -73,6 +74,7 @@ export async function loadView(view: string) {
     else if (targetView === 'supplier') targetView = 'suppliers';
     else if (targetView === 'pos') targetView = 'invoices';
     else if (targetView === 'products') targetView = 'materials';
+    else if (targetView === 'sales-history') targetView = 'sales';
     else {
       console.warn(`View "${view}" not found in router. Falling back to dashboard.`);
       targetView = 'dashboard';

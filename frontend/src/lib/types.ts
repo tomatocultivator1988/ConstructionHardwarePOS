@@ -62,6 +62,9 @@ export interface Invoice {
   due_date: string | null;
   delivery_person?: string | null;
   delivery_person_id?: string | null;
+  delivery_status?: 'unassigned' | 'assigned' | 'out_for_delivery' | 'delivered' | 'failed' | null;
+  delivered_at?: string | null;
+  delivery_notes?: string | null;
   paid_date: string | null;
   created_at: string;
   customer_name: string;
@@ -77,7 +80,13 @@ export interface Analytics {
   todaySales: number;
   todayProfit: number;
   todayExpenses: number;
-  deliverySummary: { assigned: number };
+  deliverySummary: {
+    assigned: number;
+    needs_assignment?: number;
+    out_for_delivery?: number;
+    delivered?: number;
+    failed?: number;
+  };
   weekRevenue: number;
   monthRevenue: { revenue: number; profit: number };
   lastMonthRevenue: { revenue: number; profit: number };

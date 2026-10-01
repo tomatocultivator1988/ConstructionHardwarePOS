@@ -55,6 +55,7 @@ Object.assign(window, {
   delInvoice: invoices.delInvoice,
   showDeliveryModal: invoices.showDeliveryModal,
   saveDeliveryPerson: invoices.saveDeliveryPerson,
+  onDeliveryStatusModalChange: invoices.onDeliveryStatusModalChange,
   changeInvoicePage: invoices.changeInvoicePage,
   setPOSCategory: invoices.setPOSCategory,
   filterPOSMaterials: invoices.filterPOSMaterials,
@@ -88,13 +89,23 @@ Object.assign(window, {
   filterReceipts: receipts.filterReceipts,
   changeReceiptPage: receipts.changeReceiptPage,
   viewReceipt: receipts.viewReceipt,
+  filterSales: receipts.filterSales,
+  clearSalesFilter: receipts.clearSalesFilter,
+  setSalesStatus: receipts.setSalesStatus,
+  loadSalesWithFilter: receipts.loadSalesWithFilter,
+  changeSalesPage: receipts.changeSalesPage,
+  renderSales: receipts.renderSales,
   filterDeliveries: deliveries.filterDeliveries,
   changeDeliveryPage: deliveries.changeDeliveryPage,
   showDeliveryPersonModal: deliveries.showDeliveryPersonModal,
   saveDeliveryPersonRecord: deliveries.saveDeliveryPersonRecord,
   toggleDeliveryPerson: deliveries.toggleDeliveryPerson,
+  dispatchDelivery: deliveries.dispatchDelivery,
   markDeliveryDelivered: deliveries.markDeliveryDelivered,
+  failDelivery: deliveries.failDelivery,
+  retryDelivery: deliveries.retryDelivery,
   setDeliveryStatus: deliveries.setDeliveryStatus,
+  openDeliveriesWithStatus: deliveries.openDeliveriesWithStatus,
   switchDeliverySection: deliveries.switchDeliverySection,
   showExpenseModal: expenses.showExpenseModal,
   exportExpenses: expenses.exportExpenses,
@@ -188,7 +199,7 @@ Object.assign(window, {
 });
 
 // Keep the primary navigation in the same workflow order on desktop.
-const desktopNavOrder = ['dashboard', 'invoices', 'materials', 'product-mix', 'deliveries', 'receipts', 'expenses', 'suppliers', 'reports', 'receivables', 'settings'];
+const desktopNavOrder = ['dashboard', 'invoices', 'materials', 'product-mix', 'deliveries', 'sales', 'receipts', 'expenses', 'suppliers', 'reports', 'receivables', 'settings'];
 const desktopNav = document.getElementById('desktop-nav');
 if (desktopNav) desktopNavOrder.forEach(view => { const button = desktopNav.querySelector(`[data-view="${view}"]`); if (button) desktopNav.appendChild(button); });
 
@@ -255,7 +266,7 @@ if ('serviceWorker' in navigator) {
 export function applyRoleUI() {
   const admin = isAdmin();
   document.body.classList.toggle('staff-user', !admin);
-  const staffBlockedTabs = ['dashboard', 'materials', 'product-mix', 'deliveries', 'receipts', 'expenses', 'suppliers', 'reports', 'receivables', 'settings', '__more'];
+  const staffBlockedTabs = ['dashboard', 'materials', 'product-mix', 'deliveries', 'sales', 'receipts', 'expenses', 'suppliers', 'reports', 'receivables', 'settings', '__more'];
   staffBlockedTabs.forEach(view => {
     const btn = document.querySelector(`[data-view="${view}"]`) as HTMLElement;
     if (btn) btn.style.display = admin ? '' : 'none';
@@ -263,7 +274,7 @@ export function applyRoleUI() {
 }
 
 function openMobileMore() {
-  const options = isAdmin() ? [['product-mix', 'Product Mix'], ['deliveries', 'Deliveries'], ['receipts', 'Receipts'], ['receivables', 'Receivables'], ['reports', 'Reports'], ['settings', 'Settings']] : [];
+  const options = isAdmin() ? [['product-mix', 'Product Mix'], ['deliveries', 'Deliveries'], ['sales', 'Sales'], ['receivables', 'Receivables'], ['reports', 'Reports'], ['settings', 'Settings']] : [];
   const modal = document.createElement('div');
   modal.className = 'modal'; modal.id = 'mobile-more-modal';
   modal.innerHTML = `<div class="modal-content"><h3>More</h3><div class="mobile-more-menu">${options.map(([view, label]) => `<button class="btn mobile-more-option" onclick="closeModal();loadView('${view}')">${label}<span>›</span></button>`).join('')}</div><div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button></div></div>`;

@@ -20,3 +20,26 @@ backend/.env.local
 
 .vercel
 .env*
+
+# Logs and test artifacts
+*.log
+backend/*.log
+frontend/*.log
+*.zip
+output/
+tmp/
+backend/tmp/
+test-results/
+qa/playwright-report/
+
+# Scratch and local test scripts
+*.pdf
+generate_cash_flow_guide_pdf.js
+session-*.md
+stress-test.mjs
+jeg.jpg
+backend/reset_turso_keep_admin.mjs
+frontend/MCP-test-handoff.md
+frontend/screenshots/
+frontend/scripts/
+vercel.deploy.json

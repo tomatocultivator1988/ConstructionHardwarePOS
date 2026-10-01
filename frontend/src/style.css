@@ -202,6 +202,7 @@ nav::-webkit-scrollbar { display: none; }
 .dashboard-card.card-danger::before { background: var(--c-danger); box-shadow: 0 0 12px rgba(239,68,68,0.2); }
 .dashboard-card.card-warning::before { background: var(--c-warning); box-shadow: 0 0 12px rgba(245,158,11,0.2); }
 .dashboard-card.card-info::before { background: var(--c-primary); box-shadow: 0 0 12px rgba(240,180,41,0.2); }
+.dashboard-card.card-purple::before { background: #6366f1; box-shadow: 0 0 12px rgba(99,102,241,0.25); }
 .dashboard-card .card-label {
   font-size: calc(0.65rem * var(--ui-text-scale));
   text-transform: uppercase;
@@ -231,6 +232,7 @@ nav::-webkit-scrollbar { display: none; }
 .dashboard-card.card-danger .card-value { color: var(--c-danger); }
 .dashboard-card.card-warning .card-value { color: var(--c-warning); }
 .dashboard-card.card-info .card-value { color: var(--c-primary); }
+.dashboard-card.card-purple .card-value { color: #4f46e5; }
 .dashboard-card .card-sub {
   font-size: var(--fs-xs);
   color: var(--c-text-muted);
@@ -348,6 +350,14 @@ tr.low-stock:hover { background: rgba(245, 158, 11, 0.2); }
 .status-badge.status-success::before { background: var(--c-success); }
 .status-badge.status-warning { background: var(--c-warning-bg); color: var(--c-warning); }
 .status-badge.status-warning::before { background: var(--c-warning); }
+.status-badge.out_for_delivery { background: rgba(99, 102, 241, 0.12); color: #4f46e5; }
+.status-badge.out_for_delivery::before { background: #6366f1; }
+.status-badge.failed { background: var(--c-danger-bg); color: var(--c-danger); }
+.status-badge.failed::before { background: var(--c-danger); }
+.status-badge.assigned { background: rgba(14, 165, 233, 0.12); color: #0284c7; }
+.status-badge.assigned::before { background: #0ea5e9; }
+.status-badge.unassigned { background: var(--c-warning-bg); color: var(--c-warning); }
+.status-badge.unassigned::before { background: var(--c-warning); }
 .receipt-statuses { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.3rem; }
 .receipt-statuses .status-badge { font-size: calc(0.65rem * var(--ui-text-scale)); }
 .deliveries-toolbar { display:flex; align-items:center; gap:var(--space-3); flex-wrap:wrap; }
@@ -1247,6 +1257,11 @@ tr.low-stock td:first-child { box-shadow:inset 4px 0 0 var(--c-warning); }
 .coa-filter-tabs { display:flex; flex-wrap:wrap; gap:3px; width:100%; margin:0 0 var(--space-5); padding:3px; border-radius:var(--radius-md); background:var(--c-bg); overflow-x:auto; }
 .coa-filter-tabs .nav-btn { flex:0 0 auto; min-height:36px; white-space:nowrap; }
 .report-metrics { min-width:0; }
+.report-metrics-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.report-metrics-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1024px) {
+  .report-metrics-5 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 .report-payment-methods { display:flex; align-items:center; flex-wrap:wrap; gap:var(--space-3); margin-bottom:var(--space-4); padding:var(--space-3) var(--space-4); background:var(--c-surface); border-radius:var(--radius-md); border:1px solid var(--c-border); }
 @media (max-width: 680px) {
   .pnl-cash-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }

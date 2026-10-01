@@ -19,7 +19,7 @@ function renderProductMixContent(data: any): string {
   const bestSelling = [...products].sort((a: any, b: any) => Number(b.quantity_sold || 0) - Number(a.quantity_sold || 0) || Number(b.revenue || 0) - Number(a.revenue || 0)).slice(0, 5);
   const slowMovers = [...products].sort((a: any, b: any) => Number(a.quantity_sold || 0) - Number(b.quantity_sold || 0) || Number(a.revenue || 0) - Number(b.revenue || 0)).slice(0, 5);
   const compactRows = (items: any[], empty: string) => items.length ? items.map((p: any, index: number) => `<tr>
-    <td><span class="product-rank">${index + 1}</span><strong>${esc(p.name)}</strong><small>${esc(p.unit || '')} · Stock ${Number(p.stock || 0)}</small></td>
+    <td><span class="product-rank">${index + 1}</span><strong>${esc(p.name)}</strong><small>${p.is_custom ? 'Custom / Misc' : `${esc(p.unit || '')} · Stock ${Number(p.stock || 0)}`}</small></td>
     <td class="product-mix-qty">${Number(p.quantity_sold || 0).toLocaleString()} sold</td>
     <td class="money">${fmtPeso(p.revenue)}</td>
   </tr>`).join('') : `<tr><td colspan="3" class="empty-state">${empty}</td></tr>`;
@@ -52,17 +52,18 @@ function renderProductMixContent(data: any): string {
       <div class="section-heading"><div><h3>Product performance</h3><p class="card-sub">Ranked by revenue. COGS uses the cost recorded at the time of each sale.</p></div></div>
       <div class="table-wrap"><table class="product-mix-table"><thead><tr><th>Product</th><th>Sold</th><th>Revenue</th><th>COGS</th><th>Gross Profit</th><th>Margin</th><th>Share</th><th>Status</th></tr></thead><tbody>
         ${products.length ? products.map((p: any) => {
+          const isCustom = Boolean(p.is_custom);
           const noSales = Number(p.quantity_sold || 0) <= 0;
-          const lowStock = Number(p.stock || 0) <= Number(p.reorder_point || 0);
+          const lowStock = !isCustom && Number(p.stock || 0) <= Number(p.reorder_point || 0);
           return `<tr class="${noSales ? 'product-mix-no-sales' : ''}">
-            <td data-label="Product"><strong>${esc(p.name)}</strong><small>${esc(p.unit || '')} · Stock ${Number(p.stock || 0)}</small></td>
+            <td data-label="Product"><strong>${esc(p.name)}</strong><small>${isCustom ? 'Custom / Misc · Non-inventory' : `${esc(p.unit || '')} · Stock ${Number(p.stock || 0)}`}</small></td>
             <td data-label="Sold">${Number(p.quantity_sold || 0).toLocaleString()}</td>
             <td data-label="Revenue" class="money">${fmtPeso(p.revenue)}</td>
             <td data-label="COGS" class="money">${fmtPeso(p.cogs)}</td>
             <td data-label="Gross Profit" class="money ${p.gross_profit >= 0 ? 'positive' : 'negative'}">${fmtPeso(p.gross_profit)}</td>
             <td data-label="Margin">${Number(p.margin_pct || 0).toFixed(1)}%</td>
             <td data-label="Share">${Number(p.sales_share_pct || 0).toFixed(1)}%</td>
-            <td data-label="Status"><span class="status-badge ${noSales ? 'status-warning' : 'status-success'}">${noSales ? 'No sales' : 'Selling'}${lowStock ? ' · Low stock' : ''}</span></td>
+            <td data-label="Status"><span class="status-badge ${isCustom ? 'status-success' : (noSales ? 'status-warning' : 'status-success')}">${isCustom ? 'Custom Item' : (noSales ? 'No sales' : 'Selling')}${lowStock ? ' · Low stock' : ''}</span></td>
           </tr>`;
         }).join('') : '<tr><td colspan="8" class="empty-state">No products found.</td></tr>'}
       </tbody></table></div>

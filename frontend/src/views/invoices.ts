@@ -122,13 +122,10 @@ export function setPOSQty(id: string, value: string) {
 }
 
 export async function renderInvoices(): Promise<string> {
-  const [invoices, materials, settings] = await Promise.all([
-    apiGet<Invoice[] | { data: Invoice[]; total: number }>(`/invoices?page=${invoicePage}&pageSize=${INVOICE_PAGE_SIZE}`),
+  const [materials, settings] = await Promise.all([
     apiGet<Material[]>('/materials'),
     apiGet<{ value: string }>('/settings/default_tax_rate'),
   ]);
-  const invoiceData = Array.isArray(invoices) ? invoices : invoices.data;
-  const totalInvoices = Array.isArray(invoices) ? invoices.length : invoices.total;
   (window as any).__invMaterials = materials;
   (window as any).__invDefaultTax = settings.value || '0';
   const categories = [...new Set(materials.map((m: Material) => m.category).filter(Boolean))];
@@ -144,7 +141,13 @@ export async function renderInvoices(): Promise<string> {
   const total = Math.max(0, Math.round((cartTotal + tax - discount) * 100) / 100);
   (window as any).__posTotal = total;
   return `<div class="pos-page">
-    <div class="pos-header"><div><div class="pos-kicker">Jeg Enterprises POS</div><h2>Point of Sale</h2></div><button class="btn" onclick="exportSalesHistory()">Export Sales History</button></div>
+    <div class="pos-header">
+      <div>
+        <div class="pos-kicker">Jeg Enterprises POS</div>
+        <h2>Point of Sale</h2>
+      </div>
+      ${isAdmin() ? `<button class="btn btn-outline" onclick="loadView('sales')">View Sales History ↗</button>` : ''}
+    </div>
     <div class="pos-layout">
       <aside class="pos-categories"><div class="pos-panel-title">Categories</div><button class="pos-category ${!posCategory ? 'active' : ''}" onclick="setPOSCategory('')">All Categories</button>${categoryButtons}</aside>
       <section class="pos-products"><div class="pos-search"><input id="pos-search" type="search" value="${esc(posSearch)}" placeholder="Search material name, category, or unit..." oninput="filterPOSMaterials(this.value)" /><button class="btn btn-sm pos-camera-btn" onclick="startPOSCameraScan()" title="Scan barcode with camera">Scan Barcode</button><span>${filteredMaterials.length} item${filteredMaterials.length === 1 ? '' : 's'}</span></div><div class="pos-product-grid">${filteredMaterials.length ? filteredMaterials.map((m: Material) => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('') : '<div class="pos-empty">No materials match your search.</div>'}</div></section>
@@ -157,7 +160,6 @@ export async function renderInvoices(): Promise<string> {
         <button class="btn btn-primary pos-complete" id="pos-complete-btn" onclick="completePOSSale()" ${posCart.length ? '' : 'disabled'}>Complete Sale</button><button class="btn pos-clear" onclick="clearPOSCart()" ${posCart.length ? '' : 'disabled'}>Clear Cart</button>
       </aside>
     </div>
-    <details open class="pos-history"><summary>Sales History <span>${totalInvoices} invoice${totalInvoices === 1 ? '' : 's'}</span></summary><div class="table-wrap"><table><thead><tr><th>#</th><th>Customer</th><th>Total</th><th>Status</th><th>Issued</th><th>Delivery Person</th><th class="actions">Actions</th></tr></thead><tbody>${invoiceData.length ? invoiceData.map((inv: Invoice) => `<tr><td data-label="#" style="font-weight:600">${esc(inv.invoice_number)}</td><td data-label="Customer">${esc(inv.customer_name)}</td><td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(inv.total)}</td><td data-label="Status"><span class="status-badge ${inv.status}">${inv.status}</span></td><td data-label="Issued">${fmtDate(inv.issued_date)}</td><td data-label="Delivery Person"><span class="delivery-value">${esc(inv.delivery_person || 'Not assigned')}</span><button class="btn btn-sm delivery-edit-btn" onclick="showDeliveryModal('${inv.id}')">${inv.delivery_person ? 'Edit' : 'Assign'}</button></td><td data-label="" class="actions"><button class="btn btn-success btn-sm" onclick="showInvoiceDetail('${inv.id}')">View</button><button class="btn btn-danger btn-sm" onclick="delInvoice('${inv.id}')">Delete</button></td></tr>`).join('') : '<tr><td colspan="7" style="text-align:center;color:var(--c-text-muted);padding:2rem">No sales yet</td></tr>'}</tbody></table></div>${totalInvoices > INVOICE_PAGE_SIZE ? `<div class="pagination"><span>Showing ${(invoicePage-1)*INVOICE_PAGE_SIZE+1}–${Math.min(invoicePage*INVOICE_PAGE_SIZE, totalInvoices)} of ${totalInvoices}</span><button class="btn btn-sm" ${invoicePage===1?'disabled':''} onclick="changeInvoicePage(${invoicePage-1})">Previous</button><strong>Page ${invoicePage} of ${Math.ceil(totalInvoices/INVOICE_PAGE_SIZE)}</strong><button class="btn btn-sm" ${invoicePage>=Math.ceil(totalInvoices/INVOICE_PAGE_SIZE)?'disabled':''} onclick="changeInvoicePage(${invoicePage+1})">Next</button></div>` : ''}</details>
   </div>`;
 }
 
@@ -171,6 +173,21 @@ export function exportSalesHistory() {
 
 export function changeInvoicePage(page: number) { invoicePage = Math.max(1, page); loadView('invoices'); }
 
+export function onDeliveryStatusModalChange() {
+  const statusSelect = document.getElementById('delivery-status-edit') as HTMLSelectElement;
+  const hint = document.getElementById('delivery-person-req-hint');
+  if (statusSelect && hint) {
+    const val = statusSelect.value;
+    if (val === 'assigned' || val === 'out_for_delivery') {
+      hint.textContent = '(required)';
+      hint.style.color = 'var(--c-primary)';
+    } else {
+      hint.textContent = '(optional)';
+      hint.style.color = '';
+    }
+  }
+}
+
 export async function showDeliveryModal(invoiceId: string) {
   try {
     const invoice = await apiGet<any>(`/invoices/${invoiceId}`);
@@ -178,22 +195,83 @@ export async function showDeliveryModal(invoiceId: string) {
     const refundedTotal = (invoice.refunds || []).reduce((sum: number, refund: any) => sum + Number(refund.amount || 0), 0);
     const currentTotal = Math.max(0, Number(invoice.adjusted_total ?? invoice.total ?? 0) - refundedTotal);
     deliveryEditContext = { invoiceNumber: invoice.invoice_number, amount: currentTotal };
-    showModal(`<h3>Assign Delivery Person</h3><p class="modal-help">Select a registered active delivery boy. Manage the list from the Deliveries page.</p><div class="form-group"><label for="delivery-person-edit">Delivery Person <span>(optional)</span></label><select id="delivery-person-edit"><option value="">Not assigned</option>${personnel.filter((person: any) => person.active || person.id === invoice.delivery_person_id).map((person: any) => `<option value="${esc(person.id)}" ${person.id === invoice.delivery_person_id ? 'selected' : ''}>${esc(person.name)}${person.phone ? ` — ${esc(person.phone)}` : ''}</option>`).join('')}</select></div><div class="modal-actions"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveDeliveryPerson('${invoiceId}')">Save</button></div>`, 'delivery-modal');
-  } catch (e: any) { showToast(e.message || 'Unable to load invoice'); }
+
+    const currentStatus = invoice.delivery_status || (invoice.delivery_person_id ? 'assigned' : 'unassigned');
+    const currentNotes = invoice.delivery_notes || '';
+
+    showModal(`
+      <h3>Manage Delivery</h3>
+      <p class="modal-help">Update delivery assignment, order status, or delivery notes for <strong>${esc(invoice.invoice_number)}</strong> (${fmtPeso(currentTotal)}).</p>
+      
+      <div class="form-group">
+        <label for="delivery-status-edit">Delivery Status *</label>
+        <select id="delivery-status-edit" onchange="onDeliveryStatusModalChange()">
+          <option value="unassigned" ${currentStatus === 'unassigned' ? 'selected' : ''}>Needs Assignment (Unassigned)</option>
+          <option value="assigned" ${currentStatus === 'assigned' ? 'selected' : ''}>Assigned (Ready to dispatch)</option>
+          <option value="out_for_delivery" ${currentStatus === 'out_for_delivery' ? 'selected' : ''}>Out for Delivery 🚚 (In transit)</option>
+          <option value="delivered" ${currentStatus === 'delivered' ? 'selected' : ''}>Delivered ✅ (Completed)</option>
+          <option value="failed" ${currentStatus === 'failed' ? 'selected' : ''}>Failed ❌ (Undelivered / Issue)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="delivery-person-edit">Delivery Person <span id="delivery-person-req-hint">${['assigned', 'out_for_delivery'].includes(currentStatus) ? '(required)' : '(optional)'}</span></label>
+        <select id="delivery-person-edit">
+          <option value="">-- Not assigned --</option>
+          ${personnel.filter((person: any) => person.active || person.id === invoice.delivery_person_id).map((person: any) => `
+            <option value="${esc(person.id)}" ${person.id === invoice.delivery_person_id ? 'selected' : ''}>
+              ${esc(person.name)}${person.phone ? ` — ${esc(person.phone)}` : ''}${!person.active ? ' (Inactive)' : ''}
+            </option>
+          `).join('')}
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="delivery-notes-edit">Delivery Notes / Failure Reason <span>(optional)</span></label>
+        <textarea id="delivery-notes-edit" rows="2" maxlength="300" placeholder="e.g. Customer unreachable, rescheduled for tomorrow, landmark...">${esc(currentNotes)}</textarea>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveDeliveryPerson('${invoiceId}')">Save Changes</button>
+      </div>
+    `, 'delivery-modal');
+  } catch (e: any) {
+    showToast(e.message || 'Unable to load invoice delivery details');
+  }
 }
 
 export async function saveDeliveryPerson(invoiceId: string) {
-  const value = (document.getElementById('delivery-person-edit') as HTMLSelectElement)?.value || null;
+  const personSelect = document.getElementById('delivery-person-edit') as HTMLSelectElement;
+  const statusSelect = document.getElementById('delivery-status-edit') as HTMLSelectElement;
+  const notesInput = document.getElementById('delivery-notes-edit') as HTMLTextAreaElement;
+
+  const deliveryPersonId = personSelect?.value || null;
+  const deliveryStatus = statusSelect?.value || 'unassigned';
+  const deliveryNotes = notesInput?.value.trim() || null;
+
+  if (['assigned', 'out_for_delivery'].includes(deliveryStatus) && !deliveryPersonId) {
+    showToast('Please select a registered delivery person for this status', 'warning');
+    personSelect?.focus();
+    return;
+  }
+
   const returnView = getCurrentView() === 'deliveries' ? 'deliveries' : 'invoices';
   const context = deliveryEditContext;
+
   try {
-    await apiPut(`/invoices/${invoiceId}/delivery`, { delivery_person_id: value });
+    await apiPut(`/invoices/${invoiceId}/delivery`, {
+      delivery_person_id: deliveryPersonId,
+      delivery_status: deliveryStatus,
+      delivery_notes: deliveryNotes,
+    });
     closeModal();
     deliveryEditContext = null;
-    showToast(`${context?.invoiceNumber || 'Sale'} — ${fmtPeso(context?.amount || 0)} ${value ? `assigned to ${value}` : 'removed from delivery assignment'}`, 'success');
+    showToast(`Delivery updated for ${context?.invoiceNumber || 'sale'}`, 'success');
     loadView(returnView);
+  } catch (e: any) {
+    showToast(e.message || 'Unable to update delivery');
   }
-  catch (e: any) { showToast(e.message || 'Unable to update delivery person'); }
 }
 
 function renderCartItemsHTML(): string {
