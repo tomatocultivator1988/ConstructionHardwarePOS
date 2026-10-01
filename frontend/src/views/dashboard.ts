@@ -101,6 +101,9 @@ export async function renderDashboard(): Promise<string> {
   const pnlExpenses = JSON.stringify((analytics.pnlTrend || []).map((e: any) => e.expenses));
   const methodLabels = JSON.stringify((analytics.paymentMethodTotals || []).map((e: any) => e.method));
   const methodData = JSON.stringify((analytics.paymentMethodTotals || []).map((e: any) => e.total));
+  const topCust = analytics.topCustomers || [];
+  const custLabels = JSON.stringify(topCust.map((c: any) => (c.name || 'Walk-in').length > 16 ? (c.name || 'Walk-in').slice(0, 14) + '...' : (c.name || 'Walk-in')));
+  const custData = JSON.stringify(topCust.map((c: any) => Number(c.total_sales ?? c.total_paid ?? 0)));
 
   setTimeout(() => {
     // The dashboard can be re-rendered while its API calls or timer are still
@@ -220,6 +223,46 @@ export async function renderDashboard(): Promise<string> {
       destroyCanvasChart(ctx8.canvas);
       chartInstances.push(new (window as any).Chart(ctx8, { type: 'bar', data: { labels: JSON.parse(methodLabels), datasets: [{ label: 'Collected', data: JSON.parse(methodData), backgroundColor: ['#f28c28','#06b6d4','#8b5cf6','#22c55e','#94a3b8'], borderRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { color: '#637d95', callback: (v: any) => '₱' + v.toFixed(0) }, grid: { color: 'rgba(11,41,69,.10)' } }, x: { ticks: { color: '#637d95' }, grid: { display: false } } }, plugins: { legend: { display: false } } } }));
     }
+    const ctx9 = (document.getElementById('chart-top-customers') as HTMLCanvasElement)?.getContext('2d');
+    if (ctx9 && topCust.length) {
+      destroyCanvasChart(ctx9.canvas);
+      chartInstances.push(new (window as any).Chart(ctx9, {
+        type: 'bar',
+        data: {
+          labels: JSON.parse(custLabels),
+          datasets: [{
+            label: 'Purchases',
+            data: JSON.parse(custData),
+            backgroundColor: '#06b6d4',
+            borderRadius: 4,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          indexAxis: 'y',
+          scales: {
+            x: {
+              beginAtZero: true,
+              ticks: { color: '#637d95', font: { size: 10 }, callback: (v: any) => '₱' + Number(v).toLocaleString() },
+              grid: { color: 'rgba(11,41,69,.10)' }
+            },
+            y: {
+              ticks: { color: '#385671', font: { size: 10, weight: '600' } },
+              grid: { display: false }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (context: any) => ` Purchases: ${fmtPeso(Number(context.raw) || 0)}`
+              }
+            }
+          }
+        }
+      }));
+    }
   }, 50);
 
   return `
@@ -293,7 +336,16 @@ export async function renderDashboard(): Promise<string> {
       <div class="chart-card"><div class="chart-title">Profit &amp; Loss — Last 6 Months</div><canvas id="chart-pnl" height="200"></canvas></div>
     </div>
     <div class="chart-grid">
-      <div class="chart-card"><div class="chart-title">Collections by Payment Method</div><canvas id="chart-payment-methods" height="200"></canvas><div class="card-sub" style="margin-top:8px">Payment-method totals are not bank-account balances.</div></div>
+      <div class="chart-card">
+        <div class="chart-title">Collections by Payment Method</div>
+        <canvas id="chart-payment-methods" height="200"></canvas>
+        <div class="card-sub" style="margin-top:8px">Payment-method totals are not bank-account balances.</div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Top Customers / Suki Buyers</div>
+        ${topCust.length ? '<canvas id="chart-top-customers" height="200"></canvas>' : '<div class="pos-empty" style="padding:2.5rem 1rem;text-align:center;color:var(--c-text-muted)">No customer sales recorded yet</div>'}
+        <div class="card-sub" style="margin-top:8px">Ranked by total purchase volume.</div>
+      </div>
     </div>
 
     <div class="chart-grid">

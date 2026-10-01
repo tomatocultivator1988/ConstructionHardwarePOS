@@ -220,13 +220,16 @@ router.get('/dashboard', async (_req: Request, res: Response) => {
         GROUP BY months.m ORDER BY months.m
       `).all() as Promise<any[]>,
       db.prepare(`
-        SELECT COALESCE(c.name, 'Walk-in') AS name,
+        SELECT COALESCE(NULLIF(i.credit_account_name, ''), c.name, 'Walk-in') AS name,
           COUNT(DISTINCT i.id) AS invoice_count,
-          SUM(p.amount) - COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id=i.id),0) AS total_paid
-        FROM payments p JOIN invoices i ON i.id = p.invoice_id
+          ROUND(SUM(i.total - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id), 0)), 2) AS total_sales,
+          ROUND(SUM(COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id), 0) - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id), 0)), 2) AS total_paid
+        FROM invoices i
         LEFT JOIN customers c ON c.id = i.customer_id
         WHERE i.status <> 'voided'
-        GROUP BY i.customer_id ORDER BY total_paid DESC LIMIT 5
+        GROUP BY COALESCE(NULLIF(i.credit_account_name, ''), c.name, 'Walk-in')
+        ORDER BY total_sales DESC
+        LIMIT 5
       `).all() as Promise<any[]>,
       db.prepare(`SELECT category, COALESCE(SUM(amount),0) total FROM expenses GROUP BY category ORDER BY total DESC`).all() as Promise<any[]>,
       db.prepare(`
