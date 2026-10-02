@@ -56,12 +56,15 @@ function renderStockDisplay(m: Material): string {
   const isLow = m.stock <= m.reorder_point;
   const factor = Number(m.conversion_factor || 0);
   if (m.has_secondary_unit && factor > 1 && m.secondary_unit) {
-    const totalSacks = Math.round(m.stock * factor);
-    const breakdown = formatAggregateBreakdown(m.stock, m.conversion_factor, m.unit, m.secondary_unit);
+    const isBulk = Boolean(m.secondary_is_bulk);
+    const breakdown = formatAggregateBreakdown(m.stock, m.conversion_factor, m.unit, m.secondary_unit, m.secondary_is_bulk);
+    const subNote = isBulk
+      ? `(${Math.floor(m.stock / factor)} ${esc(m.secondary_unit)} equiv)`
+      : `(${Math.round(m.stock * factor)} ${esc(m.secondary_unit)} total)`;
     return `<div style="line-height:1.25">
       <strong>${Number(m.stock.toFixed(2))} ${esc(m.unit)}</strong>${isLow ? ' <span style="color:var(--c-danger)">⚠</span>' : ''}
       <div style="font-size:var(--fs-xs);color:var(--c-primary);font-weight:600;margin-top:2px">${esc(breakdown)}</div>
-      <div style="font-size:11px;color:var(--c-text-muted)">(${totalSacks} ${esc(m.secondary_unit)} total)</div>
+      <div style="font-size:11px;color:var(--c-text-muted)">${subNote}</div>
     </div>`;
   }
   return `${m.stock}${isLow ? ' ⚠' : ''}`;
@@ -96,19 +99,34 @@ export function updateDualUnitPreview() {
   const costLabel = document.getElementById('mf-cost-label');
 
   const selectedUnit = val('mf-unit');
-  const mainUnit = (selectedUnit === '__custom__' ? val('mf-custom-unit').trim() : selectedUnit) || 'Bulk Unit';
-  const secUnit = val('mf-secondary-unit').trim() || 'Sack';
+  const mainUnit = (selectedUnit === '__custom__' ? val('mf-custom-unit').trim() : selectedUnit) || 'Unit';
+  const secUnit = val('mf-secondary-unit').trim() || 'Secondary Unit';
   const factor = parseFloat(val('mf-conversion-factor')) || 0;
   const mainPrice = parseFloat(val('mf-price')) || 0;
   const secPrice = parseFloat(val('mf-secondary-price')) || 0;
   const stock = parseFloat(val('mf-stock')) || 0;
 
+  const isBulkRadio = (document.querySelector('input[name="mf-direction"]:checked') as HTMLInputElement)?.value === 'bulk';
+
+  const secUnitLabel = document.getElementById('mf-secondary-unit-label');
+  const unitLabel = document.getElementById('mf-unit-label');
+
   if (priceLabel) priceLabel.textContent = `Retail Price (per ${mainUnit}) *`;
   if (costLabel) costLabel.textContent = `Cost Price (per ${mainUnit})`;
-  if (conversionLabel) conversionLabel.innerHTML = `How many <strong>${esc(secUnit)}</strong> in 1 <strong>${esc(mainUnit)}</strong>? *`;
-  if (conversionHelper) conversionHelper.textContent = `e.g. ${factor > 1 ? factor : 26} ${secUnit} per 1 ${mainUnit}`;
-  if (secondaryPriceLabel) secondaryPriceLabel.innerHTML = `Retail Price per <strong>${esc(secUnit)}</strong> (₱) *`;
-  if (secondaryPriceHelper) secondaryPriceHelper.textContent = `Selling price in POS when customer buys per ${secUnit}`;
+  if (unitLabel) unitLabel.textContent = isBulkRadio ? 'Base Inventory Unit (e.g. Sack) *' : 'Main / Stock Unit *';
+  if (secUnitLabel) secUnitLabel.textContent = isBulkRadio ? 'Bulk Unit Name (e.g. Cubic) *' : 'Smaller / Tingi Unit Name (e.g. Sack) *';
+
+  if (isBulkRadio) {
+    if (conversionLabel) conversionLabel.innerHTML = `How many <strong>${esc(mainUnit)}</strong> in 1 <strong>${esc(secUnit)}</strong>? *`;
+    if (conversionHelper) conversionHelper.textContent = `e.g. 1 ${secUnit} = ${factor > 1 ? factor : 26} ${mainUnit} (Selling 1 ${secUnit} in POS will deduct ${factor > 1 ? factor : 26} ${mainUnit} from stock)`;
+    if (secondaryPriceLabel) secondaryPriceLabel.innerHTML = `Retail Price per <strong>${esc(secUnit)}</strong> (₱) *`;
+    if (secondaryPriceHelper) secondaryPriceHelper.textContent = `Selling price in POS for 1 ${secUnit}`;
+  } else {
+    if (conversionLabel) conversionLabel.innerHTML = `How many <strong>${esc(secUnit)}</strong> in 1 <strong>${esc(mainUnit)}</strong>? *`;
+    if (conversionHelper) conversionHelper.textContent = `e.g. 1 ${mainUnit} = ${factor > 1 ? factor : 26} ${secUnit} (Selling 1 ${secUnit} in POS will deduct 1/${factor > 1 ? factor : 26} ${mainUnit} from stock)`;
+    if (secondaryPriceLabel) secondaryPriceLabel.innerHTML = `Retail Price per <strong>${esc(secUnit)}</strong> (₱) *`;
+    if (secondaryPriceHelper) secondaryPriceHelper.textContent = `Selling price in POS for 1 ${secUnit}`;
+  }
 
   if (!previewBox) return;
   if (!checkbox?.checked) {
@@ -118,42 +136,52 @@ export function updateDualUnitPreview() {
   }
   previewBox.style.display = 'block';
 
-  const isInverse = (mainUnit.toLowerCase().includes('sack') || mainUnit.toLowerCase().includes('bag') || mainUnit.toLowerCase().includes('pc') || mainUnit.toLowerCase().includes('piece')) && (secUnit.toLowerCase().includes('cub') || secUnit.toLowerCase().includes('cu.m') || secUnit.toLowerCase().includes('box') || secUnit.toLowerCase().includes('bundle'));
-  const inverseWarningHTML = isInverse ? `
-    <div style="background:#fff3cd;color:#856404;border:1px solid #ffeeba;border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-size:var(--fs-xs);margin-bottom:var(--space-2);line-height:1.4">
-      ⚠️ <strong>Paalala: Baligtad po ang units!</strong><br>
-      Ang <strong>${esc(secUnit)}</strong> ay mas malaki kaysa sa <strong>${esc(mainUnit)}</strong>.<br>
-      Dapat po ang <strong>Main / Stock Unit</strong> sa itaas ay <strong>${esc(secUnit)}</strong> (bulto), at ang <strong>Smaller / Tingi Unit</strong> dito sa ilalim ay <strong>${esc(mainUnit)}</strong> (tingi).
-    </div>
-  ` : '';
+  if (factor > 1) {
+    if (isBulkRadio) {
+      const wholeCubics = Math.floor(stock / factor);
+      const remSacks = Math.round(stock % factor);
+      const stockBreakdown = remSacks > 0
+        ? `${wholeCubics} ${secUnit} and ${remSacks} ${mainUnit}`
+        : `${wholeCubics} ${secUnit}`;
 
-  if (factor > 1 && !isInverse) {
-    const fullUnits = Math.floor(stock);
-    const rem = stock - fullUnits;
-    const remainingSacks = Math.round(rem * factor);
-    const totalSacks = Math.round(stock * factor);
-    const stockBreakdown = remainingSacks > 0
-      ? `${fullUnits} ${mainUnit} and ${remainingSacks} ${secUnit}`
-      : `${fullUnits} ${mainUnit}`;
+      previewBox.innerHTML = `
+        <div style="background:var(--c-surface);border:1px solid var(--c-primary);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-size:var(--fs-xs);color:var(--c-text);box-shadow:var(--shadow-sm)">
+          <div style="font-weight:700;color:var(--c-primary);margin-bottom:6px">
+            💡 Live POS & Stock Preview (Main Unit is ${esc(mainUnit)}):
+          </div>
+          <div style="display:grid;grid-template-columns:1fr;gap:4px;line-height:1.4">
+            <div>• <strong>Basic Sale (${esc(mainUnit)}):</strong> 1 ${esc(mainUnit)} = <strong>₱${mainPrice > 0 ? mainPrice.toLocaleString('en-PH', {minimumFractionDigits: 2}) : '0.00'}</strong> (deducts 1 ${esc(mainUnit)} from stock)</div>
+            <div>• <strong>Bulk Sale (${esc(secUnit)}):</strong> 1 ${esc(secUnit)} = <strong>₱${secPrice > 0 ? secPrice.toLocaleString('en-PH', {minimumFractionDigits: 2}) : '0.00'}</strong> (deducts ${factor} ${esc(mainUnit)} from stock)</div>
+            <div>• <strong>Current Inventory (${stock} ${esc(mainUnit)}):</strong> Equals <strong>${stockBreakdown}</strong> (total ${stock} ${esc(mainUnit)})</div>
+          </div>
+        </div>
+      `;
+    } else {
+      const fullUnits = Math.floor(stock);
+      const rem = stock - fullUnits;
+      const remainingSacks = Math.round(rem * factor);
+      const totalSacks = Math.round(stock * factor);
+      const stockBreakdown = remainingSacks > 0
+        ? `${fullUnits} ${mainUnit} and ${remainingSacks} ${secUnit}`
+        : `${fullUnits} ${mainUnit}`;
 
-    previewBox.innerHTML = `
-      ${inverseWarningHTML}
-      <div style="background:var(--c-surface);border:1px solid var(--c-primary);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-size:var(--fs-xs);color:var(--c-text);box-shadow:var(--shadow-sm)">
-        <div style="font-weight:700;color:var(--c-primary);margin-bottom:6px">
-          💡 Live POS & Stock Preview:
+      previewBox.innerHTML = `
+        <div style="background:var(--c-surface);border:1px solid var(--c-primary);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-size:var(--fs-xs);color:var(--c-text);box-shadow:var(--shadow-sm)">
+          <div style="font-weight:700;color:var(--c-primary);margin-bottom:6px">
+            💡 Live POS & Stock Preview (Main Unit is ${esc(mainUnit)}):
+          </div>
+          <div style="display:grid;grid-template-columns:1fr;gap:4px;line-height:1.4">
+            <div>• <strong>Bulk Sale (${esc(mainUnit)}):</strong> 1 ${esc(mainUnit)} = <strong>₱${mainPrice > 0 ? mainPrice.toLocaleString('en-PH', {minimumFractionDigits: 2}) : '0.00'}</strong> (deducts 1.0 ${esc(mainUnit)} from stock)</div>
+            <div>• <strong>Tingi Sale (${esc(secUnit)}):</strong> 1 ${esc(secUnit)} = <strong>₱${secPrice > 0 ? secPrice.toLocaleString('en-PH', {minimumFractionDigits: 2}) : '0.00'}</strong> (deducts 1/${factor} ${esc(mainUnit)} from stock)</div>
+            <div>• <strong>Current Inventory (${stock} ${esc(mainUnit)}):</strong> Equals <strong>${stockBreakdown}</strong> (or total ~${totalSacks} ${esc(secUnit)})</div>
+          </div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr;gap:4px;line-height:1.4">
-          <div>• <strong>Bulk Sale:</strong> 1 ${esc(mainUnit)} = <strong>₱${mainPrice > 0 ? mainPrice.toLocaleString('en-PH', {minimumFractionDigits: 2}) : '0.00'}</strong> (deducts 1.0 ${esc(mainUnit)} from stock)</div>
-          <div>• <strong>Tingi Sale:</strong> 1 ${esc(secUnit)} = <strong>₱${secPrice > 0 ? secPrice.toLocaleString('en-PH', {minimumFractionDigits: 2}) : '0.00'}</strong> (deducts 1/${factor} ${esc(mainUnit)} from stock)</div>
-          <div>• <strong>Current Inventory (${stock} ${esc(mainUnit)}):</strong> Equals <strong>${stockBreakdown}</strong> (or total ~${totalSacks} ${esc(secUnit)})</div>
-        </div>
-      </div>
-    `;
+      `;
+    }
   } else {
     previewBox.innerHTML = `
-      ${inverseWarningHTML}
       <div style="background:var(--c-surface);border:1px dashed var(--c-border);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-size:var(--fs-xs);color:var(--c-text-muted)">
-        ℹ️ Enter how many <strong>${esc(secUnit)}</strong> are in 1 <strong>${esc(mainUnit)}</strong> (e.g. 26 sacks per 1 cubic) to see live calculation preview.
+        ℹ️ Enter how many <strong>${esc(isBulkRadio ? mainUnit : secUnit)}</strong> are in 1 <strong>${esc(isBulkRadio ? secUnit : mainUnit)}</strong> (e.g. 26) to see live calculation preview.
       </div>
     `;
   }
@@ -267,21 +295,34 @@ export function showMaterialModal(data?: Material) {
     <div style="background:var(--c-surface-elevated);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:var(--space-3);margin-top:var(--space-2);margin-bottom:var(--space-3)">
       <div style="display:flex;align-items:center;gap:var(--space-2);cursor:pointer">
         <input type="checkbox" id="mf-has-dual-unit" ${data?.has_secondary_unit ? 'checked' : ''} onchange="toggleDualUnitFields()" style="width:18px;height:18px;cursor:pointer" />
-        <label for="mf-has-dual-unit" style="font-weight:600;cursor:pointer;margin:0">Enable Smaller / Tingi Unit (e.g. Sacks, Pieces, Packs)</label>
+        <label for="mf-has-dual-unit" style="font-weight:600;cursor:pointer;margin:0">Enable Dual Unit / Packaging (e.g. Bulk Cubic & Sacks)</label>
       </div>
       <p class="modal-help" style="margin:4px 0 0 26px;font-size:var(--fs-xs);color:var(--c-text-muted)">
-        For bulk materials like Sand, Gravel, and Gravita. Allows selling either in bulk (per cubic) or tingi (per sack) from one shared stock pool.
+        For bulk materials like Sand, Gravel, and Gravita. Allows selling either per cubic or per sack from one shared stock pool.
       </p>
       <div id="mf-dual-unit-container" style="display:${data?.has_secondary_unit ? 'block' : 'none'};margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px dashed var(--c-border)">
+        <div class="form-group" style="margin-bottom:var(--space-3);background:var(--c-surface);padding:var(--space-2) var(--space-3);border-radius:var(--radius-sm);border:1px solid var(--c-border)">
+          <label style="font-weight:600;font-size:var(--fs-xs);margin-bottom:6px;display:block">Packaging Relationship:</label>
+          <div style="display:flex;gap:var(--space-4);flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);cursor:pointer">
+              <input type="radio" name="mf-direction" value="tingi" ${!data?.secondary_is_bulk ? 'checked' : ''} onchange="updateDualUnitPreview()" style="cursor:pointer" />
+              <span>Secondary unit is <strong>Smaller / Tingi</strong> (e.g. Main is Cubic, Secondary is Sack)</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:var(--fs-xs);cursor:pointer">
+              <input type="radio" name="mf-direction" value="bulk" ${data?.secondary_is_bulk ? 'checked' : ''} onchange="updateDualUnitPreview()" style="cursor:pointer" />
+              <span>Secondary unit is <strong>Bulk / Bundle</strong> (e.g. Main is Sack, Secondary is Cubic)</span>
+            </label>
+          </div>
+        </div>
         <div class="form-row">
           <div class="form-group">
-            <label>Smaller / Tingi Unit Name *</label>
-            <input id="mf-secondary-unit" maxlength="30" value="${esc(data?.secondary_unit || 'Sack')}" placeholder="e.g. Sack" oninput="updateDualUnitPreview()" />
-            <div class="helper" style="font-size:var(--fs-xs);color:var(--c-text-muted);margin-top:2px">e.g. Sack, Piece, Pack</div>
+            <label id="mf-secondary-unit-label">Secondary Unit Name *</label>
+            <input id="mf-secondary-unit" maxlength="30" value="${esc(data?.secondary_unit || '')}" placeholder="e.g. Cubic or Sack" oninput="updateDualUnitPreview()" />
+            <div class="helper" style="font-size:var(--fs-xs);color:var(--c-text-muted);margin-top:2px">e.g. Sack, Cubic, Pack, Box</div>
             <div class="field-error" id="mf-secondary-unit-err"></div>
           </div>
           <div class="form-group">
-            <label id="mf-conversion-label">How many [sacks] in 1 [unit]? *</label>
+            <label id="mf-conversion-label">Conversion Ratio *</label>
             <input id="mf-conversion-factor" type="number" step="any" min="1.0001" value="${data?.conversion_factor || 26}" placeholder="e.g. 26" oninput="updateDualUnitPreview()" />
             <div class="helper" id="mf-conversion-helper" style="font-size:var(--fs-xs);color:var(--c-text-muted);margin-top:2px">e.g. 26 sacks per 1 cubic</div>
             <div class="field-error" id="mf-conversion-factor-err"></div>
@@ -289,9 +330,9 @@ export function showMaterialModal(data?: Material) {
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label id="mf-secondary-price-label">Retail Price per [sack] (₱) *</label>
+            <label id="mf-secondary-price-label">Retail Price (₱) *</label>
             <input id="mf-secondary-price" type="number" step="0.01" min="0.01" value="${data?.secondary_price ?? ''}" placeholder="e.g. 65.00" oninput="updateDualUnitPreview()" />
-            <div class="helper" id="mf-secondary-price-helper" style="font-size:var(--fs-xs);color:var(--c-text-muted);margin-top:2px">Selling price in POS when customer buys per sack</div>
+            <div class="helper" id="mf-secondary-price-helper" style="font-size:var(--fs-xs);color:var(--c-text-muted);margin-top:2px">Selling price in POS for secondary unit</div>
             <div class="field-error" id="mf-secondary-price-err"></div>
           </div>
         </div>
@@ -327,6 +368,7 @@ export async function createMaterial() {
   const conversionFactor = isNaN(conversionFactorRaw) || conversionFactorRaw <= 0 ? 1 : conversionFactorRaw;
   const secondaryPriceRaw = parseFloat(val('mf-secondary-price'));
   const secondaryPrice = isNaN(secondaryPriceRaw) || secondaryPriceRaw < 0 ? 0 : secondaryPriceRaw;
+  const secondary_is_bulk = (document.querySelector('input[name="mf-direction"]:checked') as HTMLInputElement)?.value === 'bulk' ? 1 : 0;
 
   if (!name) { setErr('mf-name-err', 'Name is required'); return; }
   if (name.length < 2) { setErr('mf-name-err', 'Must be at least 2 characters'); return; }
@@ -337,10 +379,10 @@ export async function createMaterial() {
   if (isNaN(price) || price <= 0) { setErr('mf-price-err', 'Must be > 0'); return; }
 
   if (hasDualUnit) {
-    if (!secondaryUnit) { setErr('mf-secondary-unit-err', 'Please enter a smaller unit name (e.g. sack)'); return; }
-    if (unit.toLowerCase() === secondaryUnit.toLowerCase()) { setErr('mf-secondary-unit-err', 'Smaller unit name must be different from the main unit'); return; }
+    if (!secondaryUnit) { setErr('mf-secondary-unit-err', 'Please enter a secondary unit name (e.g. cubic or sack)'); return; }
+    if (unit.toLowerCase() === secondaryUnit.toLowerCase()) { setErr('mf-secondary-unit-err', 'Secondary unit name must be different from the main unit'); return; }
     if (conversionFactor <= 1) { setErr('mf-conversion-factor-err', 'Conversion must be greater than 1 (e.g. 26 sacks per cubic)'); return; }
-    if (secondaryPrice <= 0) { setErr('mf-secondary-price-err', 'Please enter a retail price for the smaller unit'); return; }
+    if (secondaryPrice <= 0) { setErr('mf-secondary-price-err', 'Please enter a retail price for the secondary unit'); return; }
   }
 
   disableBtn('mf-save-btn', true);
@@ -350,7 +392,8 @@ export async function createMaterial() {
       has_secondary_unit: hasDualUnit,
       secondary_unit: hasDualUnit ? secondaryUnit : null,
       conversion_factor: hasDualUnit ? conversionFactor : 1,
-      secondary_price: hasDualUnit ? secondaryPrice : 0
+      secondary_price: hasDualUnit ? secondaryPrice : 0,
+      secondary_is_bulk: hasDualUnit ? secondary_is_bulk : 0
     });
     closeModal(); loadView('materials');
   } catch (e: any) { showToast(e.message); }
@@ -371,6 +414,7 @@ export async function updateMaterial(id: string) {
   const conversionFactor = isNaN(conversionFactorRaw) || conversionFactorRaw <= 0 ? 1 : conversionFactorRaw;
   const secondaryPriceRaw = parseFloat(val('mf-secondary-price'));
   const secondaryPrice = isNaN(secondaryPriceRaw) || secondaryPriceRaw < 0 ? 0 : secondaryPriceRaw;
+  const secondary_is_bulk = (document.querySelector('input[name="mf-direction"]:checked') as HTMLInputElement)?.value === 'bulk' ? 1 : 0;
 
   if (!name) { setErr('mf-name-err', 'Name is required'); return; }
   if (name.length < 2) { setErr('mf-name-err', 'Must be at least 2 characters'); return; }
@@ -381,10 +425,10 @@ export async function updateMaterial(id: string) {
   if (isNaN(price) || price <= 0) { setErr('mf-price-err', 'Must be > 0'); return; }
 
   if (hasDualUnit) {
-    if (!secondaryUnit) { setErr('mf-secondary-unit-err', 'Please enter a smaller unit name (e.g. sack)'); return; }
-    if (unit.toLowerCase() === secondaryUnit.toLowerCase()) { setErr('mf-secondary-unit-err', 'Smaller unit name must be different from the main unit'); return; }
+    if (!secondaryUnit) { setErr('mf-secondary-unit-err', 'Please enter a secondary unit name (e.g. cubic or sack)'); return; }
+    if (unit.toLowerCase() === secondaryUnit.toLowerCase()) { setErr('mf-secondary-unit-err', 'Secondary unit name must be different from the main unit'); return; }
     if (conversionFactor <= 1) { setErr('mf-conversion-factor-err', 'Conversion must be greater than 1 (e.g. 26 sacks per cubic)'); return; }
-    if (secondaryPrice <= 0) { setErr('mf-secondary-price-err', 'Please enter a retail price for the smaller unit'); return; }
+    if (secondaryPrice <= 0) { setErr('mf-secondary-price-err', 'Please enter a retail price for the secondary unit'); return; }
   }
 
   disableBtn('mf-save-btn', true);
@@ -394,7 +438,8 @@ export async function updateMaterial(id: string) {
       has_secondary_unit: hasDualUnit,
       secondary_unit: hasDualUnit ? secondaryUnit : null,
       conversion_factor: hasDualUnit ? conversionFactor : 1,
-      secondary_price: hasDualUnit ? secondaryPrice : 0
+      secondary_price: hasDualUnit ? secondaryPrice : 0,
+      secondary_is_bulk: hasDualUnit ? secondary_is_bulk : 0
     });
     closeModal(); loadView('materials');
   } catch (e: any) { showToast(e.message); }

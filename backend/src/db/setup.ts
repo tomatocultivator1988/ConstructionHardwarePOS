@@ -6,7 +6,7 @@ let db: Database;
 let dbInitPromise: Promise<void> | null = null;
 const businessDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date());
 
-const CURRENT_SCHEMA_VERSION = '2026.10.03';
+const CURRENT_SCHEMA_VERSION = '2026.10.03.2';
 
 export async function initDb(): Promise<void> {
   if (dbInitPromise) return dbInitPromise;
@@ -195,6 +195,7 @@ async function initTables() {
       secondary_unit TEXT,
       conversion_factor REAL DEFAULT 1,
       secondary_price REAL DEFAULT 0,
+      secondary_is_bulk INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -550,6 +551,7 @@ async function migrateSchema() {
   if (!materialInfo.some((r: any) => r.name === 'secondary_unit')) await db.exec("ALTER TABLE materials ADD COLUMN secondary_unit TEXT");
   if (!materialInfo.some((r: any) => r.name === 'conversion_factor')) await db.exec("ALTER TABLE materials ADD COLUMN conversion_factor REAL DEFAULT 1");
   if (!materialInfo.some((r: any) => r.name === 'secondary_price')) await db.exec("ALTER TABLE materials ADD COLUMN secondary_price REAL DEFAULT 0");
+  if (!materialInfo.some((r: any) => r.name === 'secondary_is_bulk')) await db.exec("ALTER TABLE materials ADD COLUMN secondary_is_bulk INTEGER DEFAULT 0");
 
   const itemCols = itemInfo.map((r: any) => r.name);
   if (!itemCols.includes('unit')) await db.exec("ALTER TABLE invoice_items ADD COLUMN unit TEXT");

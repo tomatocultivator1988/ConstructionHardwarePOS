@@ -153,7 +153,7 @@ function renderPOSProductCard(m: Material): string {
   const hasDual = Boolean(m.has_secondary_unit && Number(m.conversion_factor) > 1 && m.secondary_unit);
   
   if (hasDual) {
-    const breakdown = formatAggregateBreakdown(m.stock, m.conversion_factor, m.unit, m.secondary_unit);
+    const breakdown = formatAggregateBreakdown(m.stock, m.conversion_factor, m.unit, m.secondary_unit, m.secondary_is_bulk);
     return `
       <div class="pos-product pos-product-dual ${isLow ? 'low-stock' : ''}" style="display:flex;flex-direction:column;justify-content:space-between;cursor:default">
         <div>
@@ -460,8 +460,9 @@ export function addPOSItem(id: string, asSecondary = false) {
 
   const isSec = asSecondary && Boolean(material.has_secondary_unit && Number(material.conversion_factor) > 1 && material.secondary_unit);
   const selectedUnit = isSec ? (material.secondary_unit || 'Unit') : material.unit;
-  const unitPrice = isSec ? Number(material.secondary_price || 0) : Number(material.price_per_unit);
-  const stockMultiplier = isSec ? (1 / Number(material.conversion_factor || 1)) : 1;
+  const isBulk = Boolean(material.secondary_is_bulk);
+  const stockMultiplier = isSec ? (isBulk ? Number(material.conversion_factor || 1) : (1 / Number(material.conversion_factor || 1))) : 1;
+  const unitPrice = isSec ? Number(material.secondary_price || 0) : Number(material.price_per_unit || 0);
   const cartItemId = isSec ? `${material.id}:sec` : `${material.id}:pri`;
 
   const currentBaseDemand = posCart

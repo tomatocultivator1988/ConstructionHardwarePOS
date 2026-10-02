@@ -332,7 +332,7 @@ router.post('/', async (req: Request, res: Response) => {
     const [seqRow, mats, taxSetting, activeShift] = await Promise.all([
       db.prepare('SELECT next_number FROM invoice_sequence WHERE id = 1').get() as Promise<any>,
       usedMaterialIds.size > 0
-        ? (db.prepare(`SELECT id, name, stock, unit, cost_price, price_per_unit, wholesale_price, has_secondary_unit, secondary_unit, conversion_factor, secondary_price FROM materials WHERE id IN (${Array.from(usedMaterialIds).map(() => '?').join(',')})`).all(...usedMaterialIds) as Promise<any[]>)
+        ? (db.prepare(`SELECT id, name, stock, unit, cost_price, price_per_unit, wholesale_price, has_secondary_unit, secondary_unit, conversion_factor, secondary_price, secondary_is_bulk FROM materials WHERE id IN (${Array.from(usedMaterialIds).map(() => '?').join(',')})`).all(...usedMaterialIds) as Promise<any[]>)
         : Promise.resolve([]),
       normalizedTaxRate === null
         ? (db.prepare("SELECT value FROM settings WHERE key = 'default_tax_rate'").get() as Promise<any>)
@@ -352,10 +352,12 @@ router.post('/', async (req: Request, res: Response) => {
       const qtyNeeded = items
         .filter((it: any) => it.material_id === materialId)
         .reduce((s: number, it: any) => {
-          const isSecondary = Boolean(mat.has_secondary_unit && ((it.unit && it.unit === mat.secondary_unit) || (typeof it.stock_multiplier === 'number' && it.stock_multiplier < 0.999)));
+          const isSecondary = Boolean(mat.has_secondary_unit && ((it.unit && it.unit === mat.secondary_unit) || (typeof it.stock_multiplier === 'number' && Math.abs(it.stock_multiplier - 1) > 0.001)));
           const mult = (typeof it.stock_multiplier === 'number' && it.stock_multiplier > 0)
             ? it.stock_multiplier
-            : (isSecondary && Number(mat.conversion_factor) > 0 ? 1 / Number(mat.conversion_factor) : 1);
+            : (isSecondary && Number(mat.conversion_factor) > 0
+                ? (mat.secondary_is_bulk ? Number(mat.conversion_factor) : (1 / Number(mat.conversion_factor)))
+                : 1);
           return s + (it.quantity * mult);
         }, 0);
 
@@ -365,7 +367,7 @@ router.post('/', async (req: Request, res: Response) => {
 
       if (req.user?.role === 'staff') {
         for (const item of items.filter((it: any) => it.material_id === materialId)) {
-          const isSecondary = Boolean(mat.has_secondary_unit && ((item.unit && item.unit === mat.secondary_unit) || (typeof item.stock_multiplier === 'number' && item.stock_multiplier < 0.999)));
+          const isSecondary = Boolean(mat.has_secondary_unit && ((item.unit && item.unit === mat.secondary_unit) || (typeof item.stock_multiplier === 'number' && Math.abs(item.stock_multiplier - 1) > 0.001)));
           const allowed = isSecondary && Number(mat.secondary_price) > 0
             ? [Number(mat.secondary_price)]
             : [Number(mat.price_per_unit), Number(mat.wholesale_price)].filter(v => v > 0);
@@ -434,10 +436,12 @@ router.post('/', async (req: Request, res: Response) => {
     for (const item of items) {
       const lineTotal = item.quantity * item.unit_price;
       const mat = item.material_id ? materialMap.get(item.material_id) : null;
-      const isSecondary = Boolean(mat && mat.has_secondary_unit && ((item.unit && item.unit === mat.secondary_unit) || (typeof item.stock_multiplier === 'number' && item.stock_multiplier < 0.999)));
+      const isSecondary = Boolean(mat && mat.has_secondary_unit && ((item.unit && item.unit === mat.secondary_unit) || (typeof item.stock_multiplier === 'number' && Math.abs(item.stock_multiplier - 1) > 0.001)));
       const mult = (typeof item.stock_multiplier === 'number' && item.stock_multiplier > 0)
         ? item.stock_multiplier
-        : (isSecondary && Number(mat?.conversion_factor) > 0 ? 1 / Number(mat?.conversion_factor) : 1);
+        : (isSecondary && Number(mat?.conversion_factor) > 0
+            ? (mat?.secondary_is_bulk ? Number(mat.conversion_factor) : (1 / Number(mat.conversion_factor)))
+            : 1);
       const cost = mat ? Math.round(Number(mat.cost_price || 0) * mult * 100) / 100 : 0;
       const itemUnit = item.unit || (isSecondary && mat ? mat.secondary_unit : (mat ? mat.unit : null));
       batchStatements.push({
@@ -460,10 +464,12 @@ router.post('/', async (req: Request, res: Response) => {
       const qtyNeeded = items
         .filter((it: any) => it.material_id === materialId)
         .reduce((s: number, it: any) => {
-          const isSecondary = Boolean(mat?.has_secondary_unit && ((it.unit && it.unit === mat?.secondary_unit) || (typeof it.stock_multiplier === 'number' && it.stock_multiplier < 0.999)));
+          const isSecondary = Boolean(mat?.has_secondary_unit && ((it.unit && it.unit === mat?.secondary_unit) || (typeof it.stock_multiplier === 'number' && Math.abs(it.stock_multiplier - 1) > 0.001)));
           const mult = (typeof it.stock_multiplier === 'number' && it.stock_multiplier > 0)
             ? it.stock_multiplier
-            : (isSecondary && Number(mat?.conversion_factor) > 0 ? 1 / Number(mat?.conversion_factor) : 1);
+            : (isSecondary && Number(mat?.conversion_factor) > 0
+                ? (mat?.secondary_is_bulk ? Number(mat.conversion_factor) : (1 / Number(mat.conversion_factor)))
+                : 1);
           return s + (it.quantity * mult);
         }, 0);
       batchStatements.push({

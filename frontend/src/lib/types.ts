@@ -26,6 +26,7 @@ export interface Material {
   secondary_unit?: string | null;
   conversion_factor?: number | null;
   secondary_price?: number | null;
+  secondary_is_bulk?: number | boolean;
   created_at: string;
   updated_at: string;
 }
