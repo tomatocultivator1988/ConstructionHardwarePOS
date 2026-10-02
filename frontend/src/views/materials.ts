@@ -118,7 +118,16 @@ export function updateDualUnitPreview() {
   }
   previewBox.style.display = 'block';
 
-  if (factor > 1) {
+  const isInverse = (mainUnit.toLowerCase().includes('sack') || mainUnit.toLowerCase().includes('bag') || mainUnit.toLowerCase().includes('pc') || mainUnit.toLowerCase().includes('piece')) && (secUnit.toLowerCase().includes('cub') || secUnit.toLowerCase().includes('cu.m') || secUnit.toLowerCase().includes('box') || secUnit.toLowerCase().includes('bundle'));
+  const inverseWarningHTML = isInverse ? `
+    <div style="background:#fff3cd;color:#856404;border:1px solid #ffeeba;border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-size:var(--fs-xs);margin-bottom:var(--space-2);line-height:1.4">
+      ⚠️ <strong>Paalala: Baligtad po ang units!</strong><br>
+      Ang <strong>${esc(secUnit)}</strong> ay mas malaki kaysa sa <strong>${esc(mainUnit)}</strong>.<br>
+      Dapat po ang <strong>Main / Stock Unit</strong> sa itaas ay <strong>${esc(secUnit)}</strong> (bulto), at ang <strong>Smaller / Tingi Unit</strong> dito sa ilalim ay <strong>${esc(mainUnit)}</strong> (tingi).
+    </div>
+  ` : '';
+
+  if (factor > 1 && !isInverse) {
     const fullUnits = Math.floor(stock);
     const rem = stock - fullUnits;
     const remainingSacks = Math.round(rem * factor);
@@ -128,6 +137,7 @@ export function updateDualUnitPreview() {
       : `${fullUnits} ${mainUnit}`;
 
     previewBox.innerHTML = `
+      ${inverseWarningHTML}
       <div style="background:var(--c-surface);border:1px solid var(--c-primary);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-size:var(--fs-xs);color:var(--c-text);box-shadow:var(--shadow-sm)">
         <div style="font-weight:700;color:var(--c-primary);margin-bottom:6px">
           💡 Live POS & Stock Preview:
@@ -141,6 +151,7 @@ export function updateDualUnitPreview() {
     `;
   } else {
     previewBox.innerHTML = `
+      ${inverseWarningHTML}
       <div style="background:var(--c-surface);border:1px dashed var(--c-border);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-size:var(--fs-xs);color:var(--c-text-muted)">
         ℹ️ Enter how many <strong>${esc(secUnit)}</strong> are in 1 <strong>${esc(mainUnit)}</strong> (e.g. 26 sacks per 1 cubic) to see live calculation preview.
       </div>
