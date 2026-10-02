@@ -420,19 +420,31 @@ function renderCartItemsHTML(): string {
   }
   return posCart.map(item => {
     const isCustom = Boolean((item.material as any).is_custom);
+    const lineTotal = item.quantity * Number(item.unitPrice);
     return `
     <div class="pos-cart-item ${isCustom ? 'pos-cart-custom' : ''}">
-      <div class="pos-cart-info">
-        <strong>${esc(item.material.name)}</strong>
-        <span>${fmtPeso(item.unitPrice)} · <span class="badge" style="font-weight:600;font-size:11px;background:var(--c-surface);border:1px solid var(--c-border);padding:1px 5px;border-radius:4px;color:var(--c-text)">${esc(item.selectedUnit)}</span></span>
+      <div class="pos-cart-row-top">
+        <div class="pos-cart-info">
+          <strong>${esc(item.material.name)}</strong>
+          <div class="pos-cart-info-meta">
+            <span>${fmtPeso(item.unitPrice)}</span>
+            <span>·</span>
+            <span class="badge">${esc(item.selectedUnit)}</span>
+          </div>
+        </div>
+        <div class="pos-cart-item-right">
+          <strong class="pos-line-total">${fmtPeso(lineTotal)}</strong>
+          <button type="button" class="pos-remove" onclick="removePOSItem('${item.cartItemId}')" aria-label="Remove item" title="Remove item">×</button>
+        </div>
       </div>
-      <div class="pos-qty">
-        <button type="button" onclick="changePOSQty('${item.cartItemId}', -1)">−</button>
-        <input class="pos-qty-input" type="number" min="0.01" step="any" value="${item.quantity}" aria-label="Quantity" onchange="setPOSQty('${item.cartItemId}', this.value)" />
-        <button type="button" onclick="changePOSQty('${item.cartItemId}', 1)">+</button>
+      <div class="pos-cart-row-bottom">
+        <div class="pos-qty">
+          <button type="button" onclick="changePOSQty('${item.cartItemId}', -1)" title="Decrease quantity">−</button>
+          <input class="pos-qty-input" type="number" min="0.01" step="any" value="${item.quantity}" aria-label="Quantity" onchange="setPOSQty('${item.cartItemId}', this.value)" />
+          <button type="button" onclick="changePOSQty('${item.cartItemId}', 1)" title="Increase quantity">+</button>
+        </div>
+        <span class="pos-qty-note">${item.quantity} ${esc(item.selectedUnit)}</span>
       </div>
-      <strong class="pos-line-total">${fmtPeso(item.quantity * Number(item.unitPrice))}</strong>
-      <button type="button" class="pos-remove" onclick="removePOSItem('${item.cartItemId}')" aria-label="Remove item">×</button>
     </div>
   `;
   }).join('');
