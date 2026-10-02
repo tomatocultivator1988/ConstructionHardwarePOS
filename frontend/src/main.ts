@@ -25,6 +25,7 @@ Object.assign(window, {
   doLogin: login.doLogin,
   showMaterialModal: materials.showMaterialModal,
   toggleCustomUnit: materials.toggleCustomUnit,
+  toggleDualUnitFields: materials.toggleDualUnitFields,
   toggleAccountMenu,
   addProductCatalogOption: materials.addProductCatalogOption,
   saveProductCatalogOption: materials.saveProductCatalogOption,

@@ -35,6 +35,24 @@ export function fmtPeso(n: number): string {
   return '₱' + (isNaN(v) ? '0.00' : v.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 }
 
+export function formatAggregateBreakdown(stock: number, conversionFactor?: number | null, unit?: string, secondaryUnit?: string | null): string {
+  const factor = Number(conversionFactor || 0);
+  if (!factor || factor <= 1 || !secondaryUnit) {
+    return `${Number(stock.toFixed(2))} ${unit || ''}`.trim();
+  }
+  const totalSacks = Math.round(stock * factor);
+  const wholeCubics = Math.floor(totalSacks / factor);
+  const remainderSacks = totalSacks % factor;
+  
+  if (wholeCubics > 0 && remainderSacks > 0) {
+    return `${wholeCubics} ${unit || 'cu.m'} & ${remainderSacks} ${secondaryUnit}`;
+  } else if (wholeCubics > 0 && remainderSacks === 0) {
+    return `${wholeCubics} ${unit || 'cu.m'}`;
+  } else {
+    return `${remainderSacks} ${secondaryUnit}`;
+  }
+}
+
 export function val(id: string): string {
   return (document.getElementById(id) as HTMLInputElement)?.value ?? '';
 }

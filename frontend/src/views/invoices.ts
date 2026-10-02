@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDel } from '../lib/api';
-import { esc, val, fmtDate, fmtPeso, setErr, clearErr, disableBtn, isAdmin } from '../lib/helpers';
+import { esc, val, fmtDate, fmtPeso, setErr, clearErr, disableBtn, isAdmin, formatAggregateBreakdown } from '../lib/helpers';
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
 import { getCurrentView, loadView } from '../lib/router';
 import { showReceiptPreview } from './receipt';
@@ -10,7 +10,18 @@ let invoicePage = 1;
 const INVOICE_PAGE_SIZE = 15;
 let posSearch = '';
 let posCategory = '';
-let posCart: Array<{ material: Material; quantity: number }> = [];
+
+export interface POSCartEntry {
+  cartItemId: string;
+  material: Material;
+  quantity: number;
+  selectedUnit: string;
+  isSecondary: boolean;
+  unitPrice: number;
+  stockMultiplier: number;
+}
+
+let posCart: POSCartEntry[] = [];
 let posDiscountEnabled = false;
 let posDiscountAmount = 0;
 let posCameraStream: MediaStream | null = null;
@@ -18,7 +29,7 @@ let posCameraFrame = 0;
 let deliveryEditContext: { invoiceNumber: string; amount: number } | null = null;
 
 function getPOSCurrentTotal() {
-  const subtotal = posCart.reduce((sum, item) => sum + item.quantity * Number(item.material.price_per_unit), 0);
+  const subtotal = posCart.reduce((sum, item) => sum + item.quantity * Number(item.unitPrice), 0);
   const taxRate = Number((window as any).__invDefaultTax || 0);
   const tax = Math.round(subtotal * taxRate * 100) / 100;
   return Math.max(0, Math.round((subtotal + tax - (posDiscountEnabled ? posDiscountAmount : 0)) * 100) / 100);
@@ -38,7 +49,7 @@ export function enhancePOS() {
     const item = posCart[index]; const qty = row.querySelector('.pos-qty');
     if (item && qty && !qty.querySelector('input')) {
       const isCustom = Boolean((item.material as any).is_custom);
-      qty.innerHTML = `<input class="pos-qty-input" type="number" min="0.01" ${isCustom ? '' : `max="${Number(item.material.stock)}"`} step="0.01" value="${item.quantity}" aria-label="Quantity" onchange="setPOSQty('${item.material.id}', this.value)" />`;
+      qty.innerHTML = `<input class="pos-qty-input" type="number" min="0.01" step="any" value="${item.quantity}" aria-label="Quantity" onchange="setPOSQty('${item.cartItemId}', this.value)" />`;
     }
   });
 }
@@ -113,12 +124,62 @@ export function scanPOSBarcode(event: KeyboardEvent) {
   else if (code) showToast('No product found for that barcode');
 }
 
-export function setPOSQty(id: string, value: string) {
-  const item = posCart.find(entry => entry.material.id === id); const quantity = Number(value);
-  if (!item || !Number.isFinite(quantity) || quantity <= 0) { showToast('Quantity must be greater than zero'); return; }
+export function setPOSQty(cartItemId: string, value: string) {
+  const item = posCart.find(entry => entry.cartItemId === cartItemId);
+  const quantity = Number(value);
+  if (!item || !Number.isFinite(quantity) || quantity <= 0) {
+    showToast('Quantity must be greater than zero');
+    return;
+  }
   const isCustom = Boolean((item.material as any).is_custom);
-  if (!isCustom && quantity > Number(item.material.stock)) { showToast(`Only ${item.material.stock} ${item.material.unit} available`); return; }
-  item.quantity = quantity; renderPOSCart();
+  if (!isCustom) {
+    const otherDemand = posCart
+      .filter(i => i.material.id === item.material.id && i.cartItemId !== cartItemId)
+      .reduce((s, i) => s + (i.quantity * i.stockMultiplier), 0);
+    const newBaseDemand = otherDemand + (quantity * item.stockMultiplier);
+    if (newBaseDemand > Number(item.material.stock) + 0.0001) {
+      const availableBase = Math.max(0, Number(item.material.stock) - otherDemand);
+      const availableInThisUnit = Math.floor(availableBase / item.stockMultiplier);
+      showToast(`Insufficient stock: only ${availableInThisUnit} ${item.selectedUnit} available`);
+      return;
+    }
+  }
+  item.quantity = quantity;
+  renderPOSCart();
+}
+
+function renderPOSProductCard(m: Material): string {
+  const isLow = Number(m.stock) <= Number(m.reorder_point);
+  const hasDual = Boolean(m.has_secondary_unit && Number(m.conversion_factor) > 1 && m.secondary_unit);
+  
+  if (hasDual) {
+    const breakdown = formatAggregateBreakdown(m.stock, m.conversion_factor, m.unit, m.secondary_unit);
+    return `
+      <div class="pos-product pos-product-dual ${isLow ? 'low-stock' : ''}" style="display:flex;flex-direction:column;justify-content:space-between;cursor:default">
+        <div>
+          <span class="pos-product-name" style="font-weight:600">${esc(m.name)}</span>
+          <span class="pos-product-meta" style="color:var(--c-primary);font-weight:600;display:block;margin-top:2px">${esc(breakdown)}</span>
+          <span style="font-size:11px;color:var(--c-text-muted)">${Number(m.stock.toFixed(2))} ${esc(m.unit)} in stock</span>
+        </div>
+        <div class="pos-dual-buttons" style="display:flex;gap:6px;width:100%;margin-top:10px">
+          <button type="button" class="btn btn-sm btn-primary" onclick="addPOSItem('${m.id}', false)" style="flex:1;padding:6px 4px;font-size:var(--fs-xs);line-height:1.2;text-align:center" title="Add 1 ${esc(m.unit)}">
+            +1 ${esc(m.unit)}<br><strong>${fmtPeso(m.price_per_unit)}</strong>
+          </button>
+          <button type="button" class="btn btn-sm" onclick="addPOSItem('${m.id}', true)" style="flex:1;padding:6px 4px;font-size:var(--fs-xs);line-height:1.2;text-align:center;background:var(--c-surface);border:1px solid var(--c-primary);color:var(--c-primary)" title="Add 1 ${esc(m.secondary_unit)}">
+            +1 ${esc(m.secondary_unit)}<br><strong>${fmtPeso(m.secondary_price || 0)}</strong>
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <button class="pos-product ${isLow ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}', false)">
+      <span class="pos-product-name">${esc(m.name)}</span>
+      <span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span>
+      <strong>${fmtPeso(m.price_per_unit)}</strong>
+    </button>
+  `;
 }
 
 export async function renderInvoices(): Promise<string> {
@@ -134,7 +195,7 @@ export async function renderInvoices(): Promise<string> {
     const safeCategory = c.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     return `<button class="pos-category ${posCategory === c ? 'active' : ''}" onclick="setPOSCategory('${safeCategory}')">${esc(c)}</button>`;
   }).join('');
-  const cartTotal = posCart.reduce((sum, item) => sum + item.quantity * Number(item.material.price_per_unit), 0);
+  const cartTotal = posCart.reduce((sum, item) => sum + item.quantity * Number(item.unitPrice), 0);
   const taxRate = Number(settings.value || 0);
   const tax = Math.round(cartTotal * taxRate * 100) / 100;
   const discount = posDiscountEnabled ? Math.min(posDiscountAmount, cartTotal + tax) : 0;
@@ -150,7 +211,7 @@ export async function renderInvoices(): Promise<string> {
     </div>
     <div class="pos-layout">
       <aside class="pos-categories"><div class="pos-panel-title">Categories</div><button class="pos-category ${!posCategory ? 'active' : ''}" onclick="setPOSCategory('')">All Categories</button>${categoryButtons}</aside>
-      <section class="pos-products"><div class="pos-search"><input id="pos-search" type="search" value="${esc(posSearch)}" placeholder="Search material name, category, or unit..." oninput="filterPOSMaterials(this.value)" /><button class="btn btn-sm pos-camera-btn" onclick="startPOSCameraScan()" title="Scan barcode with camera">Scan Barcode</button><span>${filteredMaterials.length} item${filteredMaterials.length === 1 ? '' : 's'}</span></div><div class="pos-product-grid">${filteredMaterials.length ? filteredMaterials.map((m: Material) => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('') : '<div class="pos-empty">No materials match your search.</div>'}</div></section>
+      <section class="pos-products"><div class="pos-search"><input id="pos-search" type="search" value="${esc(posSearch)}" placeholder="Search material name, category, or unit..." oninput="filterPOSMaterials(this.value)" /><button class="btn btn-sm pos-camera-btn" onclick="startPOSCameraScan()" title="Scan barcode with camera">Scan Barcode</button><span>${filteredMaterials.length} item${filteredMaterials.length === 1 ? '' : 's'}</span></div><div class="pos-product-grid">${filteredMaterials.length ? filteredMaterials.map(renderPOSProductCard).join('') : '<div class="pos-empty">No materials match your search.</div>'}</div></section>
       <aside class="pos-cart-panel"><div class="pos-panel-title pos-cart-title"><span>Current Sale</span><button class="pos-cart-toggle" onclick="togglePOSCart()" aria-expanded="false">Cart · ${posCart.length} · ${fmtPeso(total)}</button></div>
         <button type="button" class="btn btn-sm btn-outline pos-add-custom-btn" onclick="showAddCustomPOSItemModal()" style="width:100%;margin-bottom:var(--space-2);display:flex;align-items:center;justify-content:center;gap:0.35rem;font-weight:600;padding:0.45rem">+ Custom / Misc Item</button>
         <div class="pos-cart-items">${renderCartItemsHTML()}</div>
@@ -284,15 +345,15 @@ function renderCartItemsHTML(): string {
     <div class="pos-cart-item ${isCustom ? 'pos-cart-custom' : ''}">
       <div class="pos-cart-info">
         <strong>${esc(item.material.name)}</strong>
-        <span>${fmtPeso(item.material.price_per_unit)}${isCustom ? ' · <em style="color:var(--c-primary);font-style:normal;font-weight:600">Misc</em>' : ` · ${esc(item.material.unit)}`}</span>
+        <span>${fmtPeso(item.unitPrice)} · <span class="badge" style="font-weight:600;font-size:11px;background:var(--c-surface);border:1px solid var(--c-border);padding:1px 5px;border-radius:4px;color:var(--c-text)">${esc(item.selectedUnit)}</span></span>
       </div>
       <div class="pos-qty">
-        <button type="button" onclick="changePOSQty('${item.material.id}', -1)">−</button>
-        <input class="pos-qty-input" type="number" min="0.01" ${isCustom ? '' : `max="${Number(item.material.stock)}"`} step="0.01" value="${item.quantity}" aria-label="Quantity" onchange="setPOSQty('${item.material.id}', this.value)" />
-        <button type="button" onclick="changePOSQty('${item.material.id}', 1)">+</button>
+        <button type="button" onclick="changePOSQty('${item.cartItemId}', -1)">−</button>
+        <input class="pos-qty-input" type="number" min="0.01" step="any" value="${item.quantity}" aria-label="Quantity" onchange="setPOSQty('${item.cartItemId}', this.value)" />
+        <button type="button" onclick="changePOSQty('${item.cartItemId}', 1)">+</button>
       </div>
-      <strong class="pos-line-total">${fmtPeso(item.quantity * Number(item.material.price_per_unit))}</strong>
-      <button type="button" class="pos-remove" onclick="removePOSItem('${item.material.id}')" aria-label="Remove item">×</button>
+      <strong class="pos-line-total">${fmtPeso(item.quantity * Number(item.unitPrice))}</strong>
+      <button type="button" class="pos-remove" onclick="removePOSItem('${item.cartItemId}')" aria-label="Remove item">×</button>
     </div>
   `;
   }).join('');
@@ -305,7 +366,7 @@ export function renderPOSCart() {
     return;
   }
   cartContainer.innerHTML = renderCartItemsHTML();
-  const cartTotal = posCart.reduce((sum, item) => sum + item.quantity * Number(item.material.price_per_unit), 0);
+  const cartTotal = posCart.reduce((sum, item) => sum + item.quantity * Number(item.unitPrice), 0);
   const taxRate = Number((window as any).__invDefaultTax || 0);
   const tax = Math.round(cartTotal * taxRate * 100) / 100;
   const discount = posDiscountEnabled ? Math.min(posDiscountAmount, cartTotal + tax) : 0;
@@ -382,7 +443,7 @@ function renderPOSProductGrid() {
   if (count) count.textContent = `${filtered.length} item${filtered.length === 1 ? '' : 's'}`;
   if (grid) {
     if (filtered.length) {
-      grid.innerHTML = filtered.map(m => `<button class="pos-product ${Number(m.stock) <= Number(m.reorder_point) ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}')"><span class="pos-product-name">${esc(m.name)}</span><span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span><strong>${fmtPeso(m.price_per_unit)}</strong></button>`).join('');
+      grid.innerHTML = filtered.map(renderPOSProductCard).join('');
     } else {
       const q = posSearch.trim();
       grid.innerHTML = `<div class="pos-empty">
@@ -392,36 +453,76 @@ function renderPOSProductGrid() {
     }
   }
 }
-export function addPOSItem(id: string) {
+
+export function addPOSItem(id: string, asSecondary = false) {
   const material = ((window as any).__invMaterials || []).find((m: Material) => m.id === id) as Material | undefined;
   if (!material) return;
-  const existing = posCart.find(item => item.material.id === id);
-  if (existing) { if (existing.quantity < Number(material.stock)) existing.quantity += 1; else showToast(`Only ${material.stock} ${material.unit} available`); }
-  else if (Number(material.stock) > 0) posCart.push({ material, quantity: 1 });
-  else showToast(`${material.name} is out of stock`);
+
+  const isSec = asSecondary && Boolean(material.has_secondary_unit && Number(material.conversion_factor) > 1 && material.secondary_unit);
+  const selectedUnit = isSec ? (material.secondary_unit || 'Unit') : material.unit;
+  const unitPrice = isSec ? Number(material.secondary_price || 0) : Number(material.price_per_unit);
+  const stockMultiplier = isSec ? (1 / Number(material.conversion_factor || 1)) : 1;
+  const cartItemId = isSec ? `${material.id}:sec` : `${material.id}:pri`;
+
+  const currentBaseDemand = posCart
+    .filter(i => i.material.id === material.id)
+    .reduce((s, i) => s + (i.quantity * i.stockMultiplier), 0);
+
+  if (currentBaseDemand + stockMultiplier > Number(material.stock) + 0.0001) {
+    showToast(`Insufficient stock for ${material.name}`);
+    return;
+  }
+
+  const existing = posCart.find(item => item.cartItemId === cartItemId);
+  if (existing) {
+    existing.quantity += 1;
+  } else {
+    posCart.push({
+      cartItemId,
+      material,
+      quantity: 1,
+      selectedUnit,
+      isSecondary: isSec,
+      unitPrice,
+      stockMultiplier
+    });
+  }
   renderPOSCart();
 }
-export function changePOSQty(id: string, delta: number) {
-  const item = posCart.find(i => i.material.id === id);
+
+export function changePOSQty(cartItemId: string, delta: number) {
+  const item = posCart.find(i => i.cartItemId === cartItemId);
   if (!item) return;
   const next = Math.round((item.quantity + delta) * 1000) / 1000;
   if (next <= 0) {
-    posCart = posCart.filter(i => i.material.id !== id);
+    posCart = posCart.filter(i => i.cartItemId !== cartItemId);
   } else {
     const isCustom = Boolean((item.material as any).is_custom);
-    if (isCustom || next <= Number(item.material.stock)) {
+    if (isCustom) {
       item.quantity = next;
     } else {
-      showToast(`Only ${item.material.stock} ${item.material.unit} available`);
+      const otherDemand = posCart
+        .filter(i => i.material.id === item.material.id && i.cartItemId !== cartItemId)
+        .reduce((s, i) => s + (i.quantity * i.stockMultiplier), 0);
+      const newDemand = otherDemand + (next * item.stockMultiplier);
+      if (newDemand <= Number(item.material.stock) + 0.0001) {
+        item.quantity = next;
+      } else {
+        const availableBase = Math.max(0, Number(item.material.stock) - otherDemand);
+        const availableInThisUnit = Math.floor(availableBase / item.stockMultiplier);
+        showToast(`Only ${availableInThisUnit} ${item.selectedUnit} available`);
+      }
     }
   }
   renderPOSCart();
 }
-export function removePOSItem(id: string) { posCart = posCart.filter(i => i.material.id !== id); renderPOSCart(); }
+
+export function removePOSItem(cartItemId: string) { posCart = posCart.filter(i => i.cartItemId !== cartItemId); renderPOSCart(); }
 export function clearPOSCart() { posCart = []; renderPOSCart(); }
 export function togglePOSDiscount(enabled: boolean) { posDiscountEnabled = enabled; if (!enabled) posDiscountAmount = 0; renderPOSCart(); }
 export function setPOSDiscount(value: string) { posDiscountAmount = Math.max(0, Number(value) || 0); const total = getPOSCurrentTotal(); const target = document.querySelector('.pos-grand-total strong'); if (target) target.textContent = fmtPeso(total); updatePOSPayment(); }
 export function updatePOSPayment() { const total = getPOSCurrentTotal(); const received = Number((document.getElementById('pos-received') as HTMLInputElement)?.value || 0); const method = (document.getElementById('pos-method') as HTMLSelectElement)?.value; const fields = document.getElementById('pos-cash-fields'); const warning = document.getElementById('pos-credit-warning'); const required = document.getElementById('pos-name-required'); if (fields) fields.style.display = method === 'credit' ? 'none' : ''; if (warning) warning.style.display = method === 'credit' ? 'block' : 'none'; if (required) required.textContent = method === 'credit' ? '* required for Credit' : '(optional unless Credit)'; const change = method === 'cash' ? Math.max(0, received - total) : 0; const target = document.getElementById('pos-change-value'); if (target) target.textContent = fmtPeso(change); const btn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null; if (btn) btn.disabled = !posCart.length; }
+
 export async function completePOSSale() {
   if (!posCart.length) { showToast('Add at least one item'); return; }
   const total = getPOSCurrentTotal();
@@ -434,9 +535,13 @@ export async function completePOSSale() {
   if (method === 'credit' && !credit_account_name) { showToast('Enter the buyer or charge-to name for a credit sale'); (document.getElementById('pos-credit-name') as HTMLInputElement)?.focus(); return; }
   const items = posCart.map(item => ({
     material_id: (item.material as any).is_custom ? null : item.material.id,
-    description: item.material.name,
+    description: item.isSecondary
+      ? `${item.material.name} (${item.selectedUnit})`
+      : item.material.name,
     quantity: item.quantity,
-    unit_price: Number(item.material.price_per_unit)
+    unit_price: Number(item.unitPrice),
+    unit: item.selectedUnit,
+    stock_multiplier: item.stockMultiplier
   }));
   const customer_id = null;
   const btn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null; if (btn) btn.disabled = true;
@@ -482,7 +587,7 @@ export async function showInvoiceDetail(id: string) {
         <thead><tr><th>Description</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead>
         <tbody>
           ${inv.items.map((item: any) => `
-            <tr><td data-label="Description">${esc(item.description)}</td><td data-label="Qty">${item.quantity}</td><td data-label="Unit Price" style="font-family:var(--ff-mono)">${fmtPeso(item.unit_price)}</td><td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(item.total)}</td></tr>
+            <tr><td data-label="Description">${esc(item.description)}</td><td data-label="Qty">${item.quantity}${item.unit ? ` <span style="font-size:var(--fs-xs);color:var(--c-text-muted)">${esc(item.unit)}</span>` : ''}</td><td data-label="Unit Price" style="font-family:var(--ff-mono)">${fmtPeso(item.unit_price)}</td><td data-label="Total" style="font-family:var(--ff-mono);font-weight:600">${fmtPeso(item.total)}</td></tr>
           `).join('')}
         </tbody>
       </table>
@@ -775,12 +880,13 @@ export function submitCustomPOSItem() {
     return;
   }
 
-  const existing = posCart.find(item => (item.material as any).is_custom && item.material.name.toLowerCase() === name.toLowerCase() && Math.abs(Number(item.material.price_per_unit) - price) < 0.005);
+  const existing = posCart.find(item => (item.material as any).is_custom && item.material.name.toLowerCase() === name.toLowerCase() && Math.abs(Number(item.unitPrice) - price) < 0.005);
   if (existing) {
     existing.quantity += qty;
   } else {
     const customId = `custom_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     posCart.push({
+      cartItemId: customId,
       material: {
         id: customId,
         name,
@@ -795,7 +901,11 @@ export function submitCustomPOSItem() {
         updated_at: new Date().toISOString(),
         is_custom: true
       } as any,
-      quantity: qty
+      quantity: qty,
+      selectedUnit: 'item',
+      isSecondary: false,
+      unitPrice: price,
+      stockMultiplier: 1
     });
   }
 

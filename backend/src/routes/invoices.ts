@@ -332,7 +332,7 @@ router.post('/', async (req: Request, res: Response) => {
     const [seqRow, mats, taxSetting, activeShift] = await Promise.all([
       db.prepare('SELECT next_number FROM invoice_sequence WHERE id = 1').get() as Promise<any>,
       usedMaterialIds.size > 0
-        ? (db.prepare(`SELECT id, name, stock, unit, cost_price, price_per_unit, wholesale_price FROM materials WHERE id IN (${Array.from(usedMaterialIds).map(() => '?').join(',')})`).all(...usedMaterialIds) as Promise<any[]>)
+        ? (db.prepare(`SELECT id, name, stock, unit, cost_price, price_per_unit, wholesale_price, has_secondary_unit, secondary_unit, conversion_factor, secondary_price FROM materials WHERE id IN (${Array.from(usedMaterialIds).map(() => '?').join(',')})`).all(...usedMaterialIds) as Promise<any[]>)
         : Promise.resolve([]),
       normalizedTaxRate === null
         ? (db.prepare("SELECT value FROM settings WHERE key = 'default_tax_rate'").get() as Promise<any>)
@@ -349,13 +349,28 @@ router.post('/', async (req: Request, res: Response) => {
     for (const materialId of usedMaterialIds) {
       const mat = materialMap.get(materialId);
       if (!mat) throw new Error(`Material ${materialId} not found`);
-      const qtyNeeded = items.filter((it: any) => it.material_id === materialId).reduce((s: number, it: any) => s + it.quantity, 0);
-      if (Number(mat.stock) < qtyNeeded) throw new Error(`Insufficient stock for ${mat.name}: have ${mat.stock} ${mat.unit}, need ${qtyNeeded} ${mat.unit}`);
+      const qtyNeeded = items
+        .filter((it: any) => it.material_id === materialId)
+        .reduce((s: number, it: any) => {
+          const isSecondary = Boolean(mat.has_secondary_unit && ((it.unit && it.unit === mat.secondary_unit) || (typeof it.stock_multiplier === 'number' && it.stock_multiplier < 0.999)));
+          const mult = (typeof it.stock_multiplier === 'number' && it.stock_multiplier > 0)
+            ? it.stock_multiplier
+            : (isSecondary && Number(mat.conversion_factor) > 0 ? 1 / Number(mat.conversion_factor) : 1);
+          return s + (it.quantity * mult);
+        }, 0);
+
+      if (Number(mat.stock) + 0.00001 < qtyNeeded) {
+        throw new Error(`Insufficient stock for ${mat.name}: have ${mat.stock} ${mat.unit}, need ${qtyNeeded.toFixed(4)} ${mat.unit}`);
+      }
+
       if (req.user?.role === 'staff') {
         for (const item of items.filter((it: any) => it.material_id === materialId)) {
-          const allowed = [Number(mat.price_per_unit), Number(mat.wholesale_price)].filter(v => v > 0);
+          const isSecondary = Boolean(mat.has_secondary_unit && ((item.unit && item.unit === mat.secondary_unit) || (typeof item.stock_multiplier === 'number' && item.stock_multiplier < 0.999)));
+          const allowed = isSecondary && Number(mat.secondary_price) > 0
+            ? [Number(mat.secondary_price)]
+            : [Number(mat.price_per_unit), Number(mat.wholesale_price)].filter(v => v > 0);
           if (!allowed.some(v => Math.abs(v - Number(item.unit_price)) <= 0.005)) {
-            throw new Error(`Price for ${mat.name} must match the configured retail or wholesale price`);
+            throw new Error(`Price for ${mat.name} must match the configured price`);
           }
         }
       }
@@ -418,10 +433,16 @@ router.post('/', async (req: Request, res: Response) => {
 
     for (const item of items) {
       const lineTotal = item.quantity * item.unit_price;
-      const cost = item.material_id ? Number(materialMap.get(item.material_id)?.cost_price || 0) : 0;
+      const mat = item.material_id ? materialMap.get(item.material_id) : null;
+      const isSecondary = Boolean(mat && mat.has_secondary_unit && ((item.unit && item.unit === mat.secondary_unit) || (typeof item.stock_multiplier === 'number' && item.stock_multiplier < 0.999)));
+      const mult = (typeof item.stock_multiplier === 'number' && item.stock_multiplier > 0)
+        ? item.stock_multiplier
+        : (isSecondary && Number(mat?.conversion_factor) > 0 ? 1 / Number(mat?.conversion_factor) : 1);
+      const cost = mat ? Math.round(Number(mat.cost_price || 0) * mult * 100) / 100 : 0;
+      const itemUnit = item.unit || (isSecondary && mat ? mat.secondary_unit : (mat ? mat.unit : null));
       batchStatements.push({
-        sql: 'INSERT INTO invoice_items (id, invoice_id, material_id, description, quantity, unit_price, cost_price, total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        args: [uuidv4(), invoiceId, item.material_id || null, item.description.trim(), item.quantity, item.unit_price, cost, Math.round(lineTotal * 100) / 100]
+        sql: 'INSERT INTO invoice_items (id, invoice_id, material_id, description, quantity, unit_price, cost_price, total, unit, stock_multiplier) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        args: [uuidv4(), invoiceId, item.material_id || null, item.description.trim(), item.quantity, item.unit_price, cost, Math.round(lineTotal * 100) / 100, itemUnit, mult]
       });
     }
 
@@ -435,11 +456,18 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     for (const materialId of usedMaterialIds) {
+      const mat = materialMap.get(materialId);
       const qtyNeeded = items
         .filter((it: any) => it.material_id === materialId)
-        .reduce((s: number, it: any) => s + it.quantity, 0);
+        .reduce((s: number, it: any) => {
+          const isSecondary = Boolean(mat?.has_secondary_unit && ((it.unit && it.unit === mat?.secondary_unit) || (typeof it.stock_multiplier === 'number' && it.stock_multiplier < 0.999)));
+          const mult = (typeof it.stock_multiplier === 'number' && it.stock_multiplier > 0)
+            ? it.stock_multiplier
+            : (isSecondary && Number(mat?.conversion_factor) > 0 ? 1 / Number(mat?.conversion_factor) : 1);
+          return s + (it.quantity * mult);
+        }, 0);
       batchStatements.push({
-        sql: 'UPDATE materials SET stock = stock - ? WHERE id = ? AND stock >= ?',
+        sql: 'UPDATE materials SET stock = stock - ? WHERE id = ? AND stock >= ? - 0.00001',
         args: [qtyNeeded, materialId, qtyNeeded]
       });
       batchStatements.push({
@@ -685,15 +713,17 @@ router.put('/:id/void', requireAdmin, async (req: Request, res: Response) => {
   const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
   if (reason.length < 3) { res.status(400).json({ error: 'A void reason is required' }); return; }
   const txn = db.transaction(async () => {
-    const items = await db.prepare(`SELECT ii.material_id, ii.quantity,
+    const items = await db.prepare(`SELECT ii.material_id, ii.quantity, COALESCE(ii.stock_multiplier, 1) AS stock_multiplier,
       COALESCE((SELECT SUM(quantity) FROM invoice_returns ir WHERE ir.invoice_item_id = ii.id), 0) returned
       FROM invoice_items ii WHERE ii.invoice_id = ?`).all(invoice.id) as any[];
     for (const item of items) {
-      const restorable = Math.max(0, Number(item.quantity) - Number(item.returned));
-      if (item.material_id && restorable > 0) {
-        await db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?').run(restorable, item.material_id);
+      const restorableQty = Math.max(0, Number(item.quantity) - Number(item.returned));
+      const mult = Number(item.stock_multiplier || 1);
+      const restorableStock = restorableQty * mult;
+      if (item.material_id && restorableStock > 0) {
+        await db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?').run(restorableStock, item.material_id);
         await db.prepare('INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)')
-          .run(uuidv4(), item.material_id, 'void', restorable, invoice.id, 'invoice', `Restored from voided ${invoice.invoice_number}`);
+          .run(uuidv4(), item.material_id, 'void', restorableStock, invoice.id, 'invoice', `Restored from voided ${invoice.invoice_number}`);
       }
     }
     await db.prepare("UPDATE invoices SET status = 'voided', voided_at = datetime('now'), voided_by = ?, void_reason = ? WHERE id = ?")
@@ -825,9 +855,9 @@ router.post('/:id/return', requireAdmin, async (req: Request, res: Response) => 
     requested.set(key, { material_id: String(item.material_id), quantity: (previous?.quantity || 0) + quantity });
   }
 
-  const normalizedItems: Array<{ invoice_item_id: string; material_id: string; quantity: number; unit_price: number; total_credit: number }> = [];
+  const normalizedItems: Array<{ invoice_item_id: string; material_id: string; quantity: number; unit_price: number; total_credit: number; stock_multiplier: number }> = [];
   for (const [invoiceItemId, request] of requested) {
-    const lineItem = await db.prepare('SELECT id, material_id, quantity, unit_price FROM invoice_items WHERE id = ? AND invoice_id = ? AND material_id = ?')
+    const lineItem = await db.prepare('SELECT id, material_id, quantity, unit_price, COALESCE(stock_multiplier, 1) as stock_multiplier FROM invoice_items WHERE id = ? AND invoice_id = ? AND material_id = ?')
       .get(invoiceItemId, invoiceId, request.material_id) as any;
     if (!lineItem) { res.status(400).json({ error: 'Every returned item must belong to this invoice' }); return; }
     const returned = Number((await db.prepare('SELECT COALESCE(SUM(quantity), 0) AS total FROM invoice_returns WHERE invoice_item_id = ?').get(lineItem.id) as any).total || 0);
@@ -836,7 +866,7 @@ router.post('/:id/return', requireAdmin, async (req: Request, res: Response) => 
       return;
     }
     const totalCredit = Math.round(Number(lineItem.unit_price) * request.quantity * (1 + Number(inv.tax_rate || 0)) * 100) / 100;
-    normalizedItems.push({ invoice_item_id: lineItem.id, material_id: request.material_id, quantity: request.quantity, unit_price: Number(lineItem.unit_price), total_credit: totalCredit });
+    normalizedItems.push({ invoice_item_id: lineItem.id, material_id: request.material_id, quantity: request.quantity, unit_price: Number(lineItem.unit_price), total_credit: totalCredit, stock_multiplier: Number(lineItem.stock_multiplier || 1) });
   }
 
   const requestedRefundMethod = typeof req.body?.refund_method === 'string' ? req.body.refund_method.trim().toLowerCase() : '';
@@ -861,11 +891,13 @@ router.post('/:id/return', requireAdmin, async (req: Request, res: Response) => 
       const latest = Number((await db.prepare('SELECT COALESCE(SUM(quantity),0) total FROM invoice_returns WHERE invoice_item_id=?').get(item.invoice_item_id) as any).total || 0);
       const original = Number((await db.prepare('SELECT quantity FROM invoice_items WHERE id=? AND invoice_id=?').get(item.invoice_item_id, invoiceId) as any).quantity || 0);
       if (latest + item.quantity > original + 0.000001) throw new Error('One or more items were already returned. Refresh and try again.');
+      const mult = Number(item.stock_multiplier || 1);
+      const stockToRestore = item.quantity * mult;
       await db.prepare('INSERT INTO invoice_returns (id, invoice_item_id, invoice_id, material_id, quantity, total_credit, return_batch_id, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(uuidv4(), item.invoice_item_id, invoiceId, item.material_id, item.quantity, item.total_credit, batchId, idempotencyKey || null);
-      await db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?').run(item.quantity, item.material_id);
+      await db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?').run(stockToRestore, item.material_id);
       await db.prepare('INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(uuidv4(), item.material_id, 'return', item.quantity, invoiceId, 'invoice', `Returned from ${current.invoice_number}`);
+        .run(uuidv4(), item.material_id, 'return', stockToRestore, invoiceId, 'invoice', `Returned from ${current.invoice_number}`);
     }
 
     if (refundAmount > 0) {
@@ -907,14 +939,16 @@ router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
   );
 
   const txn = db.transaction(async () => {
-    const items = await db.prepare(`SELECT ii.material_id, ii.quantity,
+    const items = await db.prepare(`SELECT ii.material_id, ii.quantity, COALESCE(ii.stock_multiplier, 1) as stock_multiplier,
       COALESCE((SELECT SUM(quantity) FROM invoice_returns ir WHERE ir.invoice_item_id = ii.id), 0) AS returned
       FROM invoice_items ii WHERE ii.invoice_id = ?`).all(req.params.id) as any[];
     for (const item of items) {
       if (item.material_id) {
-        const restorable = Math.max(0, item.quantity - item.returned);
-        await db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?').run(restorable, item.material_id);
-        if (restorable > 0) await insertMovement.run(uuidv4(), item.material_id, 'sale', restorable, req.params.id, 'invoice', `Restored from deleted invoice ${existing.invoice_number}`);
+        const restorableQty = Math.max(0, item.quantity - item.returned);
+        const mult = Number(item.stock_multiplier || 1);
+        const restorableStock = restorableQty * mult;
+        await db.prepare('UPDATE materials SET stock = stock + ? WHERE id = ?').run(restorableStock, item.material_id);
+        if (restorableStock > 0) await insertMovement.run(uuidv4(), item.material_id, 'sale', restorableStock, req.params.id, 'invoice', `Restored from deleted invoice ${existing.invoice_number}`);
       }
     }
     await db.prepare('DELETE FROM payments WHERE invoice_id = ?').run(req.params.id);

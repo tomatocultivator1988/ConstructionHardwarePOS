@@ -21,6 +21,11 @@ export interface Material {
   reorder_point: number;
   category: string;
   supplier_id?: string | null;
+  barcode?: string;
+  has_secondary_unit?: number | boolean;
+  secondary_unit?: string | null;
+  conversion_factor?: number | null;
+  secondary_price?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -33,6 +38,8 @@ export interface InvoiceItem {
   quantity: number;
   unit_price: number;
   total: number;
+  unit?: string | null;
+  stock_multiplier?: number | null;
   returned_quantity?: number;
   returned_total?: number;
   remaining_quantity?: number;

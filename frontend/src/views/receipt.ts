@@ -171,7 +171,8 @@ function buildThermalReceipt({ inv, settings, dateStr, timeStr, totalPaid, amoun
     const quantity = Math.max(0, Number(item.remaining_quantity ?? item.quantity));
     if (quantity <= 0) return [];
     const name = safe(item.description, 'Item');
-    const itemLabel = `${quantity} x ${name}`.slice(0, 22);
+    const unitStr = item.unit ? ` ${item.unit}` : '';
+    const itemLabel = `${quantity}${unitStr} x ${name}`.slice(0, 22);
     const rate = fmtPeso(item.unit_price);
     const amount = fmtPeso(quantity * Number(item.unit_price));
     return [itemLabel.padEnd(22) + rate.padStart(9) + amount.padStart(11)];
@@ -209,7 +210,11 @@ function receiptPreviewHtml({ inv, settings, dateStr, timeStr, totalPaid, amount
   const safe = (value: any, fallback = '') => esc(String(value ?? fallback));
   const returnedTotal = (inv.items || []).reduce((sum: number, item: any) => sum + Number(item.returned_total || 0), 0);
   const refundedTotal = ((inv as any).refunds || []).reduce((sum: number, refund: any) => sum + Number(refund.amount || 0), 0);
-  const rows = (inv.items || []).filter((item: any) => Number(item.remaining_quantity ?? item.quantity) > 0).map((item: any) => { const quantity = Math.max(0, Number(item.remaining_quantity ?? item.quantity)); return `<tr class="receipt-item-row"><td>${quantity} x ${safe(item.description, 'Item')}</td><td>${fmtPeso(item.unit_price)}</td><td>${fmtPeso(quantity * Number(item.unit_price))}</td></tr>`; }).join('');
+  const rows = (inv.items || []).filter((item: any) => Number(item.remaining_quantity ?? item.quantity) > 0).map((item: any) => {
+    const quantity = Math.max(0, Number(item.remaining_quantity ?? item.quantity));
+    const unitStr = item.unit ? ` ${safe(item.unit)}` : '';
+    return `<tr class="receipt-item-row"><td>${quantity}${unitStr} x ${safe(item.description, 'Item')}</td><td>${fmtPeso(item.unit_price)}</td><td>${fmtPeso(quantity * Number(item.unit_price))}</td></tr>`;
+  }).join('');
   const methods = (inv.payments || []).map((p: any) => safe(p.method)).join(', ') || '—';
   const buyerName = safe((inv as any).customer_name, 'Walk-in');
   const buyerAddress = safe((inv as any).buyer_address || (inv as any).customer_address);

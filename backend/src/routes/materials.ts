@@ -19,6 +19,10 @@ function validateMaterial(body: any, existing?: any) {
   const supplier_id = body.supplier_id !== undefined ? body.supplier_id : (existing?.supplier_id ?? null);
   const barcode = body.barcode !== undefined ? String(body.barcode || '').trim() : (existing?.barcode ?? '');
   const wholesale_price = body.wholesale_price != null ? body.wholesale_price : (existing?.wholesale_price ?? 0);
+  const has_secondary_unit = body.has_secondary_unit !== undefined ? (Number(body.has_secondary_unit) ? 1 : 0) : (Number(existing?.has_secondary_unit) ? 1 : 0);
+  const secondary_unit = body.secondary_unit !== undefined ? (body.secondary_unit ? String(body.secondary_unit).trim() : null) : (existing?.secondary_unit ?? null);
+  const conversion_factor = body.conversion_factor !== undefined ? (Number(body.conversion_factor) > 0 ? Number(body.conversion_factor) : 1) : (Number(existing?.conversion_factor) > 0 ? Number(existing?.conversion_factor) : 1);
+  const secondary_price = body.secondary_price !== undefined ? (Number(body.secondary_price) >= 0 ? Number(body.secondary_price) : 0) : (Number(existing?.secondary_price) >= 0 ? Number(existing?.secondary_price) : 0);
 
   if (typeof name !== 'string' || !name.trim()) errors.push('Name is required');
   if (typeof unit !== 'string' || !unit.trim()) errors.push('Unit is required');
@@ -31,8 +35,14 @@ function validateMaterial(body: any, existing?: any) {
   if (Number(wholesale_price) < 0) errors.push('Wholesale price cannot be negative');
   if (Number(reorder_point) < 0) errors.push('Reorder point cannot be negative');
 
+  if (has_secondary_unit === 1) {
+    if (!secondary_unit) errors.push('Secondary unit is required when dual unit is enabled');
+    if (conversion_factor <= 1) errors.push('Conversion ratio must be greater than 1 (e.g. 26 sacks per cubic)');
+    if (secondary_price <= 0) errors.push('Secondary unit price must be greater than 0');
+  }
+
   if (barcode.length > 100) errors.push('Barcode must be 100 characters or fewer');
-  return { name, unit, stock, cost_price, price_per_unit, reorder_point, category, wholesale_price, supplier_id, barcode, errors };
+  return { name, unit, stock, cost_price, price_per_unit, reorder_point, category, wholesale_price, supplier_id, barcode, has_secondary_unit, secondary_unit, conversion_factor, secondary_price, errors };
 }
 
 router.get('/', async (req: Request, res: Response) => {
@@ -73,8 +83,8 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.post('/', async (req: Request, res: Response) => {
   if (req.user?.role !== 'admin') { res.status(403).json({ error: 'Admin access required' }); return; }
   const db = getDb();
-  const { name, unit, stock, cost_price, price_per_unit, reorder_point, barcode } = req.body;
-  const validation = validateMaterial({ name, unit, stock, cost_price, price_per_unit, reorder_point, barcode, category: req.body.category, supplier_id: req.body.supplier_id });
+  const { name, unit, stock, cost_price, price_per_unit, reorder_point, barcode, has_secondary_unit, secondary_unit, conversion_factor, secondary_price } = req.body;
+  const validation = validateMaterial({ name, unit, stock, cost_price, price_per_unit, reorder_point, barcode, category: req.body.category, supplier_id: req.body.supplier_id, has_secondary_unit, secondary_unit, conversion_factor, secondary_price });
   if (validation.errors.length) {
     res.status(400).json({ error: validation.errors.join('; ') });
     return;
@@ -85,8 +95,8 @@ router.post('/', async (req: Request, res: Response) => {
   if (validation.barcode && (await db.prepare('SELECT id FROM materials WHERE barcode=?').get(validation.barcode))) { res.status(409).json({ error: 'Barcode is already assigned to another product' }); return; }
   const id = uuidv4();
   await db.prepare(
-    'INSERT INTO materials (id, name, unit, stock, cost_price, price_per_unit, wholesale_price, reorder_point, category, supplier_id, barcode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, validation.name.trim(), validation.unit, validation.stock ?? 0, validation.cost_price ?? 0, validation.price_per_unit, validation.wholesale_price, validation.reorder_point ?? 10, validation.category, validation.supplier_id || null, validation.barcode || null);
+    'INSERT INTO materials (id, name, unit, stock, cost_price, price_per_unit, wholesale_price, reorder_point, category, supplier_id, barcode, has_secondary_unit, secondary_unit, conversion_factor, secondary_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, validation.name.trim(), validation.unit, validation.stock ?? 0, validation.cost_price ?? 0, validation.price_per_unit, validation.wholesale_price, validation.reorder_point ?? 10, validation.category, validation.supplier_id || null, validation.barcode || null, validation.has_secondary_unit, validation.secondary_unit, validation.conversion_factor, validation.secondary_price);
   const material = await db.prepare('SELECT * FROM materials WHERE id = ?').get(id);
   await logAudit((req as any).user?.id || null, 'create', 'material', id, validation.name.trim(), null, material);
   res.status(201).json(material);
@@ -97,8 +107,8 @@ router.put('/:id', async (req: Request, res: Response) => {
   const db = getDb();
   const existing = await db.prepare('SELECT * FROM materials WHERE id = ?').get(req.params.id);
   if (!existing) { res.status(404).json({ error: 'Material not found' }); return; }
-  const { name, unit, stock, cost_price, price_per_unit, reorder_point, barcode } = req.body;
-  const validation = validateMaterial({ name, unit, stock, cost_price, price_per_unit, reorder_point, barcode, category: req.body.category, supplier_id: req.body.supplier_id }, existing);
+  const { name, unit, stock, cost_price, price_per_unit, reorder_point, barcode, has_secondary_unit, secondary_unit, conversion_factor, secondary_price } = req.body;
+  const validation = validateMaterial({ name, unit, stock, cost_price, price_per_unit, reorder_point, barcode, category: req.body.category, supplier_id: req.body.supplier_id, has_secondary_unit, secondary_unit, conversion_factor, secondary_price }, existing);
   if (validation.errors.length) {
     res.status(400).json({ error: validation.errors.join('; ') });
     return;
@@ -108,7 +118,7 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
   if (validation.barcode && (await db.prepare('SELECT id FROM materials WHERE barcode=? AND id<>?').get(validation.barcode, req.params.id))) { res.status(409).json({ error: 'Barcode is already assigned to another product' }); return; }
   await db.prepare(
-    `UPDATE materials SET name=?, unit=?, stock=?, cost_price=?, price_per_unit=?, wholesale_price=?, reorder_point=?, category=?, supplier_id=?, barcode=?, updated_at=datetime('now') WHERE id=?`
+    `UPDATE materials SET name=?, unit=?, stock=?, cost_price=?, price_per_unit=?, wholesale_price=?, reorder_point=?, category=?, supplier_id=?, barcode=?, has_secondary_unit=?, secondary_unit=?, conversion_factor=?, secondary_price=?, updated_at=datetime('now') WHERE id=?`
   ).run(
     validation.name,
     validation.unit,
@@ -120,6 +130,10 @@ router.put('/:id', async (req: Request, res: Response) => {
     validation.category,
     validation.supplier_id || null,
     validation.barcode || null,
+    validation.has_secondary_unit,
+    validation.secondary_unit,
+    validation.conversion_factor,
+    validation.secondary_price,
     req.params.id
   );
   const oldStock = Number((existing as any).stock);

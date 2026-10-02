@@ -1,5 +1,5 @@
 import { apiGet, apiPost, apiPut, apiDel } from '../lib/api';
-import { esc, val, setErr, clearErr, disableBtn, fmtDate, fmtPeso, isAdmin } from '../lib/helpers';
+import { esc, val, setErr, clearErr, disableBtn, fmtDate, fmtPeso, isAdmin, formatAggregateBreakdown } from '../lib/helpers';
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
 import { loadView } from '../lib/router';
 import { startBarcodeCameraScan } from './invoices';
@@ -52,6 +52,38 @@ function catOptions(selected?: string, blankLabel = '- All Categories -') {
   return MAT_CATEGORIES.map(c => `<option value="${esc(c)}"${c === selected ? ' selected' : ''}>${esc(c) || blankLabel}</option>`).join('');
 }
 
+function renderStockDisplay(m: Material): string {
+  const isLow = m.stock <= m.reorder_point;
+  const factor = Number(m.conversion_factor || 0);
+  if (m.has_secondary_unit && factor > 1 && m.secondary_unit) {
+    const totalSacks = Math.round(m.stock * factor);
+    const breakdown = formatAggregateBreakdown(m.stock, m.conversion_factor, m.unit, m.secondary_unit);
+    return `<div style="line-height:1.25">
+      <strong>${Number(m.stock.toFixed(2))} ${esc(m.unit)}</strong>${isLow ? ' <span style="color:var(--c-danger)">⚠</span>' : ''}
+      <div style="font-size:var(--fs-xs);color:var(--c-primary);font-weight:600;margin-top:2px">${esc(breakdown)}</div>
+      <div style="font-size:11px;color:var(--c-text-muted)">(${totalSacks} ${esc(m.secondary_unit)} total)</div>
+    </div>`;
+  }
+  return `${m.stock}${isLow ? ' ⚠' : ''}`;
+}
+
+function renderPriceDisplay(m: Material): string {
+  if (m.has_secondary_unit && Number(m.secondary_price) > 0 && m.secondary_unit) {
+    return `<div>
+      <strong>${fmtPeso(m.price_per_unit)}</strong> <span style="font-size:var(--fs-xs);color:var(--c-text-muted)">/${esc(m.unit)}</span>
+      <div style="font-size:var(--fs-xs);color:var(--c-primary);font-weight:600">${fmtPeso(m.secondary_price)} / ${esc(m.secondary_unit)}</div>
+    </div>`;
+  }
+  return fmtPeso(m.price_per_unit);
+}
+
+export function toggleDualUnitFields() {
+  const checkbox = document.getElementById('mf-has-dual-unit') as HTMLInputElement | null;
+  const container = document.getElementById('mf-dual-unit-container');
+  if (!checkbox || !container) return;
+  container.style.display = checkbox.checked ? 'block' : 'none';
+}
+
 function renderMaterialRow(m: Material): string {
   const isLow = m.stock <= m.reorder_point;
   const profit = m.price_per_unit - (m.cost_price || 0);
@@ -59,10 +91,10 @@ function renderMaterialRow(m: Material): string {
   return `<tr class="material-row ${isLow ? 'low-stock' : ''}" data-material-row="${m.id}">
     <td data-label="Name" style="font-weight:600">${esc(m.name)}</td>
     <td class="material-secondary" data-label="Category"><span style="font-size:var(--fs-xs);color:var(--c-text-muted)">${esc(m.category || '-')}</span></td>
-    <td class="material-secondary" data-label="Unit">${esc(m.unit)}</td>
-    <td data-label="Stock">${m.stock}${isLow ? ' ⚠' : ''}</td>
+    <td class="material-secondary" data-label="Unit">${esc(m.unit)}${m.has_secondary_unit && m.secondary_unit ? ` <span style="font-size:11px;color:var(--c-primary)">(${esc(m.secondary_unit)})</span>` : ''}</td>
+    <td data-label="Stock">${renderStockDisplay(m)}</td>
     <td class="material-secondary" data-label="Cost">${fmtPeso(m.cost_price || 0)}</td>
-    <td data-label="Retail">${fmtPeso(m.price_per_unit)}</td>
+    <td data-label="Retail">${renderPriceDisplay(m)}</td>
     <td class="material-secondary" data-label="Profit" style="color:${profit > 0 ? 'var(--c-success)' : profit < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${fmtPeso(profit)}</td>
     <td class="material-secondary" data-label="Margin" style="color:${margin > 0 ? 'var(--c-success)' : margin < 0 ? 'var(--c-danger)' : 'var(--c-text-muted)'}">${margin.toFixed(1)}%</td>
     <td data-label="" class="actions">
@@ -156,6 +188,38 @@ export function showMaterialModal(data?: Material) {
       <div class="form-group"><label>Wholesale Price</label><input id="mf-wprice" type="number" step="0.01" min="0" value="${data?.wholesale_price ? data.wholesale_price.toString() : ''}" placeholder="0.00 = same as retail" /><div class="helper" style="font-size:var(--fs-xs);color:var(--c-text-muted);margin-top:var(--space-1)">Leave 0 to use retail price</div></div>
       <div class="form-group"><label>Minimum Stock / Reorder Level</label><input id="mf-reorder" type="number" step="any" min="0" value="${data?.reorder_point ?? 10}" /><div class="field-error" id="mf-reorder-err"></div></div>
     </div>
+    <div style="background:var(--c-surface-elevated);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:var(--space-3);margin-top:var(--space-2);margin-bottom:var(--space-3)">
+      <div style="display:flex;align-items:center;gap:var(--space-2);cursor:pointer">
+        <input type="checkbox" id="mf-has-dual-unit" ${data?.has_secondary_unit ? 'checked' : ''} onchange="toggleDualUnitFields()" style="width:18px;height:18px;cursor:pointer" />
+        <label for="mf-has-dual-unit" style="font-weight:600;cursor:pointer;margin:0">Enable Dual Unit / Packaging (e.g. Bulk Cubic & Sacks)</label>
+      </div>
+      <p class="modal-help" style="margin:4px 0 0 26px;font-size:var(--fs-xs);color:var(--c-text-muted)">
+        For bulk materials like Sand, Gravel, and Gravita. Allows selling either per cubic or per sack from one shared stock pool.
+      </p>
+      <div id="mf-dual-unit-container" style="display:${data?.has_secondary_unit ? 'block' : 'none'};margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px dashed var(--c-border)">
+        <div class="form-row">
+          <div class="form-group">
+            <label>Secondary Unit Name *</label>
+            <input id="mf-secondary-unit" maxlength="30" value="${esc(data?.secondary_unit || 'Sack')}" placeholder="e.g. Sack" />
+            <div class="field-error" id="mf-secondary-unit-err"></div>
+          </div>
+          <div class="form-group">
+            <label>Conversion Ratio (1 Primary = ? Secondary) *</label>
+            <input id="mf-conversion-factor" type="number" step="any" min="1.0001" value="${data?.conversion_factor || 26}" placeholder="e.g. 26" />
+            <div class="helper" style="font-size:var(--fs-xs);color:var(--c-text-muted);margin-top:4px">e.g. 26 sacks per 1 cubic</div>
+            <div class="field-error" id="mf-conversion-factor-err"></div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Secondary Unit Retail Price (₱) *</label>
+            <input id="mf-secondary-price" type="number" step="0.01" min="0.01" value="${data?.secondary_price ?? ''}" placeholder="e.g. 60.00" />
+            <div class="helper" style="font-size:var(--fs-xs);color:var(--c-text-muted);margin-top:4px">Selling price per secondary unit (e.g. ₱60/sack)</div>
+            <div class="field-error" id="mf-secondary-price-err"></div>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" id="mf-save-btn" onclick="${isEdit ? `updateMaterial('${data!.id}')` : 'createMaterial()'}">Save</button>
@@ -171,13 +235,20 @@ export async function startMaterialBarcodeCamera() {
 }
 
 export async function createMaterial() {
-  ['mf-name','mf-unit','mf-price','mf-cost','mf-stock','mf-reorder'].forEach(id => clearErr(id + '-err'));
+  ['mf-name','mf-unit','mf-price','mf-cost','mf-stock','mf-reorder','mf-secondary-unit','mf-conversion-factor','mf-secondary-price'].forEach(id => clearErr(id + '-err'));
   const name = val('mf-name').trim(); const selectedUnit = val('mf-unit'); const unit = selectedUnit === '__custom__' ? val('mf-custom-unit').trim() : selectedUnit;
   const price = parseFloat(val('mf-price')); const cost = parseFloat(val('mf-cost'));
   const wpriceRaw = parseFloat(val('mf-wprice')); const wprice = isNaN(wpriceRaw) ? 0 : wpriceRaw;
   const stockRaw = val('mf-stock'); const reorderRaw = val('mf-reorder');
   const stock = parseFloat(stockRaw) || 0; const reorder = parseFloat(reorderRaw) || 0;
   const category = val('mf-category'); const supplier_id = val('mf-supplier') || null; const barcode = val('mf-barcode').trim();
+  const hasDualUnit = (document.getElementById('mf-has-dual-unit') as HTMLInputElement)?.checked ? 1 : 0;
+  const secondaryUnit = val('mf-secondary-unit').trim();
+  const conversionFactorRaw = parseFloat(val('mf-conversion-factor'));
+  const conversionFactor = isNaN(conversionFactorRaw) || conversionFactorRaw <= 0 ? 1 : conversionFactorRaw;
+  const secondaryPriceRaw = parseFloat(val('mf-secondary-price'));
+  const secondaryPrice = isNaN(secondaryPriceRaw) || secondaryPriceRaw < 0 ? 0 : secondaryPriceRaw;
+
   if (!name) { setErr('mf-name-err', 'Name is required'); return; }
   if (name.length < 2) { setErr('mf-name-err', 'Must be at least 2 characters'); return; }
   if (!unit) { setErr('mf-unit-err', 'Unit is required'); return; }
@@ -185,22 +256,42 @@ export async function createMaterial() {
   if (reorderRaw && (isNaN(parseFloat(reorderRaw)) || parseFloat(reorderRaw) < 0)) { setErr('mf-reorder-err', 'Must be a number ≥ 0'); return; }
   if (isNaN(cost) || cost < 0) { setErr('mf-cost-err', 'Must be 0 or more'); return; }
   if (isNaN(price) || price <= 0) { setErr('mf-price-err', 'Must be > 0'); return; }
+
+  if (hasDualUnit) {
+    if (!secondaryUnit) { setErr('mf-secondary-unit-err', 'Secondary unit name is required'); return; }
+    if (conversionFactor <= 1) { setErr('mf-conversion-factor-err', 'Conversion ratio must be greater than 1 (e.g. 26)'); return; }
+    if (secondaryPrice <= 0) { setErr('mf-secondary-price-err', 'Secondary unit price must be greater than 0'); return; }
+  }
+
   disableBtn('mf-save-btn', true);
   try {
-    await apiPost('/materials', { name, unit, stock, cost_price: cost, price_per_unit: price, wholesale_price: wprice, reorder_point: reorder, category, supplier_id, barcode: barcode || null });
+    await apiPost('/materials', {
+      name, unit, stock, cost_price: cost, price_per_unit: price, wholesale_price: wprice, reorder_point: reorder, category, supplier_id, barcode: barcode || null,
+      has_secondary_unit: hasDualUnit,
+      secondary_unit: hasDualUnit ? secondaryUnit : null,
+      conversion_factor: hasDualUnit ? conversionFactor : 1,
+      secondary_price: hasDualUnit ? secondaryPrice : 0
+    });
     closeModal(); loadView('materials');
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('mf-save-btn', false); }
 }
 
 export async function updateMaterial(id: string) {
-  ['mf-name','mf-unit','mf-price','mf-cost','mf-stock','mf-reorder'].forEach(i => clearErr(i + '-err'));
+  ['mf-name','mf-unit','mf-price','mf-cost','mf-stock','mf-reorder','mf-secondary-unit','mf-conversion-factor','mf-secondary-price'].forEach(i => clearErr(i + '-err'));
   const name = val('mf-name').trim(); const selectedUnit = val('mf-unit'); const unit = selectedUnit === '__custom__' ? val('mf-custom-unit').trim() : selectedUnit;
   const price = parseFloat(val('mf-price')); const cost = parseFloat(val('mf-cost'));
   const wpriceRaw = parseFloat(val('mf-wprice')); const wprice = isNaN(wpriceRaw) ? 0 : wpriceRaw;
   const stockRaw = val('mf-stock'); const reorderRaw = val('mf-reorder');
   const stock = parseFloat(stockRaw) || 0; const reorder = parseFloat(reorderRaw) || 0;
   const category = val('mf-category'); const supplier_id = val('mf-supplier') || null; const barcode = val('mf-barcode').trim();
+  const hasDualUnit = (document.getElementById('mf-has-dual-unit') as HTMLInputElement)?.checked ? 1 : 0;
+  const secondaryUnit = val('mf-secondary-unit').trim();
+  const conversionFactorRaw = parseFloat(val('mf-conversion-factor'));
+  const conversionFactor = isNaN(conversionFactorRaw) || conversionFactorRaw <= 0 ? 1 : conversionFactorRaw;
+  const secondaryPriceRaw = parseFloat(val('mf-secondary-price'));
+  const secondaryPrice = isNaN(secondaryPriceRaw) || secondaryPriceRaw < 0 ? 0 : secondaryPriceRaw;
+
   if (!name) { setErr('mf-name-err', 'Name is required'); return; }
   if (name.length < 2) { setErr('mf-name-err', 'Must be at least 2 characters'); return; }
   if (!unit) { setErr('mf-unit-err', 'Unit is required'); return; }
@@ -208,9 +299,22 @@ export async function updateMaterial(id: string) {
   if (reorderRaw && (isNaN(parseFloat(reorderRaw)) || parseFloat(reorderRaw) < 0)) { setErr('mf-reorder-err', 'Must be a number ≥ 0'); return; }
   if (isNaN(cost) || cost < 0) { setErr('mf-cost-err', 'Must be 0 or more'); return; }
   if (isNaN(price) || price <= 0) { setErr('mf-price-err', 'Must be > 0'); return; }
+
+  if (hasDualUnit) {
+    if (!secondaryUnit) { setErr('mf-secondary-unit-err', 'Secondary unit name is required'); return; }
+    if (conversionFactor <= 1) { setErr('mf-conversion-factor-err', 'Conversion ratio must be greater than 1 (e.g. 26)'); return; }
+    if (secondaryPrice <= 0) { setErr('mf-secondary-price-err', 'Secondary unit price must be greater than 0'); return; }
+  }
+
   disableBtn('mf-save-btn', true);
   try {
-    await apiPut(`/materials/${id}`, { name, unit, stock, cost_price: cost, price_per_unit: price, wholesale_price: wprice, reorder_point: reorder, category, supplier_id, barcode: barcode || null });
+    await apiPut(`/materials/${id}`, {
+      name, unit, stock, cost_price: cost, price_per_unit: price, wholesale_price: wprice, reorder_point: reorder, category, supplier_id, barcode: barcode || null,
+      has_secondary_unit: hasDualUnit,
+      secondary_unit: hasDualUnit ? secondaryUnit : null,
+      conversion_factor: hasDualUnit ? conversionFactor : 1,
+      secondary_price: hasDualUnit ? secondaryPrice : 0
+    });
     closeModal(); loadView('materials');
   } catch (e: any) { showToast(e.message); }
   finally { disableBtn('mf-save-btn', false); }

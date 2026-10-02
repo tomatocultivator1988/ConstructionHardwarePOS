@@ -6,7 +6,7 @@ let db: Database;
 let dbInitPromise: Promise<void> | null = null;
 const businessDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date());
 
-const CURRENT_SCHEMA_VERSION = '2026.10.01';
+const CURRENT_SCHEMA_VERSION = '2026.10.03';
 
 export async function initDb(): Promise<void> {
   if (dbInitPromise) return dbInitPromise;
@@ -191,6 +191,10 @@ async function initTables() {
       reorder_point REAL DEFAULT 10,
       category TEXT DEFAULT '',
       supplier_id TEXT,
+      has_secondary_unit INTEGER DEFAULT 0,
+      secondary_unit TEXT,
+      conversion_factor REAL DEFAULT 1,
+      secondary_price REAL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -231,6 +235,8 @@ async function initTables() {
       unit_price REAL NOT NULL,
       cost_price REAL DEFAULT 0,
       total REAL NOT NULL,
+      unit TEXT,
+      stock_multiplier REAL DEFAULT 1,
       FOREIGN KEY (invoice_id) REFERENCES invoices(id)
     );
 
@@ -540,6 +546,15 @@ async function migrateSchema() {
   const materialInfo = (await db.prepare("PRAGMA table_info('materials')").all()) as any[];
   if (!materialInfo.some((r: any) => r.name === 'supplier_id')) await db.exec("ALTER TABLE materials ADD COLUMN supplier_id TEXT");
   if (!materialInfo.some((r: any) => r.name === 'barcode')) await db.exec("ALTER TABLE materials ADD COLUMN barcode TEXT");
+  if (!materialInfo.some((r: any) => r.name === 'has_secondary_unit')) await db.exec("ALTER TABLE materials ADD COLUMN has_secondary_unit INTEGER DEFAULT 0");
+  if (!materialInfo.some((r: any) => r.name === 'secondary_unit')) await db.exec("ALTER TABLE materials ADD COLUMN secondary_unit TEXT");
+  if (!materialInfo.some((r: any) => r.name === 'conversion_factor')) await db.exec("ALTER TABLE materials ADD COLUMN conversion_factor REAL DEFAULT 1");
+  if (!materialInfo.some((r: any) => r.name === 'secondary_price')) await db.exec("ALTER TABLE materials ADD COLUMN secondary_price REAL DEFAULT 0");
+
+  const itemCols = itemInfo.map((r: any) => r.name);
+  if (!itemCols.includes('unit')) await db.exec("ALTER TABLE invoice_items ADD COLUMN unit TEXT");
+  if (!itemCols.includes('stock_multiplier')) await db.exec("ALTER TABLE invoice_items ADD COLUMN stock_multiplier REAL DEFAULT 1");
+
   const invoiceCols = invoiceInfo.map((r: any) => r.name);
   if (!invoiceCols.includes('delivery_person')) await db.exec("ALTER TABLE invoices ADD COLUMN delivery_person TEXT");
   if (!invoiceCols.includes('delivery_person_id')) await db.exec("ALTER TABLE invoices ADD COLUMN delivery_person_id TEXT");
