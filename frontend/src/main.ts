@@ -30,6 +30,7 @@ Object.assign(window, {
   showMaterialModal: materials.showMaterialModal,
   toggleCustomUnit: materials.toggleCustomUnit,
   toggleDualUnitFields: materials.toggleDualUnitFields,
+  updateDualUnitPreview: materials.updateDualUnitPreview,
   toggleAccountMenu,
   addProductCatalogOption: materials.addProductCatalogOption,
   saveProductCatalogOption: materials.saveProductCatalogOption,
