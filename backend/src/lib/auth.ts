@@ -60,5 +60,5 @@ export function requireAdminOrPOS(req: Request, res: Response, next: NextFunctio
 }
 
 export function signToken(user: { id: string; username: string; role: string }): string {
-  return jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '12h' });
+  return jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '30d' });
 }

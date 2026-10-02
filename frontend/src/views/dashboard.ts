@@ -17,6 +17,10 @@ export async function renderDashboard(): Promise<string> {
   const invoicePage = invoiceResult.status === 'fulfilled' ? invoiceResult.value : { data: [], total: 0 };
   const paySummary = payResult.status === 'fulfilled' ? payResult.value : { daily: [], todayTotal: 0 };
   if (analyticsResult.status === 'rejected') {
+    const reasonMsg = (analyticsResult as PromiseRejectedResult).reason?.message || '';
+    if (/session expired|login/i.test(reasonMsg)) {
+      return '';
+    }
     throw new Error('Dashboard analytics are temporarily unavailable. Please retry.');
   }
   const analytics = analyticsResult.status === 'fulfilled' ? analyticsResult.value : {

@@ -1,6 +1,6 @@
 import { loadView } from './lib/router';
-import { closeModal, isAdmin } from './lib/helpers';
-import { isLoggedIn, apiGet, getCurrentUser } from './lib/api';
+import { closeModal, isAdmin, showToast } from './lib/helpers';
+import { isLoggedIn, apiGet, getCurrentUser, setUnauthorizedHandler } from './lib/api';
 import * as materials from './views/materials';
 import * as invoices from './views/invoices';
 import * as expenses from './views/expenses';
@@ -18,9 +18,13 @@ import * as customers from './views/customers';
 import { openHelp } from './lib/help';
 import { submitExportPeriod, toggleExportCustomRange } from './lib/export';
 
+setUnauthorizedHandler(login.showLogin);
+
 Object.assign(window, {
   loadView,
   closeModal,
+  showToast,
+  showLogin: login.showLogin,
   logout: login.logout,
   doLogin: login.doLogin,
   showMaterialModal: materials.showMaterialModal,

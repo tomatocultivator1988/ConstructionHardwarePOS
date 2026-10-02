@@ -1,8 +1,15 @@
+import { showToast } from './helpers';
+
 const API = '/api';
 const CACHE_TTL = 30000;
 
 const cache = new Map<string, { data: any; ts: number }>();
 const inFlight = new Map<string, Promise<any>>();
+
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: () => void) {
+  onUnauthorized = fn;
+}
 
 const RELATED_CACHE_KEYS: Record<string, string[]> = {
   invoices: ['materials', 'analytics', 'payments', 'reports', 'receivables', 'customers'],
@@ -37,7 +44,12 @@ async function handleResponse(res: Response) {
   if (res.status === 401) {
     localStorage.removeItem('buildpro_token');
     localStorage.removeItem('buildpro_user');
-    (window as any).showLogin?.();
+    if (onUnauthorized) {
+      onUnauthorized();
+    } else if (typeof (window as any).showLogin === 'function') {
+      (window as any).showLogin();
+    }
+    showToast('Session expired. Please log in again.');
     throw new Error('Session expired. Please login again.');
   }
   if (res.status === 403) {

@@ -111,11 +111,19 @@ export async function loadView(view: string) {
     }
     const html = await viewFn();
     if (sequence !== loadSequence || currentView !== targetView) return;
+    if (!isLoggedIn()) {
+      showLogin();
+      return;
+    }
     el.innerHTML = html;
     if (targetView === 'invoices') (window as any).enhancePOS?.();
     if (targetView === 'receivables') (window as any).drawReceivablesTrend?.();
   } catch (err: any) {
     if (sequence !== loadSequence || currentView !== targetView) return;
+    if (!isLoggedIn() || /session expired|login/i.test(err?.message || '')) {
+      showLogin();
+      return;
+    }
     el.innerHTML = `<div class="empty-state view-error">
       <h3>Unable to load ${targetView === 'dashboard' ? 'Dashboard' : targetView}</h3>
       <p>${err.message || 'Please try again.'}</p>
