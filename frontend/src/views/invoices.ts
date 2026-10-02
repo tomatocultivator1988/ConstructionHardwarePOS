@@ -104,7 +104,7 @@ export function stopPOSCameraScan() {
 function scanPOSCode(code: string) {
   const normalized = code.trim().toLowerCase();
   const material = ((window as any).__invMaterials || []).find((m: Material) => String(m.barcode || '').trim().toLowerCase() === normalized);
-  if (material) addPOSItem(material.id);
+  if (material) onPOSProductClick(material.id);
   else showToast(`Barcode ${code} is not registered to a product`);
 }
 
@@ -118,7 +118,7 @@ export function scanPOSBarcode(event: KeyboardEvent) {
     clearTimeout(posFilterTimer);
     input.value = '';
     posSearch = '';
-    addPOSItem(material.id);
+    onPOSProductClick(material.id);
     renderPOSProductGrid();
   }
   else if (code) showToast('No product found for that barcode');
@@ -148,36 +148,115 @@ export function setPOSQty(cartItemId: string, value: string) {
   renderPOSCart();
 }
 
+export function showUnitSelectionModal(m: Material) {
+  const factor = Number(m.conversion_factor || 1);
+  const isBulk = Boolean(m.secondary_is_bulk);
+  const breakdown = formatAggregateBreakdown(m.stock, m.conversion_factor, m.unit, m.secondary_unit, m.secondary_is_bulk);
+
+  const unit1Name = m.unit;
+  const unit1Price = m.price_per_unit;
+  const unit1Desc = isBulk
+    ? `Base inventory unit (deducts 1 ${esc(m.unit)} from stock)`
+    : `Bulk unit (deducts 1.0 ${esc(m.unit)} from stock)`;
+
+  const unit2Name = m.secondary_unit || 'Secondary Unit';
+  const unit2Price = m.secondary_price || 0;
+  const unit2Desc = isBulk
+    ? `Bulk packaging (1 ${esc(unit2Name)} = ${factor} ${esc(m.unit)}s)`
+    : `Smaller / Tingi unit (1 ${esc(m.unit)} = ${factor} ${esc(unit2Name)}s)`;
+
+  showModal(`
+    <div style="text-align:left;max-width:440px;margin:0 auto">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-2);gap:8px">
+        <h3 style="margin:0">${esc(m.name)}</h3>
+        <span class="badge" style="font-size:var(--fs-xs);padding:3px 8px;background:var(--c-primary-bg);color:var(--c-primary);font-weight:700;white-space:nowrap">Select Unit</span>
+      </div>
+      <p style="color:var(--c-text-muted);font-size:var(--fs-sm);margin:0 0 var(--space-4) 0">
+        Available: <strong style="color:var(--c-primary)">${esc(breakdown)}</strong>
+      </p>
+
+      <div style="display:flex;flex-direction:column;gap:var(--space-3)">
+        <button type="button" class="unit-variant-card" onclick="addPOSItem('${m.id}', false); closeModal();"
+          style="display:flex;justify-content:space-between;align-items:center;padding:var(--space-3) var(--space-4);text-align:left;border:2px solid var(--c-border);border-radius:var(--radius-md);background:var(--c-surface);cursor:pointer;transition:all 0.15s ease;width:100%"
+          onmouseover="this.style.borderColor='var(--c-primary)';this.style.background='var(--c-surface-elevated)'"
+          onmouseout="this.style.borderColor='var(--c-border)';this.style.background='var(--c-surface)'"
+        >
+          <div>
+            <div style="font-weight:700;font-size:var(--fs-base);color:var(--c-text)">
+              Per ${esc(unit1Name)}
+            </div>
+            <div style="font-size:var(--fs-xs);color:var(--c-text-muted);margin-top:2px">
+              ${unit1Desc}
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-weight:800;font-size:var(--fs-lg);color:var(--c-primary);font-family:var(--ff-mono)">
+              ${fmtPeso(unit1Price)}
+            </div>
+            <span class="btn btn-sm btn-primary" style="margin-top:4px;padding:3px 12px;font-size:var(--fs-xs);pointer-events:none">
+              + Add ${esc(unit1Name)}
+            </span>
+          </div>
+        </button>
+
+        <button type="button" class="unit-variant-card" onclick="addPOSItem('${m.id}', true); closeModal();"
+          style="display:flex;justify-content:space-between;align-items:center;padding:var(--space-3) var(--space-4);text-align:left;border:2px solid var(--c-border);border-radius:var(--radius-md);background:var(--c-surface);cursor:pointer;transition:all 0.15s ease;width:100%"
+          onmouseover="this.style.borderColor='var(--c-primary)';this.style.background='var(--c-surface-elevated)'"
+          onmouseout="this.style.borderColor='var(--c-border)';this.style.background='var(--c-surface)'"
+        >
+          <div>
+            <div style="font-weight:700;font-size:var(--fs-base);color:var(--c-text)">
+              Per ${esc(unit2Name)}
+            </div>
+            <div style="font-size:var(--fs-xs);color:var(--c-text-muted);margin-top:2px">
+              ${unit2Desc}
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-weight:800;font-size:var(--fs-lg);color:var(--c-primary);font-family:var(--ff-mono)">
+              ${fmtPeso(unit2Price)}
+            </div>
+            <span class="btn btn-sm btn-primary" style="margin-top:4px;padding:3px 12px;font-size:var(--fs-xs);pointer-events:none">
+              + Add ${esc(unit2Name)}
+            </span>
+          </div>
+        </button>
+      </div>
+
+      <div class="modal-actions" style="margin-top:var(--space-4);display:flex;justify-content:flex-end">
+        <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+      </div>
+    </div>
+  `, 'pos-unit-select-modal');
+}
+
+export function onPOSProductClick(id: string) {
+  const material = ((window as any).__invMaterials || []).find((m: Material) => m.id === id) as Material | undefined;
+  if (!material) return;
+
+  const hasDual = Boolean(material.has_secondary_unit && Number(material.conversion_factor) > 1 && material.secondary_unit);
+  if (hasDual) {
+    showUnitSelectionModal(material);
+  } else {
+    addPOSItem(material.id, false);
+  }
+}
+
 function renderPOSProductCard(m: Material): string {
   const isLow = Number(m.stock) <= Number(m.reorder_point);
   const hasDual = Boolean(m.has_secondary_unit && Number(m.conversion_factor) > 1 && m.secondary_unit);
-  
-  if (hasDual) {
-    const breakdown = formatAggregateBreakdown(m.stock, m.conversion_factor, m.unit, m.secondary_unit, m.secondary_is_bulk);
-    return `
-      <div class="pos-product pos-product-dual ${isLow ? 'low-stock' : ''}" style="display:flex;flex-direction:column;justify-content:space-between;cursor:default">
-        <div>
-          <span class="pos-product-name" style="font-weight:600">${esc(m.name)}</span>
-          <span class="pos-product-meta" style="color:var(--c-primary);font-weight:600;display:block;margin-top:2px">${esc(breakdown)}</span>
-          <span style="font-size:11px;color:var(--c-text-muted)">${Number(m.stock.toFixed(2))} ${esc(m.unit)} in stock</span>
-        </div>
-        <div class="pos-dual-buttons" style="display:flex;gap:6px;width:100%;margin-top:10px">
-          <button type="button" class="btn btn-sm btn-primary" onclick="addPOSItem('${m.id}', false)" style="flex:1;padding:6px 4px;font-size:var(--fs-xs);line-height:1.2;text-align:center" title="Add 1 ${esc(m.unit)}">
-            +1 ${esc(m.unit)}<br><strong>${fmtPeso(m.price_per_unit)}</strong>
-          </button>
-          <button type="button" class="btn btn-sm" onclick="addPOSItem('${m.id}', true)" style="flex:1;padding:6px 4px;font-size:var(--fs-xs);line-height:1.2;text-align:center;background:var(--c-surface);border:1px solid var(--c-primary);color:var(--c-primary)" title="Add 1 ${esc(m.secondary_unit)}">
-            +1 ${esc(m.secondary_unit)}<br><strong>${fmtPeso(m.secondary_price || 0)}</strong>
-          </button>
-        </div>
-      </div>
-    `;
-  }
+  const metaText = hasDual
+    ? formatAggregateBreakdown(m.stock, m.conversion_factor, m.unit, m.secondary_unit, m.secondary_is_bulk)
+    : `${esc(m.unit)} · ${m.stock} in stock`;
 
   return `
-    <button class="pos-product ${isLow ? 'low-stock' : ''}" onclick="addPOSItem('${m.id}', false)">
+    <button type="button" class="pos-product ${isLow ? 'low-stock' : ''}" onclick="onPOSProductClick('${m.id}')">
       <span class="pos-product-name">${esc(m.name)}</span>
-      <span class="pos-product-meta">${esc(m.unit)} · ${m.stock} in stock</span>
-      <strong>${fmtPeso(m.price_per_unit)}</strong>
+      <span class="pos-product-meta" style="${hasDual ? 'color:var(--c-primary);font-weight:600' : ''}">${esc(metaText)}</span>
+      <div style="display:flex;align-items:baseline;justify-content:space-between;width:100%;gap:4px">
+        <strong>${fmtPeso(m.price_per_unit)}</strong>
+        ${hasDual ? `<span class="badge" style="font-size:10px;padding:1px 5px;border-radius:4px;background:var(--c-primary-bg);color:var(--c-primary);font-weight:700">2 Units</span>` : ''}
+      </div>
     </button>
   `;
 }

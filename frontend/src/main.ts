@@ -65,6 +65,8 @@ Object.assign(window, {
   changeInvoicePage: invoices.changeInvoicePage,
   setPOSCategory: invoices.setPOSCategory,
   filterPOSMaterials: invoices.filterPOSMaterials,
+  onPOSProductClick: invoices.onPOSProductClick,
+  showUnitSelectionModal: invoices.showUnitSelectionModal,
   addPOSItem: invoices.addPOSItem,
   changePOSQty: invoices.changePOSQty,
   removePOSItem: invoices.removePOSItem,
