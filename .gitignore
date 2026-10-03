@@ -28,6 +28,7 @@ frontend/*.log
 *.zip
 output/
 tmp/
+backups/
 backend/tmp/
 test-results/
 qa/playwright-report/
