@@ -97,7 +97,14 @@
       </div>
       <div class="header-right" id="header-user" style="display:none">
         <button class="account-trigger" type="button" aria-label="Open account menu" onclick="toggleAccountMenu()"><span class="account-avatar" aria-hidden="true">●</span><span class="user-name" id="user-name-display"></span><span class="account-chevron" aria-hidden="true">⌄</span></button>
-        <div class="account-menu" id="account-menu" hidden><div class="account-menu-label">Signed in account</div><button class="btn btn-sm btn-danger logout-btn" onclick="logout()">Logout</button></div>
+        <div class="account-menu" id="account-menu" hidden>
+          <div class="account-menu-label">Signed in account</div>
+          <button class="btn btn-sm btn-outline" style="width:100%;margin-bottom:var(--space-2);text-align:left;display:flex;align-items:center;gap:6px;font-weight:600" onclick="showChangePinModal();toggleAccountMenu()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Change PIN
+          </button>
+          <button class="btn btn-sm btn-danger logout-btn" onclick="logout()">Logout</button>
+        </div>
       </div>
     </header>
     <main id="main-content"><div style="display:flex;align-items:center;justify-content:center;height:70vh;color:var(--c-text-muted)">Loading...</div></main>

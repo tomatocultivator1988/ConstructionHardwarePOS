@@ -32,6 +32,24 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
   res.status(201).json(user);
 });
 
+router.put('/profile/change-pin', async (req: Request, res: Response) => {
+  if (!req.user?.id) { res.status(401).json({ error: 'Authentication required' }); return; }
+  const { pin } = req.body;
+  if (!pin || !/^\d{4,6}$/.test(String(pin))) {
+    res.status(400).json({ error: 'PIN must be 4 to 6 digits' });
+    return;
+  }
+  const db = getDb();
+  const uid = req.user.id;
+  const existing = await db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(uid) as any;
+  if (!existing) { res.status(404).json({ error: 'User not found' }); return; }
+
+  const hash = bcrypt.hashSync(String(pin), 10);
+  await db.prepare('UPDATE users SET pin_hash = ? WHERE id = ?').run(hash, uid);
+  await logAudit(uid, 'update', 'user', uid, 'Changed own PIN', null, { id: uid, username: existing.username });
+  res.json({ success: true, message: 'PIN updated successfully' });
+});
+
 router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
   const db = getDb();
   const uid = req.params.id as string;

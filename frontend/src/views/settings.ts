@@ -239,7 +239,104 @@ async function loadGeneralSettings() {
       </div>
       <button class="btn btn-primary" id="s-save-btn" onclick="saveSettings()">Save Settings</button>
     </div>
+
+    <div class="settings-card" style="margin-top:var(--space-5)">
+      <h3 style="margin-bottom:var(--space-2)">Security & Password</h3>
+      <p class="card-sub" style="margin-bottom:var(--space-4)">Change the login PIN for your account (<strong>${esc(getCurrentUser()?.username || 'admin')}</strong>).</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="admin-new-pin">New PIN *</label>
+          <input id="admin-new-pin" type="password" maxlength="6" inputmode="numeric" placeholder="4-6 digit PIN" />
+          <div class="field-error" id="admin-new-pin-err"></div>
+        </div>
+        <div class="form-group">
+          <label for="admin-confirm-pin">Confirm New PIN *</label>
+          <input id="admin-confirm-pin" type="password" maxlength="6" inputmode="numeric" placeholder="Re-enter new PIN" />
+          <div class="field-error" id="admin-confirm-pin-err"></div>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="admin-change-pin-btn" onclick="changeAdminPin()">Update PIN</button>
+    </div>
   `;
+}
+
+export async function changeAdminPin() {
+  clearErr('admin-new-pin-err');
+  clearErr('admin-confirm-pin-err');
+  const newPin = val('admin-new-pin').trim();
+  const confirmPin = val('admin-confirm-pin').trim();
+
+  if (!newPin || !/^\d{4,6}$/.test(newPin)) {
+    setErr('admin-new-pin-err', 'PIN must be 4 to 6 digits');
+    return;
+  }
+  if (newPin !== confirmPin) {
+    setErr('admin-confirm-pin-err', 'PINs do not match');
+    return;
+  }
+
+  disableBtn('admin-change-pin-btn', true);
+  try {
+    await apiPut('/users/profile/change-pin', { pin: newPin });
+    const p1 = document.getElementById('admin-new-pin') as HTMLInputElement | null;
+    const p2 = document.getElementById('admin-confirm-pin') as HTMLInputElement | null;
+    if (p1) p1.value = '';
+    if (p2) p2.value = '';
+    showToast('PIN successfully updated! Please remember your new PIN.', 'success');
+  } catch (err: any) {
+    showToast(err.message || 'Failed to update PIN');
+  } finally {
+    disableBtn('admin-change-pin-btn', false);
+  }
+}
+
+export function showChangePinModal() {
+  const user = getCurrentUser();
+  showModal(`
+    <h3>Change PIN</h3>
+    <p class="modal-help">Update login PIN for account: <strong>${esc(user?.username || 'admin')}</strong></p>
+    <div class="form-group">
+      <label for="modal-new-pin">New PIN *</label>
+      <input id="modal-new-pin" type="password" maxlength="6" inputmode="numeric" placeholder="4-6 digits" autofocus />
+      <div class="field-error" id="modal-new-pin-err"></div>
+    </div>
+    <div class="form-group">
+      <label for="modal-confirm-pin">Confirm New PIN *</label>
+      <input id="modal-confirm-pin" type="password" maxlength="6" inputmode="numeric" placeholder="Re-enter new PIN" />
+      <div class="field-error" id="modal-confirm-pin-err"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="modal-pin-save-btn" onclick="submitModalChangePin()">Save New PIN</button>
+    </div>
+  `, 'change-pin-modal');
+}
+
+export async function submitModalChangePin() {
+  clearErr('modal-new-pin-err');
+  clearErr('modal-confirm-pin-err');
+  const newPin = val('modal-new-pin').trim();
+  const confirmPin = val('modal-confirm-pin').trim();
+
+  if (!newPin || !/^\d{4,6}$/.test(newPin)) {
+    setErr('modal-new-pin-err', 'PIN must be 4 to 6 digits');
+    return;
+  }
+  if (newPin !== confirmPin) {
+    setErr('modal-confirm-pin-err', 'PINs do not match');
+    return;
+  }
+
+  disableBtn('modal-pin-save-btn', true);
+  try {
+    await apiPut('/users/profile/change-pin', { pin: newPin });
+    closeModal();
+    showToast('PIN successfully updated! Please remember your new PIN.', 'success');
+  } catch (err: any) {
+    showToast(err.message || 'Failed to update PIN');
+  } finally {
+    disableBtn('modal-pin-save-btn', false);
+  }
 }
 
 export async function saveSettings() {
@@ -282,7 +379,7 @@ async function loadUsersTab() {
               <td data-label="Status"><span class="status-badge" style="background:${u.is_active ? 'var(--c-success-bg)' : 'var(--c-warning-bg)'};color:${u.is_active ? 'var(--c-success)' : 'var(--c-warning)'}">${u.is_active ? 'Active' : 'Deactivated'}</span></td>
               <td data-label="Created">${fmtDate(u.created_at)}</td>
               <td data-label="" class="actions">
-                <button class="btn btn-primary btn-sm" onclick="showUserModal('${u.id}')">Edit</button>
+                <button class="btn btn-primary btn-sm" onclick="showUserModal('${u.id}')">Edit / Change PIN</button>
                 <button class="btn ${u.is_active ? 'btn-danger' : 'btn-primary'} btn-sm" onclick="delUser('${u.id}',${u.is_active ? 0 : 1})">${u.is_active ? 'Deactivate' : 'Activate'}</button>
               </td>
             </tr>
@@ -301,7 +398,7 @@ export async function showUserModal(id?: string) {
   }
   const isEdit = !!data;
   showModal(`
-    <h3>${isEdit ? 'Edit' : 'Add'} Staff</h3>
+    <h3>${isEdit ? 'Edit Account / Change PIN' : 'Add Staff Account'}</h3>
     <div class="form-group"><label>Username *</label><input id="uf-user" maxlength="50" value="${esc(data?.username || '')}" ${isEdit ? 'disabled' : ''} /><div class="field-error" id="uf-user-err"></div></div>
     <div class="form-row">
       <div class="form-group"><label>${isEdit ? 'New PIN (leave blank to keep)' : 'PIN *'}</label><input id="uf-pin" type="password" maxlength="6" placeholder="4-6 digits" /><div class="field-error" id="uf-pin-err"></div></div>
