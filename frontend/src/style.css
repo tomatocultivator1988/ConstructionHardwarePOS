@@ -315,8 +315,10 @@ td {
   font-size: var(--fs-sm);
   vertical-align: middle;
 }
-td.actions { white-space: nowrap; text-align: right; }
+th.actions, td.actions { white-space: nowrap; text-align: right; }
 td.actions .btn + .btn { margin-left: var(--space-2); }
+.actions-group { display: inline-flex; align-items: center; justify-content: flex-end; gap: var(--space-1); }
+.actions-group .btn + .btn { margin-left: 0; }
 
 tr.low-stock { background: var(--c-low-stock); }
 tr.low-stock:hover { background: rgba(245, 158, 11, 0.2); }

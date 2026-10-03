@@ -49,19 +49,24 @@ router.get('/', async (req: Request, res: Response) => {
       params.push(status);
     }
   }
+  const paymentMethodSql = `COALESCE(
+    (SELECT p.method FROM payments p WHERE p.invoice_id=i.id ORDER BY p.payment_date ASC, p.rowid ASC LIMIT 1),
+    CASE WHEN i.status IN ('pending', 'partial') THEN 'credit' ELSE 'cash' END
+  )`;
+
   if (mop && mop !== 'all') {
     if (mop === 'credit') {
-      conditions.push("(EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id=i.id AND p.method='credit') OR (i.status IN ('pending', 'partial') AND NOT EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id=i.id AND p.method <> 'credit' AND p.amount >= i.total - 0.005)) OR (i.credit_account_name IS NOT NULL AND trim(i.credit_account_name) <> ''))");
+      conditions.push(`LOWER(${paymentMethodSql}) = 'credit'`);
     } else if (mop === 'gcash') {
-      conditions.push("EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id=i.id AND LOWER(p.method) LIKE '%gcash%')");
+      conditions.push(`LOWER(${paymentMethodSql}) LIKE '%gcash%'`);
     } else if (mop === 'check') {
-      conditions.push("EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id=i.id AND LOWER(p.method) LIKE '%check%')");
+      conditions.push(`LOWER(${paymentMethodSql}) LIKE '%check%'`);
     } else if (mop === 'bank' || mop === 'bank_transfer') {
-      conditions.push("EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id=i.id AND (LOWER(p.method) LIKE '%bank%' OR LOWER(p.method) LIKE '%transfer%'))");
+      conditions.push(`(LOWER(${paymentMethodSql}) LIKE '%bank%' OR LOWER(${paymentMethodSql}) LIKE '%transfer%')`);
     } else if (mop === 'cash') {
-      conditions.push("(EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id=i.id AND LOWER(p.method) = 'cash') OR (NOT EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id=i.id) AND i.status = 'paid'))");
+      conditions.push(`LOWER(${paymentMethodSql}) = 'cash'`);
     } else {
-      conditions.push("EXISTS (SELECT 1 FROM payments p WHERE p.invoice_id=i.id AND LOWER(p.method) = ?)");
+      conditions.push(`LOWER(${paymentMethodSql}) = ?`);
       params.push(mop);
     }
   }
@@ -71,10 +76,7 @@ router.get('/', async (req: Request, res: Response) => {
       i.total - COALESCE((SELECT SUM(amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) AS adjusted_total,
       i.tax_amount - COALESCE((SELECT SUM(tax_amount) FROM credit_memos cm WHERE cm.invoice_id=i.id AND cm.status='issued'),0) - CASE WHEN i.tax_rate > 0 THEN COALESCE((SELECT SUM(total_credit) FROM invoice_returns ir WHERE ir.invoice_id=i.id),0) * i.tax_rate / (1+i.tax_rate) ELSE 0 END AS adjusted_tax,
       COALESCE((SELECT SUM(amount) FROM payments p WHERE p.invoice_id=i.id),0) - COALESCE((SELECT SUM(amount) FROM refunds r WHERE r.invoice_id=i.id),0) AS net_paid,
-      COALESCE(
-        (SELECT p.method FROM payments p WHERE p.invoice_id=i.id ORDER BY p.payment_date ASC, p.rowid ASC LIMIT 1),
-        CASE WHEN (i.credit_account_name IS NOT NULL AND trim(i.credit_account_name) <> '') OR i.status IN ('pending', 'partial') THEN 'credit' ELSE 'cash' END
-      ) AS payment_method
+      ${paymentMethodSql} AS payment_method
     FROM invoices i
     LEFT JOIN customers c ON c.id = i.customer_id
     ${where}

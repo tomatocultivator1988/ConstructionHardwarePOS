@@ -134,11 +134,13 @@ export async function renderReceipts(): Promise<string> {
                   <td data-label="Status">
                     <span class="status-badge ${inv.status}">${esc(inv.status)}</span>
                   </td>
-                  <td data-label="Actions" class="actions" style="display:flex;gap:4px;flex-wrap:wrap">
-                    <button class="btn btn-primary btn-sm" onclick="showInvoiceDetail('${inv.id}')" title="View details">VIEW</button>
-                    <button class="btn btn-sm" onclick="printReceipt('${inv.id}')" title="Print receipt">PRINT</button>
-                    ${isAdmin() && inv.status !== 'voided' ? `<button class="btn btn-warning btn-sm" onclick="showReturnModal('${inv.id}', 'sales')" title="Process Refund / Return">REFUND</button>` : ''}
-                    ${isAdmin() ? `<button class="btn btn-danger btn-sm" onclick="delInvoice('${inv.id}')" title="Delete Sale">DELETE</button>` : ''}
+                  <td data-label="Actions" class="actions">
+                    <div class="actions-group">
+                      <button class="btn btn-primary btn-sm" onclick="showInvoiceDetail('${inv.id}')" title="View details">VIEW</button>
+                      <button class="btn btn-sm" onclick="printReceipt('${inv.id}')" title="Print receipt">PRINT</button>
+                      ${isAdmin() && inv.status !== 'voided' ? `<button class="btn btn-warning btn-sm" onclick="showReturnModal('${inv.id}', 'sales')" title="Process Refund / Return">REFUND</button>` : ''}
+                      ${isAdmin() ? `<button class="btn btn-danger btn-sm" onclick="delInvoice('${inv.id}')" title="Delete Sale">DELETE</button>` : ''}
+                    </div>
                   </td>
                 </tr>
               `;
