@@ -273,7 +273,7 @@ export async function renderInvoices(): Promise<string> {
       apiGet<Material[]>('/materials'),
       apiGet<{ value: string }>('/settings/default_tax_rate'),
     ]);
-    materials = fetchedMaterials;
+    materials = Array.isArray(fetchedMaterials) ? fetchedMaterials : ((fetchedMaterials as any)?.data || []);
     defaultTax = fetchedSettings?.value || '0';
     // Cache to IndexedDB for offline catalog access
     cacheMaterials(materials);
@@ -322,7 +322,7 @@ export async function renderInvoices(): Promise<string> {
     </div>
     <div class="pos-layout">
       <aside class="pos-categories"><div class="pos-panel-title">Categories</div><button class="pos-category ${!posCategory ? 'active' : ''}" onclick="setPOSCategory('')">All Categories</button>${categoryButtons}</aside>
-      <section class="pos-products"><div class="pos-search"><input id="pos-search" type="search" value="${esc(posSearch)}" placeholder="Search material name, category, or unit..." oninput="filterPOSMaterials(this.value)" /><button class="btn btn-sm pos-camera-btn" onclick="startPOSCameraScan()" title="Scan barcode with camera">Scan Barcode</button><span>${filteredMaterials.length} item${filteredMaterials.length === 1 ? '' : 's'}</span></div><div class="pos-product-grid">${filteredMaterials.length ? filteredMaterials.map(renderPOSProductCard).join('') : '<div class="pos-empty">No materials match your search.</div>'}</div></section>
+      <section class="pos-products"><div class="pos-search"><input id="pos-search" type="search" value="${esc(posSearch)}" placeholder="Search material name, category, or unit..." oninput="filterPOSMaterials(this.value)" /><button class="btn btn-sm pos-camera-btn" onclick="startPOSCameraScan()" title="Scan barcode with camera">Scan Barcode</button><span>${filteredMaterials.length} item${filteredMaterials.length === 1 ? '' : 's'}</span></div><div class="pos-product-grid">${filteredMaterials.length ? filteredMaterials.map(renderPOSProductCard).join('') : (!materials.length ? `<div class="pos-empty"><p><strong>No products in offline cache.</strong></p><p style="font-size:var(--fs-sm);color:var(--c-text-muted);margin-top:var(--space-2)">Please connect to the internet once to load the catalog onto this device.</p><button type="button" class="btn btn-sm btn-outline" onclick="showAddCustomPOSItemModal()" style="margin-top:var(--space-3)">+ Add Custom / Misc Item</button></div>` : '<div class="pos-empty">No materials match your search.</div>')}</div></section>
       <aside class="pos-cart-panel"><div class="pos-panel-title pos-cart-title"><span>Current Sale</span><button class="pos-cart-toggle" onclick="togglePOSCart()" aria-expanded="false">Cart · ${posCart.length} · ${fmtPeso(total)}</button></div>
         <button type="button" class="btn btn-sm btn-outline pos-add-custom-btn" onclick="showAddCustomPOSItemModal()" style="width:100%;margin-bottom:var(--space-2);display:flex;align-items:center;justify-content:center;gap:0.35rem;font-weight:600;padding:0.45rem">+ Custom / Misc Item</button>
         <div class="pos-cart-items">${renderCartItemsHTML()}</div>

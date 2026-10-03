@@ -110,8 +110,9 @@ export async function precacheCatalog(): Promise<void> {
       apiGet<Material[]>('/materials'),
       apiGet<{ value: string }>('/settings/default_tax_rate'),
     ]);
-    if (Array.isArray(fetchedMaterials) && fetchedMaterials.length) {
-      await cacheMaterials(fetchedMaterials);
+    const list = Array.isArray(fetchedMaterials) ? fetchedMaterials : ((fetchedMaterials as any)?.data || []);
+    if (Array.isArray(list) && list.length) {
+      await cacheMaterials(list);
     }
     if (fetchedSettings?.value !== undefined) {
       await cacheSetting('default_tax_rate', fetchedSettings.value);
