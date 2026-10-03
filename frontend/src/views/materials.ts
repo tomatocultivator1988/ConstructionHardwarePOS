@@ -5,6 +5,7 @@ import { loadView } from '../lib/router';
 import { startBarcodeCameraScan } from './invoices';
 import { openCategoriesManager } from './settings';
 import type { Material, StockMovement, Supplier } from '../lib/types';
+import { getCachedMaterials } from '../lib/offline';
 
 let UNIT_OPTIONS = ['Each', 'Kilogram', 'Meter', 'Roll', 'Gallon', 'Pieces', 'Liter', 'Box', 'Set', 'Bag', 'Pair', 'Sack', 'Cubic', 'cu.m', 'Bottle', 'Pack'];
 
@@ -213,27 +214,50 @@ export async function renderMaterials(): Promise<string> {
   const query = new URLSearchParams({ page: String(materialPage), pageSize: String(MATERIAL_PAGE_SIZE) });
   if (materialSearch) query.set('search', materialSearch);
   if (materialCategory) query.set('category', materialCategory);
-  const [response, suppliers, catalog] = await Promise.all([
-    apiGet<Material[] | { data: Material[]; total: number }>(`/materials?${query}`),
-    apiGet<Supplier[]>('/suppliers'),
-    apiGet<Record<string, string[]>>('/catalog'),
-  ]);
-  if (Array.isArray(catalog.category)) MAT_CATEGORIES = ['', ...catalog.category];
-  if (Array.isArray(catalog.unit)) UNIT_OPTIONS = catalog.unit;
-  (window as any).__materialSuppliers = suppliers;
-  const materials = Array.isArray(response) ? response : response.data;
-  const totalMaterials = Array.isArray(response) ? response.length : response.total;
+
+  let materials: Material[] = [];
+  let totalMaterials = 0;
+  let isOffline = !navigator.onLine;
+
+  try {
+    const [response, suppliers, catalog] = await Promise.all([
+      apiGet<Material[] | { data: Material[]; total: number }>(`/materials?${query}`),
+      apiGet<Supplier[]>('/suppliers'),
+      apiGet<Record<string, string[]>>('/catalog'),
+    ]);
+    if (Array.isArray(catalog.category)) MAT_CATEGORIES = ['', ...catalog.category];
+    if (Array.isArray(catalog.unit)) UNIT_OPTIONS = catalog.unit;
+    (window as any).__materialSuppliers = suppliers;
+    materials = Array.isArray(response) ? response : response.data;
+    totalMaterials = Array.isArray(response) ? response.length : response.total;
+  } catch (err) {
+    console.warn('Network unavailable, displaying cached products in Products tab:', err);
+    isOffline = true;
+    const cached = await getCachedMaterials();
+    let filtered = cached;
+    if (materialCategory) filtered = filtered.filter(m => m.category === materialCategory);
+    if (materialSearch) {
+      const q = materialSearch.toLowerCase();
+      filtered = filtered.filter(m => `${m.name} ${m.category} ${m.unit}`.toLowerCase().includes(q));
+    }
+    totalMaterials = filtered.length;
+    materials = filtered.slice((materialPage - 1) * MATERIAL_PAGE_SIZE, materialPage * MATERIAL_PAGE_SIZE);
+  }
+
   (window as any).__materialNames = Object.fromEntries(materials.map((m: Material) => [m.id, m.name]));
   return `
     <div class="page-header">
-      <h2>Products</h2>
+      <div>
+        <h2>Products</h2>
+        ${isOffline ? `<span class="badge" style="font-size:var(--fs-xs);background:var(--c-warning-bg);color:var(--c-warning);font-weight:700">Offline View (Cached Catalog)</span>` : ''}
+      </div>
       <div class="material-toolbar" style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
         <input id="mat-search" type="search" placeholder="Search materials..." value="${esc(materialSearch)}" oninput="filterMaterials(true)" onkeydown="if(event.key==='Enter')filterMaterials(false)" style="min-height:36px;min-width:220px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)" />
         <select id="mat-cat-filter" onchange="filterMaterials(false)" style="min-height:36px;background:var(--c-surface-elevated);color:var(--c-text);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:0 var(--space-3);font-size:var(--fs-sm)">
           ${catOptions(materialCategory)}
         </select>
-        ${isAdmin() ? `<button class="btn btn-sm" onclick="openCategoriesManager('category')" title="Manage categories in Settings">Manage Categories</button>` : ''}
-        <button class="btn btn-primary" onclick="showMaterialModal()">+ Add Product</button>
+        ${isAdmin() && !isOffline ? `<button class="btn btn-sm" onclick="openCategoriesManager('category')" title="Manage categories in Settings">Manage Categories</button>` : ''}
+        ${!isOffline ? `<button class="btn btn-primary" onclick="showMaterialModal()">+ Add Product</button>` : `<button class="btn btn-primary" onclick="loadView('invoices')">Open POS 🛒</button>`}
       </div>
     </div>
     <div class="table-wrap">
@@ -256,6 +280,10 @@ function paginationMarkup(total: number) {
 export function changeMaterialPage(page: number) { materialPage = Math.max(1, page); executeFilterMaterials(); }
 
 export function showMaterialModal(data?: Material) {
+  if (!navigator.onLine) {
+    showToast('Product editing requires an internet connection', 'warning');
+    return;
+  }
   const isEdit = !!data;
   const suppliers: Supplier[] = (window as any).__materialSuppliers || [];
   showModal(`
@@ -532,7 +560,21 @@ async function executeFilterMaterials() {
   } catch (err: any) {
     if (reqSeq !== materialRequestSeq) return;
     if (tbody) tbody.style.opacity = '1';
-    showToast(err.message || 'Failed to filter materials');
+    const cached = await getCachedMaterials();
+    let filtered = cached;
+    if (cat) filtered = filtered.filter(m => m.category === cat);
+    if (search) {
+      const q = search.toLowerCase();
+      filtered = filtered.filter(m => `${m.name} ${m.category} ${m.unit}`.toLowerCase().includes(q));
+    }
+    const totalMaterials = filtered.length;
+    const materials = filtered.slice((materialPage - 1) * MATERIAL_PAGE_SIZE, materialPage * MATERIAL_PAGE_SIZE);
+    (window as any).__materialNames = Object.fromEntries(materials.map((m: Material) => [m.id, m.name]));
+    if (tbody) {
+      tbody.innerHTML = materials.length ? materials.map(renderMaterialRow).join('') : '<tr><td colspan="9" style="text-align:center;color:var(--c-text-muted);padding:2rem">No materials found in offline cache</td></tr>';
+    }
+    const pager = document.getElementById('materials-pagination');
+    if (pager) pager.innerHTML = totalMaterials > MATERIAL_PAGE_SIZE ? paginationMarkup(totalMaterials) : '';
   }
 }
 

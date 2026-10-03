@@ -2,10 +2,91 @@ import { apiGet } from '../lib/api';
 import { esc, fmtDate, fmtPeso, businessDate } from '../lib/helpers';
 import { getChartInstances, getCurrentView } from '../lib/router';
 import type { Invoice, Analytics, PaySummary } from '../lib/types';
+import { getCachedMaterials, getPendingOfflineCount } from '../lib/offline';
 
 let dashboardRenderSequence = 0;
 
+async function renderOfflineDashboard(): Promise<string> {
+  const cachedMats = await getCachedMaterials();
+  const pendingCount = await getPendingOfflineCount();
+  const lowStock = cachedMats.filter(m => Number(m.stock) <= Number(m.reorder_point));
+
+  return `
+    <div class="pos-kicker" style="color:var(--c-warning);display:flex;align-items:center;gap:6px">
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--c-warning)"></span>
+      Offline Mode Active
+    </div>
+    <div class="page-header" style="margin-bottom:var(--space-4)">
+      <div>
+        <h2>Dashboard Overview</h2>
+        <p style="color:var(--c-text-muted);font-size:var(--fs-sm);margin:4px 0 0 0">
+          Operating in offline mode. Local product catalog is loaded and ready for POS sales.
+        </p>
+      </div>
+      <div style="display:flex;gap:var(--space-2);align-items:center">
+        <button class="btn btn-primary" onclick="loadView('invoices')" style="display:flex;align-items:center;gap:6px;font-weight:700">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/>
+            <line x1="16" y1="17" x2="8" y2="17"/>
+          </svg>
+          Open POS Cashier 🛒
+        </button>
+      </div>
+    </div>
+
+    <div class="offline-callout-card" style="background:var(--c-surface);border:2px solid var(--c-primary);border-radius:var(--radius-lg);padding:var(--space-5);margin-bottom:var(--space-5);box-shadow:var(--shadow-sm)">
+      <div style="display:flex;align-items:flex-start;gap:var(--space-4);flex-wrap:wrap">
+        <div style="font-size:2.5rem;line-height:1">📡</div>
+        <div style="flex:1;min-width:260px">
+          <h3 style="margin:0 0 var(--space-2) 0;color:var(--c-text)">You're currently in Offline Mode</h3>
+          <p style="margin:0 0 var(--space-3) 0;color:var(--c-text-secondary);font-size:var(--fs-base);line-height:1.5">
+            Live server charts and financial reports require an active internet connection.
+            <strong>However, your Point of Sale (POS) is 100% operational offline.</strong> You can ring up sales, take cash, choose secondary packaging (sack/cubic), and print thermal receipts immediately.
+          </p>
+          <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="loadView('invoices')" style="padding:0.6rem 1.4rem;font-weight:700;font-size:var(--fs-base)">
+              🛒 Start Ringing Up Sales in POS
+            </button>
+            <button class="btn btn-outline" onclick="loadView('dashboard')">
+              ↻ Check Connection
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stats-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:var(--space-4);margin-bottom:var(--space-5)">
+      <div class="stat-card" style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:var(--space-4)">
+        <div style="font-size:var(--fs-xs);font-weight:700;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:0.05em">Point of Sale</div>
+        <div style="font-size:1.75rem;font-weight:800;color:var(--c-success);margin:6px 0 2px 0">Ready</div>
+        <div style="font-size:var(--fs-xs);color:var(--c-text-muted)">Cash & local receipts active</div>
+      </div>
+      <div class="stat-card" style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:var(--space-4)">
+        <div style="font-size:var(--fs-xs);font-weight:700;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:0.05em">Cached Products</div>
+        <div style="font-size:1.75rem;font-weight:800;color:var(--c-primary);margin:6px 0 2px 0">${cachedMats.length}</div>
+        <div style="font-size:var(--fs-xs);color:var(--c-text-muted)">Products ready in device memory</div>
+      </div>
+      <div class="stat-card" style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:var(--space-4)">
+        <div style="font-size:var(--fs-xs);font-weight:700;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:0.05em">Unsynced Sales</div>
+        <div style="font-size:1.75rem;font-weight:800;color:${pendingCount > 0 ? 'var(--c-warning)' : 'var(--c-text)'};margin:6px 0 2px 0">${pendingCount}</div>
+        <div style="font-size:var(--fs-xs);color:var(--c-text-muted)">Will auto-sync when online</div>
+      </div>
+      <div class="stat-card" style="background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-md);padding:var(--space-4)">
+        <div style="font-size:var(--fs-xs);font-weight:700;color:var(--c-text-muted);text-transform:uppercase;letter-spacing:0.05em">Low Stock Items</div>
+        <div style="font-size:1.75rem;font-weight:800;color:${lowStock.length > 0 ? 'var(--c-danger)' : 'var(--c-text)'};margin:6px 0 2px 0">${lowStock.length}</div>
+        <div style="font-size:var(--fs-xs);color:var(--c-text-muted)">At or below reorder level</div>
+      </div>
+    </div>
+  `;
+}
+
 export async function renderDashboard(): Promise<string> {
+  if (!navigator.onLine) {
+    return renderOfflineDashboard();
+  }
+
   const renderSequence = ++dashboardRenderSequence;
   // Dashboard widgets are independent. A transient failure in one endpoint
   // should not blank the entire home screen on a cold serverless start.
@@ -20,6 +101,9 @@ export async function renderDashboard(): Promise<string> {
     const reasonMsg = (analyticsResult as PromiseRejectedResult).reason?.message || '';
     if (/session expired|login/i.test(reasonMsg)) {
       return '';
+    }
+    if (/failed to fetch|network|offline|abort|load failed/i.test(reasonMsg) || !navigator.onLine) {
+      return renderOfflineDashboard();
     }
     throw new Error('Dashboard analytics are temporarily unavailable. Please retry.');
   }

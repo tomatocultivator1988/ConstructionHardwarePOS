@@ -1,5 +1,5 @@
 import { Material } from './types';
-import { apiPost, isLoggedIn, getCurrentUser } from './api';
+import { apiGet, apiPost, isLoggedIn, getCurrentUser } from './api';
 import { showToast } from './helpers';
 
 const DB_NAME = 'buildpro_pos_offline';
@@ -100,6 +100,24 @@ export async function cacheMaterials(materials: Material[]): Promise<void> {
     }
   } catch (err) {
     console.warn('Failed to cache materials to IndexedDB:', err);
+  }
+}
+
+export async function precacheCatalog(): Promise<void> {
+  if (!navigator.onLine || !isLoggedIn()) return;
+  try {
+    const [fetchedMaterials, fetchedSettings] = await Promise.all([
+      apiGet<Material[]>('/materials'),
+      apiGet<{ value: string }>('/settings/default_tax_rate'),
+    ]);
+    if (Array.isArray(fetchedMaterials) && fetchedMaterials.length) {
+      await cacheMaterials(fetchedMaterials);
+    }
+    if (fetchedSettings?.value !== undefined) {
+      await cacheSetting('default_tax_rate', fetchedSettings.value);
+    }
+  } catch (err) {
+    console.debug('Background catalog pre-caching skipped:', err);
   }
 }
 
@@ -367,6 +385,12 @@ export async function updateOfflineStatusUI(syncInProgress = false) {
     syncBtn.style.display = isOnline && count > 0 && !syncInProgress ? 'inline-block' : 'none';
   }
 
+  const posShortcut = document.getElementById('offline-pos-shortcut') as HTMLElement | null;
+  if (posShortcut) {
+    const isPOSActive = document.querySelector('.pos-page') !== null;
+    posShortcut.style.display = !isOnline && !isPOSActive ? 'inline-block' : 'none';
+  }
+
   // Update POS header status pill if present
   const posStatusBadge = document.getElementById('pos-offline-badge');
   if (posStatusBadge) {
@@ -388,6 +412,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('online', () => {
     updateOfflineStatusUI();
     syncOfflineSales();
+    precacheCatalog();
   });
 
   window.addEventListener('offline', () => {

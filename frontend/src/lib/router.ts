@@ -124,12 +124,28 @@ export async function loadView(view: string) {
       showLogin();
       return;
     }
+    const isOffline = !navigator.onLine || /failed to fetch|network|offline|abort|load failed/i.test(err?.message || '');
+    if (isOffline) {
+      el.innerHTML = `<div class="empty-state view-error" style="max-width:540px;margin:var(--space-6) auto;padding:var(--space-6);background:var(--c-surface);border:1px solid var(--c-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-sm)">
+        <div style="font-size:3rem;margin-bottom:var(--space-2)">📡</div>
+        <h3 style="margin-bottom:var(--space-2)">You're currently offline</h3>
+        <p style="color:var(--c-text-secondary);line-height:1.5;margin:0 0 var(--space-4)">
+          The <strong>${targetView}</strong> section requires an active cloud connection.
+          However, the <strong>Point of Sale (POS)</strong> is fully active offline so you can ring up sales, take cash, and print receipts right now.
+        </p>
+        <div style="display:flex;gap:var(--space-2);justify-content:center;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="loadView('invoices')" style="font-weight:700">🛒 Open POS Cashier</button>
+          <button class="btn btn-outline" onclick="loadView('${targetView}')">↻ Retry</button>
+        </div>
+      </div>`;
+      return;
+    }
     el.innerHTML = `<div class="empty-state view-error">
       <h3>Unable to load ${targetView === 'dashboard' ? 'Dashboard' : targetView}</h3>
       <p>${err.message || 'Please try again.'}</p>
       <div style="display:flex;gap:var(--space-2);justify-content:center;margin-top:var(--space-3)">
         <button class="btn btn-primary" onclick="loadView('${targetView}')">Retry</button>
-        <button class="btn" onclick="loadView('dashboard')">Go to Dashboard</button>
+        ${targetView !== 'dashboard' ? `<button class="btn" onclick="loadView('dashboard')">Go to Dashboard</button>` : `<button class="btn" onclick="loadView('invoices')">Go to POS</button>`}
       </div>
     </div>`;
     showToast(err.message || String(err));

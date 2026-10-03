@@ -53,6 +53,7 @@ export function enhancePOS() {
       qty.innerHTML = `<input class="pos-qty-input" type="number" min="0.01" step="any" value="${item.quantity}" aria-label="Quantity" onchange="setPOSQty('${item.cartItemId}', this.value)" />`;
     }
   });
+  updateOfflineStatusUI().catch(() => {});
 }
 
 export async function startPOSCameraScan() { return startBarcodeCameraScan(scanPOSCode); }

@@ -17,7 +17,7 @@ import * as deliveries from './views/deliveries';
 import * as customers from './views/customers';
 import { openHelp } from './lib/help';
 import { submitExportPeriod, toggleExportCustomRange } from './lib/export';
-import { syncOfflineSales, updateOfflineStatusUI } from './lib/offline';
+import { syncOfflineSales, updateOfflineStatusUI, precacheCatalog } from './lib/offline';
 
 setUnauthorizedHandler(login.showLogin);
 
@@ -239,6 +239,9 @@ document.querySelectorAll('#bottom-nav .nav-btn').forEach(btn => {
 // Online/offline detection
 function updateOnlineStatus() {
   updateOfflineStatusUI();
+  if (navigator.onLine && isLoggedIn()) {
+    precacheCatalog().catch(() => {});
+  }
 }
 
 document.getElementById('help-button')?.addEventListener('click', openHelp);
@@ -298,7 +301,13 @@ function openMobileMore() {
 // Init
 if (isLoggedIn()) {
   applyRoleUI();
-  loadView('dashboard');
+  if (!navigator.onLine) {
+    loadView('invoices');
+  } else {
+    const user = getCurrentUser();
+    loadView(user?.role === 'staff' ? 'invoices' : 'dashboard');
+    precacheCatalog().catch(() => {});
+  }
   showUserHeader();
 } else {
   login.showLogin();
