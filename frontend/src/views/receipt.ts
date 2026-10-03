@@ -139,6 +139,7 @@ async function loadReceiptContext(idOrData: string | any): Promise<ReceiptContex
         material_id: it.material_id || '',
         description: it.description,
         quantity: it.quantity,
+        remaining_quantity: it.quantity,
         unit_price: it.unit_price,
         unit: it.unit || 'Unit',
         total: it.quantity * it.unit_price,
@@ -153,6 +154,10 @@ async function loadReceiptContext(idOrData: string | any): Promise<ReceiptContex
         }
       ]
     };
+    (offlineInv as any).discount_amount = Number(invData.discount_amount || 0);
+    (offlineInv as any).buyer_address = invData.buyer_address || null;
+    (offlineInv as any).credit_account_name = invData.credit_account_name || null;
+    (offlineInv as any).notes = invData.notes || null;
 
     currentReceiptContext = {
       inv: offlineInv,

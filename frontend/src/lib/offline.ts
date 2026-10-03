@@ -148,26 +148,45 @@ export async function getCachedSetting(key: string, fallback: any = null): Promi
 }
 
 export async function deductCachedStock(items: Array<{ material_id?: string | null; quantity: number; stockMultiplier?: number; stock_multiplier?: number }>): Promise<void> {
-  try {
-    const db = await openOfflineDB();
-    const tx = db.transaction('catalog_materials', 'readwrite');
-    const store = tx.objectStore('catalog_materials');
-
+  // 1. Immediately update in-memory materials cache so POS cards reflect the reduction instantly
+  const memMaterials = (window as any).__invMaterials as Material[] | undefined;
+  if (Array.isArray(memMaterials)) {
     for (const it of items) {
       if (!it.material_id) continue;
-      const getReq = store.get(it.material_id);
-      getReq.onsuccess = () => {
-        const mat = getReq.result as Material | undefined;
-        if (mat) {
-          const mult = it.stockMultiplier ?? it.stock_multiplier ?? 1;
-          const qtyNeeded = it.quantity * mult;
-          mat.stock = Math.max(0, Math.round((Number(mat.stock || 0) - qtyNeeded) * 1000) / 1000);
-          store.put(mat);
-        }
-      };
+      const memMat = memMaterials.find(m => m.id === it.material_id);
+      if (memMat) {
+        const mult = it.stockMultiplier ?? it.stock_multiplier ?? 1;
+        const qtyNeeded = it.quantity * mult;
+        memMat.stock = Math.max(0, Math.round((Number(memMat.stock || 0) - qtyNeeded) * 1000) / 1000);
+      }
     }
+  }
+
+  // 2. Persist to IndexedDB
+  try {
+    const db = await openOfflineDB();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('catalog_materials', 'readwrite');
+      const store = tx.objectStore('catalog_materials');
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+
+      for (const it of items) {
+        if (!it.material_id) continue;
+        const getReq = store.get(it.material_id);
+        getReq.onsuccess = () => {
+          const mat = getReq.result as Material | undefined;
+          if (mat) {
+            const mult = it.stockMultiplier ?? it.stock_multiplier ?? 1;
+            const qtyNeeded = it.quantity * mult;
+            mat.stock = Math.max(0, Math.round((Number(mat.stock || 0) - qtyNeeded) * 1000) / 1000);
+            store.put(mat);
+          }
+        };
+      }
+    });
   } catch (err) {
-    console.warn('Failed to deduct cached stock:', err);
+    console.warn('Failed to deduct cached stock in IndexedDB:', err);
   }
 }
 

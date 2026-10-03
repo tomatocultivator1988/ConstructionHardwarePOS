@@ -551,12 +551,7 @@ router.post('/sync-offline', async (req: Request, res: Response) => {
         throw new Error('At least one item is required in the sale');
       }
 
-      // 3. Sequential invoice number
-      const seqRow = await db.prepare('SELECT next_number FROM invoice_sequence WHERE id = 1').get() as any;
-      const num = Number(seqRow?.next_number || 1);
-      const invoiceNumber = `INV-${String(num).padStart(4, '0')}`;
-
-      // 4. Calculate figures
+      // 3. Calculate figures
       let subtotal = 0;
       for (const item of items) {
         const qty = Number(item.quantity) || 0;
@@ -595,74 +590,92 @@ router.post('/sync-offline', async (req: Request, res: Response) => {
         : [];
       const matMap = new Map(mats.map((m: any) => [m.id, m]));
 
-      const batchStatements: Array<{ sql: string; args: any[] }> = [
-        {
-          sql: 'UPDATE invoice_sequence SET next_number = next_number + 1 WHERE id = 1 AND next_number = ?',
-          args: [num]
-        },
-        {
-          sql: `INSERT INTO invoices (
-            id, customer_id, invoice_number, subtotal, tax_rate, tax_amount, total,
-            discount_amount, amount_received, change_amount, status, paid_date,
-            due_date, delivery_person, credit_account_name, buyer_address, notes,
-            idempotency_key, issued_date, user_id, offline_reference
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [
-            invoiceId, sale.customer_id || null, invoiceNumber, roundedSubtotal, taxRate, taxAmount, total,
-            discount, amountReceived, changeAmount, status, paidDate,
-            sale.due_date || null, sale.delivery_person || null, sale.credit_account_name || null,
-            sale.buyer_address || null, sale.notes || null, idempotencyKey, issuedDate,
-            sale.user_id || (req as any).user?.id || null, offlineRef
-          ]
+      // 4. Sequential invoice number with collision retry
+      let syncCommitted = false;
+      let invoiceNumber = '';
+      let attempts = 0;
+
+      while (!syncCommitted && attempts < 3) {
+        attempts++;
+        const seqRow = await db.prepare('SELECT next_number FROM invoice_sequence WHERE id = 1').get() as any;
+        const num = Number(seqRow?.next_number || 1);
+        invoiceNumber = `INV-${String(num).padStart(4, '0')}`;
+
+        const batchStatements: Array<{ sql: string; args: any[] }> = [
+          {
+            sql: 'UPDATE invoice_sequence SET next_number = next_number + 1 WHERE id = 1 AND next_number = ?',
+            args: [num]
+          },
+          {
+            sql: `INSERT INTO invoices (
+              id, customer_id, invoice_number, subtotal, tax_rate, tax_amount, total,
+              discount_amount, amount_received, change_amount, status, paid_date,
+              due_date, delivery_person, credit_account_name, buyer_address, notes,
+              idempotency_key, issued_date, user_id, offline_reference
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            args: [
+              invoiceId, sale.customer_id || null, invoiceNumber, roundedSubtotal, taxRate, taxAmount, total,
+              discount, amountReceived, changeAmount, status, paidDate,
+              sale.due_date || null, sale.delivery_person || null, sale.credit_account_name || null,
+              sale.buyer_address || null, sale.notes || null, idempotencyKey, issuedDate,
+              sale.user_id || (req as any).user?.id || null, offlineRef
+            ]
+          }
+        ];
+
+        // Add line items
+        for (const item of items) {
+          const lineQty = Number(item.quantity) || 0;
+          const linePrice = Number(item.unit_price) || 0;
+          const lineTotal = Math.round(lineQty * linePrice * 100) / 100;
+          const mat = item.material_id ? matMap.get(item.material_id) : null;
+          const mult = Number(item.stock_multiplier) || 1;
+          const cost = mat ? Math.round(Number(mat.cost_price || 0) * mult * 100) / 100 : 0;
+          const unit = item.unit || (mat ? mat.unit : null);
+
+          batchStatements.push({
+            sql: 'INSERT INTO invoice_items (id, invoice_id, material_id, description, quantity, unit_price, cost_price, total, unit, stock_multiplier) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            args: [uuidv4(), invoiceId, item.material_id || null, String(item.description || '').trim(), lineQty, linePrice, cost, lineTotal, unit, mult]
+          });
         }
-      ];
 
-      // Add line items
-      for (const item of items) {
-        const lineQty = Number(item.quantity) || 0;
-        const linePrice = Number(item.unit_price) || 0;
-        const lineTotal = Math.round(lineQty * linePrice * 100) / 100;
-        const mat = item.material_id ? matMap.get(item.material_id) : null;
-        const mult = Number(item.stock_multiplier) || 1;
-        const cost = mat ? Math.round(Number(mat.cost_price || 0) * mult * 100) / 100 : 0;
-        const unit = item.unit || (mat ? mat.unit : null);
+        // Add payment
+        if (!isCredit) {
+          batchStatements.push({
+            sql: 'INSERT INTO payments (id, invoice_id, amount, method, payment_method, notes, shift_id, payment_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            args: [paymentId, invoiceId, total, paymentMethod, paymentMethod, payment.notes || null, shiftId, paidDate]
+          });
+        }
 
-        batchStatements.push({
-          sql: 'INSERT INTO invoice_items (id, invoice_id, material_id, description, quantity, unit_price, cost_price, total, unit, stock_multiplier) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          args: [uuidv4(), invoiceId, item.material_id || null, String(item.description || '').trim(), lineQty, linePrice, cost, lineTotal, unit, mult]
-        });
+        // Stock deduction & movement (without stock >= qty check so sync succeeds even if cloud stock went low)
+        for (const materialId of usedMaterialIds) {
+          const mat = matMap.get(materialId);
+          const qtyNeeded = items
+            .filter((it: any) => it.material_id === materialId)
+            .reduce((sum: number, it: any) => sum + (Number(it.quantity) * (Number(it.stock_multiplier) || 1)), 0);
+
+          batchStatements.push({
+            sql: 'UPDATE materials SET stock = stock - ? WHERE id = ?',
+            args: [qtyNeeded, materialId]
+          });
+          batchStatements.push({
+            sql: 'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            args: [
+              uuidv4(), materialId, 'sale', -qtyNeeded, invoiceId, 'invoice',
+              `Sold in offline sale ${invoiceNumber}${offlineRef ? ` (${offlineRef})` : ''}`
+            ]
+          });
+        }
+
+        const batchResults = await db.batch(batchStatements, 'write');
+        if (batchResults[0].rowsAffected === 1) {
+          syncCommitted = true;
+        } else {
+          await new Promise(r => setTimeout(r, 50 * attempts));
+        }
       }
 
-      // Add payment
-      if (!isCredit) {
-        batchStatements.push({
-          sql: 'INSERT INTO payments (id, invoice_id, amount, method, notes, shift_id, payment_date) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          args: [paymentId, invoiceId, total, paymentMethod, payment.notes || null, shiftId, paidDate]
-        });
-      }
-
-      // Stock deduction & movement (without stock >= qty check so sync succeeds even if cloud stock went low)
-      for (const materialId of usedMaterialIds) {
-        const mat = matMap.get(materialId);
-        const qtyNeeded = items
-          .filter((it: any) => it.material_id === materialId)
-          .reduce((sum: number, it: any) => sum + (Number(it.quantity) * (Number(it.stock_multiplier) || 1)), 0);
-
-        batchStatements.push({
-          sql: 'UPDATE materials SET stock = stock - ? WHERE id = ?',
-          args: [qtyNeeded, materialId]
-        });
-        batchStatements.push({
-          sql: 'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          args: [
-            uuidv4(), materialId, 'sale', -qtyNeeded, invoiceId, 'invoice',
-            `Sold in offline sale ${invoiceNumber}${offlineRef ? ` (${offlineRef})` : ''}`
-          ]
-        });
-      }
-
-      const batchResults = await db.batch(batchStatements, 'write');
-      if (batchResults[0].rowsAffected !== 1) {
+      if (!syncCommitted) {
         throw new Error('Sequence update collision. Please retry sync.');
       }
 
@@ -681,6 +694,22 @@ router.post('/sync-offline', async (req: Request, res: Response) => {
         total
       });
     } catch (err: any) {
+      if (/unique|constraint/i.test(String(err.message))) {
+        const prev = await db.prepare(
+          'SELECT id, invoice_number, offline_reference, total FROM invoices WHERE id = ? OR idempotency_key = ? OR (offline_reference IS NOT NULL AND offline_reference = ?)'
+        ).get(saleId, idempotencyKey, offlineRef) as any;
+        if (prev) {
+          synced.push({
+            id: saleId,
+            invoice_id: prev.id,
+            invoice_number: prev.invoice_number,
+            offline_reference: prev.offline_reference || offlineRef,
+            total: prev.total,
+            already_synced: true,
+          });
+          continue;
+        }
+      }
       errors.push({
         id: saleId,
         offline_reference: offlineRef,

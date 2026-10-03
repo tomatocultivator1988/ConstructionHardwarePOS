@@ -566,6 +566,12 @@ function renderPOSProductGrid() {
   if (grid) {
     if (filtered.length) {
       grid.innerHTML = filtered.map(renderPOSProductCard).join('');
+    } else if (!materials.length) {
+      grid.innerHTML = `<div class="pos-empty">
+        <p><strong>No products in offline cache.</strong></p>
+        <p style="font-size:var(--fs-sm);color:var(--c-text-muted);margin-top:var(--space-2)">Please connect to the internet once to load the catalog onto this device.</p>
+        <button type="button" class="btn btn-sm btn-outline" onclick="showAddCustomPOSItemModal()" style="margin-top:var(--space-3)">+ Add Custom / Misc Item</button>
+      </div>`;
     } else {
       const q = posSearch.trim();
       grid.innerHTML = `<div class="pos-empty">
@@ -710,6 +716,7 @@ export async function completePOSSale() {
         showToast(`Offline sale saved (Receipt #${offlineSale.offline_reference}). Will auto-sync when online.`, 'warning');
       }
       renderPOSCart();
+      renderPOSProductGrid();
       await updateOfflineStatusUI();
     } catch (err: any) {
       showToast(`Failed to record offline sale: ${err.message}`, 'warning');
@@ -771,6 +778,7 @@ export async function completePOSSale() {
         await showReceiptPreview(offlineSale);
         showToast(`Connection dropped — sale saved offline (${offlineSale.offline_reference})`, 'warning');
         renderPOSCart();
+        renderPOSProductGrid();
         await updateOfflineStatusUI();
         return;
       } catch (fallbackErr: any) {

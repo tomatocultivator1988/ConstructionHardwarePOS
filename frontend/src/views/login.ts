@@ -1,6 +1,7 @@
 import { apiPost } from '../lib/api';
 import { val, disableBtn, showToast } from '../lib/helpers';
 import { loadView } from '../lib/router';
+import { syncOfflineSales } from '../lib/offline';
 
 function toggleChrome(show: boolean) {
   const nav = document.querySelector('nav') as HTMLElement;
@@ -55,6 +56,7 @@ export async function doLogin() {
     localStorage.setItem('buildpro_user', JSON.stringify(data.user));
     toggleChrome(true);
     loadView(data.user.role === 'staff' ? 'invoices' : 'dashboard');
+    syncOfflineSales().catch(() => {});
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     const homeBtn = document.querySelector(`[data-view="${data.user.role === 'staff' ? 'invoices' : 'dashboard'}"]`);
     if (homeBtn) homeBtn.classList.add('active');
