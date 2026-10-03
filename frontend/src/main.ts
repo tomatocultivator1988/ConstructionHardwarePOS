@@ -17,6 +17,7 @@ import * as deliveries from './views/deliveries';
 import * as customers from './views/customers';
 import { openHelp } from './lib/help';
 import { submitExportPeriod, toggleExportCustomRange } from './lib/export';
+import { syncOfflineSales, updateOfflineStatusUI } from './lib/offline';
 
 setUnauthorizedHandler(login.showLogin);
 
@@ -24,6 +25,8 @@ Object.assign(window, {
   loadView,
   closeModal,
   showToast,
+  syncOfflineSales,
+  triggerManualSync: invoices.triggerManualSync,
   showLogin: login.showLogin,
   logout: login.logout,
   doLogin: login.doLogin,
@@ -235,7 +238,7 @@ document.querySelectorAll('#bottom-nav .nav-btn').forEach(btn => {
 
 // Online/offline detection
 function updateOnlineStatus() {
-  document.body.classList.toggle('offline', !navigator.onLine);
+  updateOfflineStatusUI();
 }
 
 document.getElementById('help-button')?.addEventListener('click', openHelp);

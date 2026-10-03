@@ -34,7 +34,8 @@
       <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
       <line x1="12" y1="20" x2="12.01" y2="20"/>
     </svg>
-    <span>You're offline — viewing cached data.</span>
+    <span id="offline-banner-text">You're offline — POS is in Offline Mode. Sales will queue locally.</span>
+    <button id="offline-sync-btn" class="btn btn-sm" style="display:none;margin-left:auto;padding:2px 10px;font-size:12px;background:#ffffff;color:#0b2945;font-weight:700;border:none;border-radius:4px;cursor:pointer" onclick="triggerManualSync()">Sync Now</button>
   </div>
   <div id="app">
     <header>

@@ -1,10 +1,11 @@
-import { apiGet, apiPost, apiPut, apiDel } from '../lib/api';
+import { apiGet, apiPost, apiPut, apiDel, getCurrentUser } from '../lib/api';
 import { esc, val, fmtDate, fmtPeso, setErr, clearErr, disableBtn, isAdmin, formatAggregateBreakdown } from '../lib/helpers';
 import { showModal, closeModal, showToast, showConfirmModal } from '../lib/helpers';
 import { getCurrentView, loadView } from '../lib/router';
 import { showReceiptPreview } from './receipt';
 import type { Invoice, Material } from '../lib/types';
 import { showExportPeriodModal, exportTable, type ExportPeriod } from '../lib/export';
+import { cacheMaterials, getCachedMaterials, cacheSetting, getCachedSetting, queueOfflineSale, getPendingOfflineCount, syncOfflineSales, updateOfflineStatusUI } from '../lib/offline';
 
 let invoicePage = 1;
 const INVOICE_PAGE_SIZE = 15;
@@ -262,12 +263,31 @@ function renderPOSProductCard(m: Material): string {
 }
 
 export async function renderInvoices(): Promise<string> {
-  const [materials, settings] = await Promise.all([
-    apiGet<Material[]>('/materials'),
-    apiGet<{ value: string }>('/settings/default_tax_rate'),
-  ]);
+  let materials: Material[] = [];
+  let defaultTax = '0';
+  let isOfflineMode = !navigator.onLine;
+
+  try {
+    const [fetchedMaterials, fetchedSettings] = await Promise.all([
+      apiGet<Material[]>('/materials'),
+      apiGet<{ value: string }>('/settings/default_tax_rate'),
+    ]);
+    materials = fetchedMaterials;
+    defaultTax = fetchedSettings?.value || '0';
+    // Cache to IndexedDB for offline catalog access
+    cacheMaterials(materials);
+    cacheSetting('default_tax_rate', defaultTax);
+  } catch (err) {
+    console.warn('Network unavailable, loading offline catalog from IndexedDB:', err);
+    isOfflineMode = true;
+    materials = await getCachedMaterials();
+    defaultTax = await getCachedSetting('default_tax_rate', '0');
+  }
+
   (window as any).__invMaterials = materials;
-  (window as any).__invDefaultTax = settings.value || '0';
+  (window as any).__invDefaultTax = defaultTax;
+  const pendingCount = await getPendingOfflineCount();
+
   const categories = [...new Set(materials.map((m: Material) => m.category).filter(Boolean))];
   const filteredMaterials = materials.filter((m: Material) => (!posCategory || m.category === posCategory) && (!posSearch || `${m.name} ${m.category} ${m.unit}`.toLowerCase().includes(posSearch.toLowerCase())));
   const categoryButtons = categories.map(c => {
@@ -275,7 +295,7 @@ export async function renderInvoices(): Promise<string> {
     return `<button class="pos-category ${posCategory === c ? 'active' : ''}" onclick="setPOSCategory('${safeCategory}')">${esc(c)}</button>`;
   }).join('');
   const cartTotal = posCart.reduce((sum, item) => sum + item.quantity * Number(item.unitPrice), 0);
-  const taxRate = Number(settings.value || 0);
+  const taxRate = Number(defaultTax || 0);
   const tax = Math.round(cartTotal * taxRate * 100) / 100;
   const discount = posDiscountEnabled ? Math.min(posDiscountAmount, cartTotal + tax) : 0;
   const total = Math.max(0, Math.round((cartTotal + tax - discount) * 100) / 100);
@@ -286,7 +306,18 @@ export async function renderInvoices(): Promise<string> {
         <div class="pos-kicker">Jeg Enterprises POS</div>
         <h2>Point of Sale</h2>
       </div>
-      ${isAdmin() ? `<button class="btn btn-outline" onclick="loadView('sales')">View Sales History ↗</button>` : ''}
+      <div class="pos-header-actions" style="display:flex;align-items:center;gap:var(--space-3)">
+        <div id="pos-offline-badge" class="pos-status-badge ${!navigator.onLine ? 'pos-status-offline' : (pendingCount > 0 ? 'pos-status-pending' : 'pos-status-online')}">
+          ${!navigator.onLine
+            ? `<span>● Offline</span>${pendingCount > 0 ? ` <strong>(${pendingCount} unsynced)</strong>` : ''}`
+            : (pendingCount > 0
+                ? `<span>● ${pendingCount} unsynced</span> <button type="button" class="btn btn-xs" onclick="triggerManualSync()">Sync Now</button>`
+                : `<span>● Online</span>`
+              )
+          }
+        </div>
+        ${isAdmin() ? `<button class="btn btn-outline" onclick="loadView('sales')">View Sales History ↗</button>` : ''}
+      </div>
     </div>
     <div class="pos-layout">
       <aside class="pos-categories"><div class="pos-panel-title">Categories</div><button class="pos-category ${!posCategory ? 'active' : ''}" onclick="setPOSCategory('')">All Categories</button>${categoryButtons}</aside>
@@ -625,6 +656,12 @@ export async function completePOSSale() {
   const buyer_address = (document.getElementById('pos-credit-address') as HTMLInputElement)?.value.trim() || '';
   const notes = (document.getElementById('pos-credit-notes') as HTMLInputElement)?.value.trim() || '';
   if (method === 'credit' && !credit_account_name) { showToast('Enter the buyer or charge-to name for a credit sale'); (document.getElementById('pos-credit-name') as HTMLInputElement)?.focus(); return; }
+
+  const subtotal = posCart.reduce((sum, item) => sum + item.quantity * Number(item.unitPrice), 0);
+  const taxRate = Number((window as any).__invDefaultTax || 0);
+  const taxAmount = Math.round(subtotal * taxRate * 100) / 100;
+  const discountAmount = posDiscountEnabled ? posDiscountAmount : 0;
+
   const items = posCart.map(item => ({
     material_id: (item.material as any).is_custom ? null : item.material.id,
     description: item.isSecondary
@@ -636,17 +673,119 @@ export async function completePOSSale() {
     stock_multiplier: item.stockMultiplier
   }));
   const customer_id = null;
-  const btn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null; if (btn) btn.disabled = true;
+  const btn = document.getElementById('pos-complete-btn') as HTMLButtonElement | null;
+  if (btn) btn.disabled = true;
+
+  const isOffline = !navigator.onLine;
+
+  if (isOffline) {
+    try {
+      const offlineSale = await queueOfflineSale({
+        items,
+        subtotal,
+        tax_rate: taxRate,
+        tax_amount: taxAmount,
+        discount_amount: discountAmount,
+        total,
+        customer_id,
+        credit_account_name: credit_account_name || null,
+        buyer_address: buyer_address || null,
+        notes: notes || null,
+        payment: {
+          amount: method === 'credit' ? 0 : total,
+          received_amount: method === 'credit' ? 0 : received,
+          method,
+          notes: ''
+        },
+        shift_id: localStorage.getItem('buildpro_active_shift_id') || null,
+        user_id: getCurrentUser()?.id || null,
+      });
+
+      const change = method === 'cash' ? received - total : 0;
+      posCart = [];
+      await showReceiptPreview(offlineSale);
+      if (change > 0) {
+        showToast(`Offline sale saved (Receipt #${offlineSale.offline_reference}). Change: ${fmtPeso(change)}`, 'warning');
+      } else {
+        showToast(`Offline sale saved (Receipt #${offlineSale.offline_reference}). Will auto-sync when online.`, 'warning');
+      }
+      renderPOSCart();
+      await updateOfflineStatusUI();
+    } catch (err: any) {
+      showToast(`Failed to record offline sale: ${err.message}`, 'warning');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+    return;
+  }
+
   try {
     // POS checkout is committed atomically by the backend. Credit creates an unpaid invoice.
-    const checkout = await apiPost<any>('/invoices', { customer_id, due_date: null, credit_account_name: credit_account_name || null, buyer_address: buyer_address || null, notes: notes || null, tax_rate: Number((window as any).__invDefaultTax || 0), discount_amount: posDiscountEnabled ? posDiscountAmount : 0, items, payment: { amount: method === 'credit' ? 0 : total, received_amount: method === 'credit' ? 0 : received, method, notes: '' } });
+    const checkout = await apiPost<any>('/invoices', {
+      customer_id,
+      due_date: null,
+      credit_account_name: credit_account_name || null,
+      buyer_address: buyer_address || null,
+      notes: notes || null,
+      tax_rate: taxRate,
+      discount_amount: discountAmount,
+      items,
+      payment: {
+        amount: method === 'credit' ? 0 : total,
+        received_amount: method === 'credit' ? 0 : received,
+        method,
+        notes: ''
+      }
+    });
     const change = method === 'cash' ? received - total : 0;
     posCart = [];
     await showReceiptPreview(checkout.id);
     if (change > 0) showToast(`Sale completed. Change: ${fmtPeso(change)}`, 'success');
     else showToast('Sale completed', 'success');
     loadView('invoices');
-  } catch (e: any) { showToast(e.message || 'Unable to complete sale'); if (btn) btn.disabled = false; }
+  } catch (e: any) {
+    const isNetErr = /failed to fetch|networkerror|network error|offline/i.test(String(e.message));
+    if (isNetErr) {
+      try {
+        const offlineSale = await queueOfflineSale({
+          items,
+          subtotal,
+          tax_rate: taxRate,
+          tax_amount: taxAmount,
+          discount_amount: discountAmount,
+          total,
+          customer_id,
+          credit_account_name: credit_account_name || null,
+          buyer_address: buyer_address || null,
+          notes: notes || null,
+          payment: {
+            amount: method === 'credit' ? 0 : total,
+            received_amount: method === 'credit' ? 0 : received,
+            method,
+            notes: ''
+          },
+          shift_id: localStorage.getItem('buildpro_active_shift_id') || null,
+          user_id: getCurrentUser()?.id || null,
+        });
+        posCart = [];
+        await showReceiptPreview(offlineSale);
+        showToast(`Connection dropped — sale saved offline (${offlineSale.offline_reference})`, 'warning');
+        renderPOSCart();
+        await updateOfflineStatusUI();
+        return;
+      } catch (fallbackErr: any) {
+        showToast(`Offline queue error: ${fallbackErr.message}`);
+      }
+    }
+    showToast(e.message || 'Unable to complete sale');
+    if (btn) btn.disabled = false;
+  }
+}
+
+export async function triggerManualSync() {
+  const result = await syncOfflineSales();
+  await updateOfflineStatusUI();
+  return result;
 }
 
 export async function showInvoiceDetail(id: string) {

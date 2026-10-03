@@ -3,6 +3,7 @@ import { esc, val, setErr, clearErr, disableBtn, fmtDate, fmtPeso, isAdmin } fro
 import { showToast, showConfirmModal, showModal, closeModal } from '../lib/helpers';
 import { printShift } from './receipt';
 import { loadView } from '../lib/router';
+import { getPendingOfflineCount } from '../lib/offline';
 
 let settingsSubTab = 'general';
 let attendanceMonth = new Date().toISOString().slice(0, 7);
@@ -150,7 +151,14 @@ export function updateShiftVariance(expected: number) {
 export async function openCashierShift() {
   const opening_cash = Number(val('shift-opening'));
   const user_id = val('shift-staff');
-  try { await apiPost('/shifts/open', { user_id, opening_cash }); switchSettingsTab('shift'); showToast('Staff shift opened', 'success'); } catch (e: any) { showToast(e.message); }
+  try {
+    const opened = await apiPost<any>('/shifts/open', { user_id, opening_cash });
+    if (opened?.id) localStorage.setItem('buildpro_active_shift_id', opened.id);
+    switchSettingsTab('shift');
+    showToast('Staff shift opened', 'success');
+  } catch (e: any) {
+    showToast(e.message);
+  }
 }
 
 export function showCloseStaffShift(id: string, expected: number) {
@@ -168,13 +176,38 @@ export async function submitCashEvent(id: string, type: string) {
 }
 
 export async function closeStaffShift(id: string) {
+  const pending = await getPendingOfflineCount();
+  if (pending > 0) {
+    showToast(`Cannot close shift: You have ${pending} unsynced offline sale(s). Please sync them first!`, 'warning');
+    return;
+  }
   const closing_cash = Number(val('admin-shift-closing'));
-  try { await apiPost(`/shifts/${id}/close`, { closing_cash, notes: val('admin-shift-notes') }); closeModal(); switchSettingsTab('shift'); showToast('Staff shift closed', 'success'); } catch (e: any) { showToast(e.message); }
+  try {
+    await apiPost(`/shifts/${id}/close`, { closing_cash, notes: val('admin-shift-notes') });
+    localStorage.removeItem('buildpro_active_shift_id');
+    closeModal();
+    switchSettingsTab('shift');
+    showToast('Staff shift closed', 'success');
+  } catch (e: any) {
+    showToast(e.message);
+  }
 }
 
 export async function closeCashierShift(id: string) {
+  const pending = await getPendingOfflineCount();
+  if (pending > 0) {
+    showToast(`Cannot close shift: You have ${pending} unsynced offline sale(s). Please sync them first!`, 'warning');
+    return;
+  }
   const closing_cash = Number(val('shift-closing'));
-  try { await apiPost(`/shifts/${id}/close`, { closing_cash, notes: val('shift-notes') }); switchSettingsTab('shift'); showToast('Shift closed', 'success'); } catch (e: any) { showToast(e.message); }
+  try {
+    await apiPost(`/shifts/${id}/close`, { closing_cash, notes: val('shift-notes') });
+    localStorage.removeItem('buildpro_active_shift_id');
+    switchSettingsTab('shift');
+    showToast('Shift closed', 'success');
+  } catch (e: any) {
+    showToast(e.message);
+  }
 }
 
 export async function recordCashEvent(id: string, type: string) {

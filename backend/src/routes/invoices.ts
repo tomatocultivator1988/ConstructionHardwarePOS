@@ -38,8 +38,8 @@ router.get('/', async (req: Request, res: Response) => {
   if (typeof req.query.from === 'string' && req.query.from) { conditions.push('date(i.issued_date) >= ?'); params.push(req.query.from); }
   if (typeof req.query.to === 'string' && req.query.to) { conditions.push('date(i.issued_date) <= ?'); params.push(req.query.to); }
   if (search) {
-    conditions.push("(i.invoice_number LIKE ? OR COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') LIKE ?)");
-    params.push(`%${search}%`, `%${search}%`);
+    conditions.push("(i.invoice_number LIKE ? OR COALESCE(NULLIF(i.offline_reference,''), '') LIKE ? OR COALESCE(NULLIF(i.credit_account_name,''), c.name, 'Walk-in') LIKE ?)");
+    params.push(`%${search}%`, `%${search}%`, `%${search}%`);
   }
   if (status && status !== 'all') {
     if (status === 'unpaid') {
@@ -254,7 +254,7 @@ router.post('/', async (req: Request, res: Response) => {
     const openShift = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id=? AND status='open' LIMIT 1").get(req.user.id);
     if (!openShift) { res.status(403).json({ error: 'Open staff shift required before making a sale' }); return; }
   }
-  const { customer_id, items, due_date, tax_rate, issued_date, delivery_person, credit_account_name, buyer_address, notes, payment } = req.body;
+  const { customer_id, items, due_date, tax_rate, issued_date, delivery_person, credit_account_name, buyer_address, notes, payment, offline_reference } = req.body;
   const requestedDiscount = Number(req.body.discount_amount || 0);
   if (!Number.isFinite(requestedDiscount) || requestedDiscount < 0) { res.status(400).json({ error: 'Discount must be zero or greater' }); return; }
   const creditName = typeof credit_account_name === 'string' ? credit_account_name.trim() : '';
@@ -424,13 +424,14 @@ router.post('/', async (req: Request, res: Response) => {
           id, customer_id, invoice_number, subtotal, tax_rate, tax_amount, total,
           discount_amount, amount_received, change_amount, status, paid_date,
           due_date, delivery_person, credit_account_name, buyer_address, notes,
-          idempotency_key, issued_date, user_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?)`,
+          idempotency_key, issued_date, user_id, offline_reference
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), ?, ?)`,
         args: [
           invoiceId, customer_id || null, invoice_number, roundedSubtotal, appliedTaxRate, taxAmount, total,
           requestedDiscount, amountReceived, changeAmount, invoiceStatus, paidDate,
           due_date || null, delivery_person?.trim() || null, creditName || null, buyerAddress || null, invoiceNotes || null,
-          idempotencyKey || null, issued_date || null, (req as any).user?.id || null
+          idempotencyKey || null, issued_date || null, (req as any).user?.id || null,
+          typeof offline_reference === 'string' && offline_reference.trim() ? offline_reference.trim() : null
         ]
       }
     ];
@@ -508,6 +509,195 @@ router.post('/', async (req: Request, res: Response) => {
     }
     res.status(400).json({ error: e.message });
   }
+});
+
+router.post('/sync-offline', async (req: Request, res: Response) => {
+  const db = getDb();
+  const sales = Array.isArray(req.body?.sales) ? req.body.sales : (req.body && req.body.items ? [req.body] : []);
+  if (!sales.length) {
+    res.status(400).json({ error: 'No offline sales provided to sync' });
+    return;
+  }
+
+  const synced: any[] = [];
+  const errors: any[] = [];
+
+  for (const sale of sales) {
+    const saleId = typeof sale.id === 'string' ? sale.id : uuidv4();
+    const offlineRef = typeof sale.offline_reference === 'string' ? sale.offline_reference.trim() : null;
+    const idempotencyKey = typeof sale.idempotency_key === 'string' ? sale.idempotency_key : saleId;
+
+    try {
+      // 1. Idempotency Check: if already inserted, return existing record
+      const existing = await db.prepare(
+        'SELECT id, invoice_number, offline_reference, total FROM invoices WHERE id = ? OR idempotency_key = ? OR (offline_reference IS NOT NULL AND offline_reference = ?)'
+      ).get(saleId, idempotencyKey, offlineRef) as any;
+
+      if (existing) {
+        synced.push({
+          id: saleId,
+          invoice_id: existing.id,
+          invoice_number: existing.invoice_number,
+          offline_reference: existing.offline_reference || offlineRef,
+          total: existing.total,
+          already_synced: true,
+        });
+        continue;
+      }
+
+      // 2. Validate sale contents
+      const items = Array.isArray(sale.items) ? sale.items : [];
+      if (!items.length) {
+        throw new Error('At least one item is required in the sale');
+      }
+
+      // 3. Sequential invoice number
+      const seqRow = await db.prepare('SELECT next_number FROM invoice_sequence WHERE id = 1').get() as any;
+      const num = Number(seqRow?.next_number || 1);
+      const invoiceNumber = `INV-${String(num).padStart(4, '0')}`;
+
+      // 4. Calculate figures
+      let subtotal = 0;
+      for (const item of items) {
+        const qty = Number(item.quantity) || 0;
+        const price = Number(item.unit_price) || 0;
+        subtotal += qty * price;
+      }
+      const roundedSubtotal = Math.round(subtotal * 100) / 100;
+      const taxRate = Number(sale.tax_rate) || 0;
+      const taxAmount = Math.round(roundedSubtotal * taxRate * 100) / 100;
+      const discount = Math.max(0, Number(sale.discount_amount) || 0);
+      const total = Math.max(0, Math.round((roundedSubtotal + taxAmount - discount) * 100) / 100);
+
+      const payment = sale.payment || {};
+      const paymentMethod = typeof payment.method === 'string' ? payment.method.toLowerCase().trim() : 'cash';
+      const isCredit = paymentMethod === 'credit';
+      const status = isCredit ? 'pending' : 'paid';
+      const amountReceived = isCredit ? 0 : Number(payment.received_amount ?? total);
+      const changeAmount = isCredit ? 0 : Math.max(0, amountReceived - total);
+      const paidDate = isCredit ? null : (sale.created_at || new Date().toISOString());
+      const issuedDate = sale.created_at || new Date().toISOString();
+
+      // Check shift if staff
+      let shiftId = sale.shift_id || null;
+      if (!shiftId && (req as any).user?.id) {
+        const openShift = await db.prepare("SELECT id FROM cashier_shifts WHERE user_id=? AND status='open' ORDER BY opened_at DESC LIMIT 1").get((req as any).user.id) as any;
+        if (openShift) shiftId = openShift.id;
+      }
+
+      const invoiceId = saleId;
+      const paymentId = uuidv4();
+
+      // Material details for cost and multiplier
+      const usedMaterialIds = items.map((it: any) => it.material_id).filter(Boolean);
+      const mats = usedMaterialIds.length > 0
+        ? await db.prepare(`SELECT id, name, stock, unit, cost_price, price_per_unit, has_secondary_unit, secondary_unit, conversion_factor, secondary_price, secondary_is_bulk FROM materials WHERE id IN (${usedMaterialIds.map(() => '?').join(',')})`).all(...usedMaterialIds) as any[]
+        : [];
+      const matMap = new Map(mats.map((m: any) => [m.id, m]));
+
+      const batchStatements: Array<{ sql: string; args: any[] }> = [
+        {
+          sql: 'UPDATE invoice_sequence SET next_number = next_number + 1 WHERE id = 1 AND next_number = ?',
+          args: [num]
+        },
+        {
+          sql: `INSERT INTO invoices (
+            id, customer_id, invoice_number, subtotal, tax_rate, tax_amount, total,
+            discount_amount, amount_received, change_amount, status, paid_date,
+            due_date, delivery_person, credit_account_name, buyer_address, notes,
+            idempotency_key, issued_date, user_id, offline_reference
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [
+            invoiceId, sale.customer_id || null, invoiceNumber, roundedSubtotal, taxRate, taxAmount, total,
+            discount, amountReceived, changeAmount, status, paidDate,
+            sale.due_date || null, sale.delivery_person || null, sale.credit_account_name || null,
+            sale.buyer_address || null, sale.notes || null, idempotencyKey, issuedDate,
+            sale.user_id || (req as any).user?.id || null, offlineRef
+          ]
+        }
+      ];
+
+      // Add line items
+      for (const item of items) {
+        const lineQty = Number(item.quantity) || 0;
+        const linePrice = Number(item.unit_price) || 0;
+        const lineTotal = Math.round(lineQty * linePrice * 100) / 100;
+        const mat = item.material_id ? matMap.get(item.material_id) : null;
+        const mult = Number(item.stock_multiplier) || 1;
+        const cost = mat ? Math.round(Number(mat.cost_price || 0) * mult * 100) / 100 : 0;
+        const unit = item.unit || (mat ? mat.unit : null);
+
+        batchStatements.push({
+          sql: 'INSERT INTO invoice_items (id, invoice_id, material_id, description, quantity, unit_price, cost_price, total, unit, stock_multiplier) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          args: [uuidv4(), invoiceId, item.material_id || null, String(item.description || '').trim(), lineQty, linePrice, cost, lineTotal, unit, mult]
+        });
+      }
+
+      // Add payment
+      if (!isCredit) {
+        batchStatements.push({
+          sql: 'INSERT INTO payments (id, invoice_id, amount, method, notes, shift_id, payment_date) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          args: [paymentId, invoiceId, total, paymentMethod, payment.notes || null, shiftId, paidDate]
+        });
+      }
+
+      // Stock deduction & movement (without stock >= qty check so sync succeeds even if cloud stock went low)
+      for (const materialId of usedMaterialIds) {
+        const mat = matMap.get(materialId);
+        const qtyNeeded = items
+          .filter((it: any) => it.material_id === materialId)
+          .reduce((sum: number, it: any) => sum + (Number(it.quantity) * (Number(it.stock_multiplier) || 1)), 0);
+
+        batchStatements.push({
+          sql: 'UPDATE materials SET stock = stock - ? WHERE id = ?',
+          args: [qtyNeeded, materialId]
+        });
+        batchStatements.push({
+          sql: 'INSERT INTO stock_movements (id, material_id, type, quantity, reference_id, reference_type, notes) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          args: [
+            uuidv4(), materialId, 'sale', -qtyNeeded, invoiceId, 'invoice',
+            `Sold in offline sale ${invoiceNumber}${offlineRef ? ` (${offlineRef})` : ''}`
+          ]
+        });
+      }
+
+      const batchResults = await db.batch(batchStatements, 'write');
+      if (batchResults[0].rowsAffected !== 1) {
+        throw new Error('Sequence update collision. Please retry sync.');
+      }
+
+      await logAudit((req as any).user?.id || null, 'create', 'invoice', invoiceId, `Synced offline sale ${invoiceNumber} (ref: ${offlineRef || 'none'})`, null, {
+        invoice_number: invoiceNumber,
+        offline_reference: offlineRef,
+        total,
+        item_count: items.length
+      });
+
+      synced.push({
+        id: saleId,
+        invoice_id: invoiceId,
+        invoice_number: invoiceNumber,
+        offline_reference: offlineRef,
+        total
+      });
+    } catch (err: any) {
+      errors.push({
+        id: saleId,
+        offline_reference: offlineRef,
+        error: err.message || 'Failed to sync offline sale'
+      });
+    }
+  }
+
+  if (synced.length > 0) {
+    clearCache('analytics:');
+  }
+
+  res.json({
+    success: errors.length === 0,
+    synced,
+    errors
+  });
 });
 
 router.put('/:id/delivery', requireAdmin, async (req: Request, res: Response) => {

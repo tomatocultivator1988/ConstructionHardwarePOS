@@ -6,7 +6,7 @@ let db: Database;
 let dbInitPromise: Promise<void> | null = null;
 const businessDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore' }).format(new Date());
 
-const CURRENT_SCHEMA_VERSION = '2026.10.03.2';
+const CURRENT_SCHEMA_VERSION = '2026.10.03.3';
 
 export async function initDb(): Promise<void> {
   if (dbInitPromise) return dbInitPromise;
@@ -216,6 +216,7 @@ async function initTables() {
       buyer_address TEXT,
       notes TEXT,
       idempotency_key TEXT,
+      offline_reference TEXT,
       delivery_person_id TEXT,
       delivery_status TEXT NOT NULL DEFAULT 'unassigned' CHECK (delivery_status IN ('unassigned','assigned','out_for_delivery','delivered','failed')),
       delivery_notes TEXT,
@@ -589,6 +590,10 @@ async function migrateSchema() {
   if (!invoiceCols.includes('buyer_address')) await db.exec("ALTER TABLE invoices ADD COLUMN buyer_address TEXT");
   if (!invoiceCols.includes('notes')) await db.exec("ALTER TABLE invoices ADD COLUMN notes TEXT");
   if (!invoiceCols.includes('idempotency_key')) await db.exec("ALTER TABLE invoices ADD COLUMN idempotency_key TEXT");
+  if (!invoiceCols.includes('offline_reference')) {
+    await db.exec("ALTER TABLE invoices ADD COLUMN offline_reference TEXT");
+    await db.exec("CREATE INDEX IF NOT EXISTS idx_invoices_offline_ref ON invoices(offline_reference)");
+  }
   // Older POS checkouts explicitly inserted NULL instead of allowing the
   // column default to run. Recover those dates from the invoice creation time
   // so they appear in reports and dashboard day totals.

@@ -899,6 +899,49 @@ body:has(.login-page) #install-prompt { display: none !important; }
 }
 body.offline .offline-banner { display: flex; }
 
+.pos-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-full, 9999px);
+  font-size: var(--fs-xs, 0.75rem);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: all 0.2s ease;
+}
+.pos-status-badge span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.pos-status-online {
+  background: rgba(34, 197, 94, 0.12);
+  color: #16a34a;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.pos-status-offline {
+  background: rgba(239, 68, 68, 0.12);
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.pos-status-pending {
+  background: rgba(245, 158, 11, 0.15);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+.pos-status-badge .btn-xs {
+  padding: 1px 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 4px;
+  background: #d97706;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  margin-left: 0.25rem;
+}
+
 /* ── Bottom Nav ── */
 #bottom-nav {
   display: none;

@@ -18,7 +18,7 @@ type ReceiptContext = {
   vatAmount: number;
 };
 
-export async function printReceipt(id: string) {
+export async function printReceipt(id?: string) {
   try {
     const bluetooth = (navigator as any).bluetooth;
     if (!bluetooth) {
@@ -41,7 +41,9 @@ export async function printReceipt(id: string) {
     const characteristic = await findPrinterCharacteristic(server);
     if (!characteristic) throw new Error('Could not find a writable printer characteristic. Check that the printer is BLE/ESC-POS compatible.');
 
-    const receipt = await loadReceiptContext(id);
+    const receipt = currentReceiptContext && (!id || currentReceiptContext.inv.id === id || currentReceiptContext.inv.invoice_number === id)
+      ? currentReceiptContext
+      : await loadReceiptContext(id || '');
     await writeThermalReceipt(characteristic, buildThermalReceipt(receipt));
     showToast(`Receipt sent to ${device.name || 'thermal printer'}`, 'success');
   } catch (e: any) {
@@ -96,10 +98,100 @@ function buildThermalShift(shift: any): Uint8Array {
   return encoder.encode(content);
 }
 
-async function loadReceiptContext(id: string): Promise<ReceiptContext> {
-  const inv = await apiGet<Invoice>(`/invoices/${id}`);
+let currentReceiptContext: ReceiptContext | null = null;
+
+async function loadReceiptContext(idOrData: string | any): Promise<ReceiptContext> {
+  if (typeof idOrData === 'object' && idOrData !== null) {
+    const invData = idOrData;
+    let settings: Record<string, string> = {};
+    try {
+      settings = await apiGet<Record<string, string | null>>('/settings?keys=business_name,business_address,business_tin,business_rdo,vat_registered') as Record<string, string>;
+    } catch {
+      settings = {
+        business_name: 'JEG ENTERPRISES',
+        business_address: 'Barangay Alugan, San Policarpo, Eastern Samar',
+        vat_registered: '0'
+      };
+    }
+
+    const totalPaid = invData.payment?.amount ?? (invData.payments || []).reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
+    const amountReceived = Number(invData.payment?.received_amount ?? invData.amount_received ?? totalPaid);
+    const change = Number(invData.change_amount ?? Math.max(0, amountReceived - Number(invData.total || 0)));
+    const adjustedTotal = Math.max(0, Number(invData.total || 0));
+    const balance = adjustedTotal - totalPaid;
+    const issuedDate = new Date(invData.created_at || invData.issued_date || Date.now());
+    const isVat = settings.vat_registered === '1' || Number(invData.tax_rate) > 0;
+
+    const offlineInv: Invoice = {
+      id: invData.id || 'offline-id',
+      invoice_number: invData.offline_reference || invData.invoice_number || 'OFF-RECEIPT',
+      customer_id: invData.customer_id || null,
+      customer_name: invData.credit_account_name || 'Walk-in',
+      subtotal: invData.subtotal || 0,
+      tax_rate: invData.tax_rate || 0,
+      tax_amount: invData.tax_amount || 0,
+      total: invData.total || 0,
+      status: invData.status === 'pending' && invData.payment?.method === 'credit' ? 'pending' : 'paid',
+      issued_date: issuedDate.toISOString(),
+      items: (invData.items || []).map((it: any, idx: number) => ({
+        id: `item-${idx}`,
+        invoice_id: invData.id || 'offline-id',
+        material_id: it.material_id || '',
+        description: it.description,
+        quantity: it.quantity,
+        unit_price: it.unit_price,
+        unit: it.unit || 'Unit',
+        total: it.quantity * it.unit_price,
+      })),
+      payments: [
+        {
+          id: 'pay-offline',
+          invoice_id: invData.id || 'offline-id',
+          amount: totalPaid,
+          method: invData.payment?.method || 'cash',
+          payment_date: issuedDate.toISOString(),
+        }
+      ]
+    };
+
+    currentReceiptContext = {
+      inv: offlineInv,
+      settings,
+      dateStr: issuedDate.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }),
+      timeStr: issuedDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
+      totalPaid,
+      amountReceived,
+      change,
+      adjustedTotal,
+      balance,
+      isVat,
+      vatRate: isVat ? Number(invData.tax_rate) : 0,
+      vatAmount: Number(invData.tax_amount || 0),
+    };
+    return currentReceiptContext;
+  }
+
+  let inv: Invoice;
+  try {
+    inv = await apiGet<Invoice>(`/invoices/${idOrData}`);
+  } catch (err) {
+    if (currentReceiptContext && (currentReceiptContext.inv.id === idOrData || currentReceiptContext.inv.invoice_number === idOrData)) {
+      return currentReceiptContext;
+    }
+    throw err;
+  }
+
   let settings: Record<string, string> = {};
-  try { settings = await apiGet<Record<string, string | null>>('/settings?keys=business_name,business_address,business_tin,business_rdo,vat_registered') as Record<string, string>; } catch { /* Defaults are shown in the preview/printout. */ }
+  try {
+    settings = await apiGet<Record<string, string | null>>('/settings?keys=business_name,business_address,business_tin,business_rdo,vat_registered') as Record<string, string>;
+  } catch {
+    settings = {
+      business_name: 'JEG ENTERPRISES',
+      business_address: 'Barangay Alugan, San Policarpo, Eastern Samar',
+      vat_registered: '0'
+    };
+  }
+
   const totalPaid = (inv.payments || []).reduce((s: number, p: any) => s + Number(p.amount || 0), 0) - ((inv as any).refunds || []).reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
   const amountReceived = Number((inv as any).amount_received ?? totalPaid);
   const change = Number((inv as any).change_amount ?? Math.max(0, amountReceived - Number(inv.total || 0)));
@@ -109,12 +201,27 @@ async function loadReceiptContext(id: string): Promise<ReceiptContext> {
   const balance = adjustedTotal - totalPaid;
   const issuedDate = new Date(String(inv.issued_date || new Date().toISOString()).replace(' ', 'T'));
   const isVat = settings.vat_registered === '1' || Number(inv.tax_rate) > 0;
-  return { inv, settings, dateStr: issuedDate.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }), timeStr: issuedDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), totalPaid, amountReceived, change, adjustedTotal, balance, isVat, vatRate: isVat ? Number(inv.tax_rate) : 0, vatAmount: Number((inv as any).adjusted_tax ?? inv.tax_amount ?? 0) };
+
+  currentReceiptContext = {
+    inv,
+    settings,
+    dateStr: issuedDate.toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }),
+    timeStr: issuedDate.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }),
+    totalPaid,
+    amountReceived,
+    change,
+    adjustedTotal,
+    balance,
+    isVat,
+    vatRate: isVat ? Number(inv.tax_rate) : 0,
+    vatAmount: Number((inv as any).adjusted_tax ?? inv.tax_amount ?? 0),
+  };
+  return currentReceiptContext;
 }
 
-export async function showReceiptPreview(id: string) {
+export async function showReceiptPreview(idOrData: string | any) {
   try {
-    const receipt = await loadReceiptContext(id);
+    const receipt = await loadReceiptContext(idOrData);
     document.getElementById('receipt-preview-modal')?.remove();
     const modal = document.createElement('div');
     modal.className = 'modal receipt-preview-modal';
@@ -123,7 +230,7 @@ export async function showReceiptPreview(id: string) {
       <div class="receipt-preview-heading"><div><span class="help-eyebrow">Receipt Preview</span><h3>${esc(receipt.inv.invoice_number)}</h3></div><button class="help-close" aria-label="Close receipt preview">×</button></div>
       <p class="receipt-preview-note">This white paper preview represents the monochrome receipt sent to the Bluetooth thermal printer.</p>
       <div class="receipt-paper">${receiptPreviewHtml(receipt)}</div>
-      <div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="printReceipt('${id}')">Send to Bluetooth Printer</button></div>
+      <div class="modal-actions"><button class="btn" onclick="closeModal()">Close</button><button class="btn btn-primary" onclick="printReceipt('${esc(receipt.inv.id)}')">Send to Bluetooth Printer</button></div>
     </div>`;
     modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
     modal.querySelector('.help-close')?.addEventListener('click', () => modal.remove());
