@@ -21,6 +21,12 @@ import { syncOfflineSales, updateOfflineStatusUI, precacheCatalog } from './lib/
 
 setUnauthorizedHandler(login.showLogin);
 
+try {
+  if (typeof screen !== 'undefined' && screen.orientation && typeof (screen.orientation as any).unlock === 'function') {
+    (screen.orientation as any).unlock();
+  }
+} catch {}
+
 Object.assign(window, {
   loadView,
   closeModal,
