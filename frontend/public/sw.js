@@ -1,4 +1,4 @@
-const CACHE = 'buildpro-v1';
+const CACHE = 'buildpro-v2';
 
 self.addEventListener('install', () => {
   self.skipWaiting();
