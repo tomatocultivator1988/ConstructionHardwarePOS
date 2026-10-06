@@ -245,17 +245,22 @@ export function onPOSProductClick(id: string) {
 }
 
 function renderPOSProductCard(m: Material): string {
-  const isLow = Number(m.stock) <= Number(m.reorder_point);
+  const stockNum = Number(m.stock);
+  const isOut = stockNum <= 0;
+  const isLow = stockNum <= Number(m.reorder_point);
   const hasDual = Boolean(m.has_secondary_unit && Number(m.conversion_factor) > 1 && m.secondary_unit);
   const metaText = hasDual
     ? formatAggregateBreakdown(m.stock, m.conversion_factor, m.unit, m.secondary_unit, m.secondary_is_bulk)
     : `${esc(m.unit)} · ${m.stock} in stock`;
 
   return `
-    <button type="button" class="pos-product ${isLow ? 'low-stock' : ''}" onclick="onPOSProductClick('${m.id}')">
+    <button type="button" class="pos-product ${isOut ? 'out-of-stock' : (isLow ? 'low-stock' : '')}" onclick="onPOSProductClick('${m.id}')" title="${esc(m.name)}">
       <span class="pos-product-name">${esc(m.name)}</span>
-      <span class="pos-product-meta" style="${hasDual ? 'color:var(--c-primary);font-weight:600' : ''}">${esc(metaText)}</span>
-      <div style="display:flex;align-items:baseline;justify-content:space-between;width:100%;gap:4px">
+      <div class="pos-product-meta-row">
+        <span class="pos-product-meta" style="${hasDual ? 'color:var(--c-primary);font-weight:600' : ''}">${esc(metaText)}</span>
+        ${isLow ? `<span class="pos-stock-tag ${isOut ? 'out' : 'low'}">${isOut ? 'Out of stock' : 'Low stock'}</span>` : ''}
+      </div>
+      <div class="pos-product-footer">
         <strong>${fmtPeso(m.price_per_unit)}</strong>
         ${hasDual ? `<span class="badge" style="font-size:10px;padding:1px 5px;border-radius:4px;background:var(--c-primary-bg);color:var(--c-primary);font-weight:700">2 Units</span>` : ''}
       </div>
